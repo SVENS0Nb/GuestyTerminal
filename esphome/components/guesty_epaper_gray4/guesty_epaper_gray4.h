@@ -18,9 +18,9 @@ enum LutMode : uint8_t {
  *
  * The 96 KiB framebuffer stores four pixels per byte, with 0 representing
  * black and 3 white. A refresh sends the least- and most-significant pixel
- * bits as separate, wire-inverted UC8179 DTM1 and DTM2 planes. The waveform
- * and register sequence are ported from Seeed's MIT-licensed E1001 Gray4
- * example.
+ * bits as separate UC8179 DTM1 and DTM2 planes. The waveform and register
+ * sequence follow the production-tested GxEPD2_4G GDEW075T7 implementation,
+ * which uses controller-register LUTs for four-level output.
  */
 class GuestyEPaperGray4
     : public display::DisplayBuffer,
@@ -63,15 +63,10 @@ class GuestyEPaperGray4
   void start_data_();
   void end_data_();
   bool wait_until_idle_(const char *phase);
+  bool wait_for_busy_cycle_(const char *phase);
   bool reset_panel_();
   bool select_lut_mode_();
-  bool probe_otp_support_();
-  void gpio_write_command_(uint8_t command);
-  uint8_t gpio_read_byte_();
-  bool read_otp_marker_(uint16_t read_length, uint16_t marker_offset,
-                        uint8_t *marker);
-  bool init_custom_gray_mode_();
-  bool init_otp_gray_mode_();
+  bool init_gray_mode_();
   void write_lut_(uint8_t command, const uint8_t *lut, size_t length);
   void write_plane_(uint8_t command, uint8_t bit_index);
   void log_frame_levels_();
@@ -88,7 +83,6 @@ class GuestyEPaperGray4
   bool panel_asleep_{true};
   bool lut_mode_selected_{false};
   LutMode configured_lut_mode_{LUT_MODE_AUTO};
-  LutMode active_lut_mode_{LUT_MODE_CUSTOM};
 };
 
 }  // namespace esphome::guesty_epaper_gray4

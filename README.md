@@ -120,13 +120,12 @@ der offiziellen E1001-Hardwarebelegung und sind für dieses Board beabsichtigt.
 GuestyTerminal verwendet einen eigenen UC8179-Treiber für die vier nativen
 Graustufen des GDEY075T7-Panels. Schriftdateien werden zunächst mit 4 Bit pro
 Pixel gerastert und anschließend auf die vier Panelstufen quantisiert. QR-Code,
-Rahmen und Türcode bleiben dabei satt schwarz. Der Treiber erkennt automatisch,
-ob die jeweilige Panelrevision Seeeds interne OTP-Graustufenwellenform oder die
-mitgelieferten Custom-LUTs benötigt. Initialisierung, Erkennung und
-Wellenformtabellen basieren auf den MIT-lizenzierten UC8179-Implementierungen
-von Seeed Studio. Die beiden UC8179-Bitebenen übernehmen Seeeds direkte
-Pegelzuordnung `00 = Schwarz`, `01 = Dunkelgrau`, `10 = Hellgrau` und
-`11 = Weiß`.
+Rahmen und Türcode bleiben dabei satt schwarz. Da das Panel im OTP nur eine
+Schwarz-Weiß-Wellenform enthält, verwendet der Treiber für vier Graustufen
+ausschließlich die erprobten Register-LUTs und die Initialisierungsfolge aus
+GxEPD2_4G. So bleibt GPIO9 durchgehend als SPI-Datenleitung konfiguriert. Die
+beiden UC8179-Bitebenen verwenden die direkte Pegelzuordnung
+`00 = Schwarz`, `01 = Dunkelgrau`, `10 = Hellgrau` und `11 = Weiß`.
 
 Für weitere Displays die Beispieldatei kopieren und einen eindeutigen
 `device_name` verwenden. Alle Geräte verwenden dasselbe Layout-Paket.

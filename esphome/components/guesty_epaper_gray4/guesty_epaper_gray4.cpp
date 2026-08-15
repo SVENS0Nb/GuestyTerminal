@@ -11,36 +11,43 @@ namespace esphome::guesty_epaper_gray4 {
 
 static const char *const TAG = "guesty_epaper_gray4";
 
-// UC8179 grayscale waveforms from Seeed's reTerminal E1001 Gray4 example.
-// Each lookup table contains seven phases of six bytes.
+// UC8179 four-gray waveforms from GxEPD2_4G's production-tested
+// GxEPD2_750_T7 implementation. Each lookup table contains seven phases of
+// six bytes. The border LUT has one meaningful phase and is zero-padded.
 static constexpr uint8_t LUT_VCOM_GRAY[42] = {
-    0x00, 0x00, 0x06, 0x08, 0x07, 0x01, 0x00, 0x06, 0x0A, 0x0B, 0x0A, 0x01, 0x00, 0x03,
-    0x03, 0x00, 0x00, 0x03, 0x00, 0x05, 0x09, 0x06, 0x06, 0x01, 0x00, 0x02, 0x02, 0x0A,
-    0x0A, 0x01, 0x00, 0x0A, 0x11, 0x06, 0x07, 0x01, 0x00, 0x02, 0x01, 0x02, 0x01, 0x01,
+    0x00, 0x0A, 0x00, 0x00, 0x00, 0x01, 0x60, 0x14, 0x14, 0x00, 0x00, 0x01, 0x00, 0x14,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x13, 0x0A, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
 
 static constexpr uint8_t LUT_WW_GRAY[42] = {
-    0x15, 0x00, 0x06, 0x08, 0x07, 0x01, 0x54, 0x06, 0x0A, 0x0B, 0x0A, 0x01, 0x90, 0x03,
-    0x03, 0x00, 0x00, 0x03, 0x2A, 0x05, 0x09, 0x06, 0x06, 0x01, 0xAA, 0x02, 0x02, 0x0A,
-    0x0A, 0x01, 0x00, 0x0A, 0x11, 0x06, 0x07, 0x01, 0x28, 0x02, 0x01, 0x02, 0x01, 0x01,
+    0x40, 0x0A, 0x00, 0x00, 0x00, 0x01, 0x90, 0x14, 0x14, 0x00, 0x00, 0x01, 0x10, 0x14,
+    0x0A, 0x00, 0x00, 0x01, 0xA0, 0x13, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
 
 static constexpr uint8_t LUT_KW_GRAY[42] = {
-    0x2A, 0x00, 0x06, 0x08, 0x07, 0x01, 0x59, 0x06, 0x0A, 0x0B, 0x0A, 0x01, 0x90, 0x03,
-    0x03, 0x00, 0x00, 0x03, 0x5A, 0x05, 0x09, 0x06, 0x06, 0x01, 0xA8, 0x02, 0x02, 0x0A,
-    0x0A, 0x01, 0x45, 0x0A, 0x11, 0x06, 0x07, 0x01, 0xA8, 0x02, 0x01, 0x02, 0x01, 0x01,
+    0x40, 0x0A, 0x00, 0x00, 0x00, 0x01, 0x90, 0x14, 0x14, 0x00, 0x00, 0x01, 0x00, 0x14,
+    0x0A, 0x00, 0x00, 0x01, 0x99, 0x0C, 0x01, 0x03, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
 
 static constexpr uint8_t LUT_WK_GRAY[42] = {
-    0x16, 0x00, 0x06, 0x08, 0x07, 0x01, 0xA0, 0x06, 0x0A, 0x0B, 0x0A, 0x01, 0x90, 0x03,
-    0x03, 0x00, 0x00, 0x03, 0x99, 0x05, 0x09, 0x06, 0x06, 0x01, 0xA0, 0x02, 0x02, 0x0A,
-    0x0A, 0x01, 0x40, 0x0A, 0x11, 0x06, 0x07, 0x01, 0x20, 0x02, 0x01, 0x02, 0x01, 0x01,
+    0x40, 0x0A, 0x00, 0x00, 0x00, 0x01, 0x90, 0x14, 0x14, 0x00, 0x00, 0x01, 0x00, 0x14,
+    0x0A, 0x00, 0x00, 0x01, 0x99, 0x0B, 0x04, 0x04, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
 
 static constexpr uint8_t LUT_KK_GRAY[42] = {
-    0x26, 0x00, 0x06, 0x08, 0x07, 0x01, 0x6A, 0x06, 0x0A, 0x0B, 0x0A, 0x01, 0x90, 0x03,
-    0x03, 0x00, 0x00, 0x03, 0x65, 0x05, 0x09, 0x06, 0x06, 0x01, 0x50, 0x02, 0x02, 0x0A,
-    0x0A, 0x01, 0x10, 0x0A, 0x11, 0x06, 0x07, 0x01, 0x10, 0x02, 0x01, 0x02, 0x01, 0x01,
+    0x80, 0x0A, 0x00, 0x00, 0x00, 0x01, 0x90, 0x14, 0x14, 0x00, 0x00, 0x01, 0x20, 0x14,
+    0x0A, 0x00, 0x00, 0x01, 0x50, 0x13, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+static constexpr uint8_t LUT_BORDER_GRAY[42] = {
+    0x00, 0x1E, 0x05, 0x1E, 0x05, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
 
 float GuestyEPaperGray4::get_setup_priority() const { return setup_priority::PROCESSOR; }
@@ -135,7 +142,27 @@ bool GuestyEPaperGray4::wait_until_idle_(const char *phase) {
   return true;
 }
 
+bool GuestyEPaperGray4::wait_for_busy_cycle_(const char *phase) {
+  // A refresh that never asserts BUSY was not accepted by the controller.
+  // Do not report this as success merely because BUSY was already high.
+  const uint32_t assertion_started = millis();
+  while (this->busy_pin_->digital_read()) {
+    if (millis() - assertion_started > 1000U) {
+      ESP_LOGE(TAG, "Display BUSY never asserted (%s)", phase);
+      this->status_set_warning();
+      return false;
+    }
+    App.feed_wdt();
+    delay(1);
+  }
+  return this->wait_until_idle_(phase);
+}
+
 bool GuestyEPaperGray4::reset_panel_() {
+  // The initial high period powers the E1001's panel/reset circuit before the
+  // actual reset pulse, matching Good Display and GxEPD2.
+  this->reset_pin_->digital_write(true);
+  delay(10);
   this->reset_pin_->digital_write(false);
   delay(this->reset_duration_);  // NOLINT
   this->reset_pin_->digital_write(true);
@@ -144,129 +171,13 @@ bool GuestyEPaperGray4::reset_panel_() {
   return this->wait_until_idle_("after reset");
 }
 
-void GuestyEPaperGray4::gpio_write_command_(uint8_t command) {
-  this->cs_->digital_write(true);
-  this->clock_pin_->digital_write(false);
-  this->dc_pin_->digital_write(false);
-  this->data_pin_->pin_mode(gpio::FLAG_OUTPUT);
-  this->cs_->digital_write(false);
-  for (uint8_t bit = 0; bit < 8; bit++) {
-    this->data_pin_->digital_write((command & 0x80U) != 0);
-    this->clock_pin_->digital_write(true);
-    this->clock_pin_->digital_write(false);
-    command <<= 1U;
-  }
-  this->cs_->digital_write(true);
-}
-
-uint8_t GuestyEPaperGray4::gpio_read_byte_() {
-  uint8_t value = 0;
-  this->cs_->digital_write(false);
-  this->dc_pin_->digital_write(true);
-  this->clock_pin_->digital_write(false);
-  this->data_pin_->pin_mode(gpio::FLAG_INPUT);
-  for (uint8_t bit = 0; bit < 8; bit++) {
-    value <<= 1U;
-    this->clock_pin_->digital_write(true);
-    if (this->data_pin_->digital_read())
-      value |= 0x01U;
-    this->clock_pin_->digital_write(false);
-  }
-  this->data_pin_->pin_mode(gpio::FLAG_OUTPUT);
-  this->data_pin_->digital_write(true);
-  this->cs_->digital_write(true);
-  return value;
-}
-
-bool GuestyEPaperGray4::read_otp_marker_(uint16_t read_length,
-                                         uint16_t marker_offset,
-                                         uint8_t *marker) {
-  if (marker == nullptr || marker_offset >= read_length)
-    return false;
-
-  this->gpio_write_command_(0xA2);  // READ OTP
-  for (uint16_t index = 0; index < read_length; index++) {
-    const uint8_t value = this->gpio_read_byte_();
-    if (index == marker_offset)
-      *marker = value;
-    if ((index & 0x3FU) == 0)
-      App.feed_wdt();
-  }
-  delay(20);
-  return true;
-}
-
-bool GuestyEPaperGray4::probe_otp_support_() {
-  // Newer E1001 panel batches store a dedicated four-gray waveform in OTP.
-  // Seeed_GFX probes two user-data banks over the bidirectional SDA/MOSI line
-  // and selects OTP when either marker is 0x01. Temporarily release hardware
-  // SPI so GPIO9 can be switched to input for the same readback sequence.
-  this->spi_teardown();
-  this->clock_pin_->setup();
-  this->data_pin_->setup();
-  this->clock_pin_->pin_mode(gpio::FLAG_OUTPUT);
-  this->data_pin_->pin_mode(gpio::FLAG_OUTPUT);
-  this->cs_->digital_write(true);
-
-  const auto reset_for_read = [&]() {
-    this->reset_pin_->digital_write(false);
-    delay(20);
-    this->reset_pin_->digital_write(true);
-    delay(20);
-    return this->wait_until_idle_("during OTP probe");
-  };
-
-  bool probe_ok = reset_for_read();
-  if (probe_ok) {
-    this->gpio_write_command_(0x40);  // READ INTERNAL TEMPERATURE
-    probe_ok = this->wait_until_idle_("before OTP temperature read");
-    if (probe_ok) {
-      (void) this->gpio_read_byte_();
-      (void) this->gpio_read_byte_();
-    }
-  }
-
-  uint8_t marker_1 = 0;
-  uint8_t marker_2 = 0;
-  if (probe_ok && reset_for_read())
-    probe_ok = this->read_otp_marker_(0x0BED, 0x0BE3, &marker_1);
-  else
-    probe_ok = false;
-  if (probe_ok && reset_for_read())
-    probe_ok = this->read_otp_marker_(0x17ED, 0x17E3, &marker_2);
-  else
-    probe_ok = false;
-
-  this->clock_pin_->pin_mode(gpio::FLAG_OUTPUT);
-  this->clock_pin_->digital_write(false);
-  this->data_pin_->pin_mode(gpio::FLAG_OUTPUT);
-  this->data_pin_->digital_write(true);
-  this->cs_->digital_write(true);
-  this->spi_setup();
-
-  if (!probe_ok) {
-    ESP_LOGW(TAG, "Could not read OTP markers; using custom grayscale LUT");
-    return false;
-  }
-
-  ESP_LOGI(TAG, "UC8179 OTP markers: bank1=0x%02X, bank2=0x%02X",
-           marker_1, marker_2);
-  return marker_1 == 0x01 || marker_2 == 0x01;
-}
-
 bool GuestyEPaperGray4::select_lut_mode_() {
   if (this->lut_mode_selected_)
     return true;
-
-  if (this->configured_lut_mode_ == LUT_MODE_AUTO) {
-    this->active_lut_mode_ =
-        this->probe_otp_support_() ? LUT_MODE_OTP : LUT_MODE_CUSTOM;
-  } else {
-    this->active_lut_mode_ = this->configured_lut_mode_;
-  }
   this->lut_mode_selected_ = true;
-  ESP_LOGI(TAG, "Selected grayscale waveform: %s",
-           this->active_lut_mode_ == LUT_MODE_OTP ? "panel OTP" : "custom LUT");
+  if (this->configured_lut_mode_ == LUT_MODE_OTP)
+    ESP_LOGW(TAG, "OTP grayscale mode is unsupported; using register LUTs");
+  ESP_LOGI(TAG, "Selected grayscale waveform: GxEPD2_4G register LUTs");
   return true;
 }
 
@@ -277,99 +188,42 @@ void GuestyEPaperGray4::write_lut_(uint8_t command, const uint8_t *lut, size_t l
   this->end_data_();
 }
 
-bool GuestyEPaperGray4::init_custom_gray_mode_() {
+bool GuestyEPaperGray4::init_gray_mode_() {
   this->command_(0x01);  // POWER SETTING
   this->data_(0x07);
-  this->data_(0x17);
-  this->data_(0x3F);
-  this->data_(0x3F);
   this->data_(0x07);
-
-  this->command_(0x30);  // PLL CONTROL
-  this->data_(0x06);
-
-  this->command_(0x82);  // VCOM DC SETTING
-  this->data_(0x12);
-
-  this->command_(0x06);  // BOOSTER SOFT START
-  this->data_(0x27);
-  this->data_(0x27);
-  this->data_(0x28);
-  this->data_(0x17);
-
-  this->command_(0x04);  // POWER ON
-  delay(100);
-  if (!this->wait_until_idle_("after power on"))
-    return false;
+  this->data_(0x3F);
+  this->data_(0x3F);
 
   this->command_(0x00);  // KW mode; waveform loaded from registers
   this->data_(0x3F);
 
-  this->command_(0xE3);  // POWER SAVING
-  this->data_(0x88);
+  this->command_(0x61);  // 800x480 resolution
+  this->data_(WIDTH >> 8);
+  this->data_(WIDTH & 0xFF);
+  this->data_(HEIGHT >> 8);
+  this->data_(HEIGHT & 0xFF);
 
-  this->command_(0x50);  // VCOM AND DATA INTERVAL
-  this->data_(0x10);
-  this->data_(0x07);
-
-  this->command_(0x52);
+  this->command_(0x15);  // Single SPI mode
   this->data_(0x00);
 
-  this->command_(0x61);  // 800x480 resolution
-  this->data_(WIDTH >> 8);
-  this->data_(WIDTH & 0xFF);
-  this->data_(HEIGHT >> 8);
-  this->data_(HEIGHT & 0xFF);
+  this->command_(0x50);  // VCOM AND DATA INTERVAL
+  this->data_(0x31);     // LUTBD enabled for four-gray mode
+  this->data_(0x07);
+
+  this->command_(0x60);  // TCON SETTING
+  this->data_(0x22);
 
   this->write_lut_(0x20, LUT_VCOM_GRAY, sizeof(LUT_VCOM_GRAY));
-  if (!this->wait_until_idle_("after VCOM LUT"))
-    return false;
   this->write_lut_(0x21, LUT_WW_GRAY, sizeof(LUT_WW_GRAY));
-  if (!this->wait_until_idle_("after WW LUT"))
-    return false;
   this->write_lut_(0x22, LUT_KW_GRAY, sizeof(LUT_KW_GRAY));
-  if (!this->wait_until_idle_("after KW LUT"))
-    return false;
   this->write_lut_(0x23, LUT_WK_GRAY, sizeof(LUT_WK_GRAY));
   this->write_lut_(0x24, LUT_KK_GRAY, sizeof(LUT_KK_GRAY));
-  return true;
-}
-
-bool GuestyEPaperGray4::init_otp_gray_mode_() {
-  this->command_(0x01);  // POWER SETTING
-  this->data_(0x07);
-  this->data_(0x07);
-  this->data_(0x3F);
-  this->data_(0x3F);
-
-  this->command_(0x06);  // BOOSTER SOFT START
-  this->data_(0x27);
-  this->data_(0x27);
-  this->data_(0x18);
-  this->data_(0x17);
+  this->write_lut_(0x25, LUT_BORDER_GRAY, sizeof(LUT_BORDER_GRAY));
 
   this->command_(0x04);  // POWER ON
-  delay(100);
-  if (!this->wait_until_idle_("after OTP power on"))
+  if (!this->wait_for_busy_cycle_("after power on"))
     return false;
-
-  this->command_(0x00);  // KW mode; waveform loaded from panel OTP
-  this->data_(0x1F);
-
-  this->command_(0x61);  // 800x480 resolution
-  this->data_(WIDTH >> 8);
-  this->data_(WIDTH & 0xFF);
-  this->data_(HEIGHT >> 8);
-  this->data_(HEIGHT & 0xFF);
-
-  this->command_(0x50);  // VCOM AND DATA INTERVAL
-  this->data_(0x10);
-  this->data_(0x07);
-
-  this->command_(0xE0);  // CASCADE SETTING
-  this->data_(0x02);
-  this->command_(0xE5);  // Select OTP four-gray waveform
-  this->data_(0x5F);
   return true;
 }
 
@@ -385,8 +239,7 @@ void GuestyEPaperGray4::write_plane_(uint8_t command, uint8_t bit_index) {
       const uint8_t first = source[column * 2U];
       const uint8_t second = source[column * 2U + 1U];
       uint8_t output = 0;
-      // UC8179 DTM1 receives the least-significant level bit and DTM2 the
-      // most-significant bit. Seeed's OTP driver uses the levels directly:
+      // The register-LUT four-gray mode uses the levels directly:
       // 00=black, 01=dark gray, 10=light gray, 11=white.
       output |= ((first >> (6U + bit_index)) & 0x01U) << 7U;
       output |= ((first >> (4U + bit_index)) & 0x01U) << 6U;
@@ -424,8 +277,7 @@ void GuestyEPaperGray4::log_frame_levels_() {
 bool GuestyEPaperGray4::refresh_() {
   const uint32_t started = millis();
   this->command_(0x12);  // DISPLAY REFRESH
-  delay(100);
-  if (!this->wait_until_idle_("during grayscale refresh"))
+  if (!this->wait_for_busy_cycle_("during grayscale refresh"))
     return false;
   ESP_LOGI(TAG, "Four-level refresh completed in %lu ms",
            static_cast<unsigned long>(millis() - started));
@@ -436,14 +288,11 @@ bool GuestyEPaperGray4::refresh_() {
 void GuestyEPaperGray4::display_() {
   if (!this->select_lut_mode_() || !this->reset_panel_())
     return;
-  const bool initialized = this->active_lut_mode_ == LUT_MODE_OTP
-                               ? this->init_otp_gray_mode_()
-                               : this->init_custom_gray_mode_();
-  if (!initialized)
+  if (!this->init_gray_mode_())
     return;
   this->log_frame_levels_();
-  this->write_plane_(0x10, 0);  // DTM1: least-significant grayscale bit
-  this->write_plane_(0x13, 1);  // DTM2: most-significant grayscale bit
+  this->write_plane_(0x10, 1);  // DTM1: most-significant grayscale bit
+  this->write_plane_(0x13, 0);  // DTM2: least-significant grayscale bit
   if (this->refresh_())
     this->deep_sleep_panel_();
 }
@@ -464,11 +313,11 @@ void GuestyEPaperGray4::dump_config() {
   ESP_LOGCONFIG(TAG, "  Panel: GDEY075T7, 800x480, 2 bits per pixel");
   ESP_LOGCONFIG(TAG, "  Framebuffer: %lu bytes",
                 static_cast<unsigned long>(this->get_buffer_length_()));
-  const char *configured_mode = "auto";
+  const char *configured_mode = "auto (register LUTs)";
   if (this->configured_lut_mode_ == LUT_MODE_CUSTOM)
-    configured_mode = "custom";
+    configured_mode = "register LUTs";
   else if (this->configured_lut_mode_ == LUT_MODE_OTP)
-    configured_mode = "otp";
+    configured_mode = "otp requested; register LUT fallback";
   ESP_LOGCONFIG(TAG, "  Grayscale waveform: %s", configured_mode);
   LOG_PIN("  CS Pin: ", this->cs_);
   LOG_PIN("  Clock Pin: ", this->clock_pin_);
