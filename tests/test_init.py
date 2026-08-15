@@ -15,6 +15,7 @@ from custom_components.guesty_terminal.const import (
     CONF_POLL_MINUTES,
     DATA_PENDING_TOKENS,
     DOMAIN,
+    SERVICE_FORCE_REDRAW,
     SERVICE_REFRESH,
 )
 from custom_components.guesty_terminal.runtime import GuestyTerminalRuntime
@@ -86,12 +87,17 @@ def _entry(*, version=2, options=None):
 
 def test_async_setup_registers_and_runs_refresh_service() -> None:
     refreshed = []
+    redrawn = []
 
     class Coordinator:
         async def async_request_refresh(self):
             refreshed.append(True)
 
-    runtime = GuestyTerminalRuntime(None, None, None, Coordinator())
+    class Runtime(GuestyTerminalRuntime):
+        async def async_force_redraw_all(self):
+            redrawn.append(True)
+
+    runtime = Runtime(None, None, None, Coordinator())
     hass = SimpleNamespace(data={DOMAIN: {"entry": runtime}}, services=FakeServices())
 
     assert asyncio.run(integration.async_setup(hass, {}))
@@ -99,6 +105,9 @@ def test_async_setup_registers_and_runs_refresh_service() -> None:
     handler = hass.services.registered[(DOMAIN, SERVICE_REFRESH)]
     asyncio.run(handler(None))
     assert refreshed == [True]
+    redraw_handler = hass.services.registered[(DOMAIN, SERVICE_FORCE_REDRAW)]
+    asyncio.run(redraw_handler(None))
+    assert redrawn == [True]
 
 
 def test_setup_and_unload_entry(monkeypatch) -> None:

@@ -1,3 +1,7 @@
 refresh:
   name: Daten aktualisieren
   description: Lädt Guesty-Daten neu und aktualisiert alle erreichbaren Displays.
+
+force_redraw:
+  name: Displays neu zeichnen
+  description: Zeichnet den zuletzt geladenen Inhalt einmal neu, ohne Guesty erneut abzufragen.

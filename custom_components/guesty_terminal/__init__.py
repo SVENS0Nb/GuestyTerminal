@@ -24,6 +24,7 @@ from .const import (
     DEFAULT_LEAD_HOURS,
     DOMAIN,
     MAX_POLL_MINUTES,
+    SERVICE_FORCE_REDRAW,
     SERVICE_REFRESH,
     TOKEN_STORE_VERSION,
 )
@@ -36,7 +37,7 @@ CONFIG_ENTRY_VERSION = 2
 
 
 async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
-    """Set up the integration-level refresh action."""
+    """Set up integration-level refresh and recovery actions."""
     hass.data.setdefault(DOMAIN, {})
 
     if not hass.services.has_service(DOMAIN, SERVICE_REFRESH):
@@ -48,6 +49,16 @@ async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
                     await runtime.coordinator.async_request_refresh()
 
         hass.services.async_register(DOMAIN, SERVICE_REFRESH, _handle_refresh)
+
+    if not hass.services.has_service(DOMAIN, SERVICE_FORCE_REDRAW):
+
+        async def _handle_force_redraw(_call: ServiceCall) -> None:
+            runtimes = list(hass.data.get(DOMAIN, {}).values())
+            for runtime in runtimes:
+                if isinstance(runtime, GuestyTerminalRuntime):
+                    await runtime.async_force_redraw_all()
+
+        hass.services.async_register(DOMAIN, SERVICE_FORCE_REDRAW, _handle_force_redraw)
     return True
 
 

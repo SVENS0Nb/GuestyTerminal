@@ -111,6 +111,47 @@ def test_v2_action_receives_stable_content_id() -> None:
     assert len(sent["content_id"]) == 24
 
 
+def test_force_redraw_uses_empty_v2_content_id() -> None:
+    runtime, hass, _coordinator = _runtime(state=ACTION_V2)
+    assert asyncio.run(runtime.async_force_redraw_endpoint(ENDPOINT))
+    assert hass.services.calls[0][2]["content_id"] == ""
+
+    hass.services.calls.clear()
+    asyncio.run(runtime.async_force_redraw_all())
+    assert hass.services.calls[0][2]["content_id"] == ""
+
+    runtime.coordinator.data = None
+    assert not asyncio.run(runtime.async_force_redraw_endpoint(ENDPOINT))
+    asyncio.run(runtime.async_force_redraw_all())
+
+
+def test_force_redraw_keeps_legacy_action_compatible() -> None:
+    runtime, hass, _coordinator = _runtime(state=ACTION)
+    assert asyncio.run(runtime.async_force_redraw_endpoint(ENDPOINT))
+    assert "content_id" not in hass.services.calls[0][2]
+
+
+def test_force_redraw_never_restores_expired_credentials() -> None:
+    expired = DisplayPayload(
+        mode="welcome",
+        property_name="LOFT",
+        welcome_title="Hallo Anna",
+        welcome_text="Willkommen",
+        door_code="4827",
+        wifi_name="WiFi",
+        wifi_password="secret",
+        checkout_label="gestern",
+        valid_until_epoch=int(datetime(2020, 1, 1, tzinfo=UTC).timestamp()),
+    )
+    runtime, hass, _coordinator = _runtime(state=ACTION_V2, payload=expired)
+    assert asyncio.run(runtime.async_force_redraw_endpoint(ENDPOINT))
+    sent = hass.services.calls[0][2]
+    assert sent["mode"] == "idle"
+    assert sent["door_code"] == ""
+    assert sent["wifi_password"] == ""
+    assert sent["content_id"] == ""
+
+
 def test_push_ignores_missing_offline_and_invalid_endpoints() -> None:
     runtime, hass, coordinator = _runtime()
     coordinator.data = None

@@ -59,6 +59,22 @@ esphome:
 
 api:
   reboot_timeout: 0s
+  # A fast restart can be shorter than Home Assistant's offline detection
+  # window. Pulse the endpoint after Home Assistant connects so the integration
+  # reliably resends its cached payload on every wake cycle.
+  on_client_connected:
+    then:
+      - if:
+          condition:
+            lambda: |-
+              return client_info.find("Home Assistant")
+                  != std::string::npos;
+          then:
+            - text_sensor.template.publish:
+                id: guesty_terminal_endpoint
+                state: "__guesty_reconnecting__"
+            - delay: 1s
+            - component.update: guesty_terminal_endpoint
   actions:
     - action: guesty_terminal_update_display_v2
       variables:
