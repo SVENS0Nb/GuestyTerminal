@@ -76,7 +76,7 @@ api:
             - delay: 1s
             - component.update: guesty_terminal_endpoint
   actions:
-    - action: guesty_terminal_update_display_v2
+    - action: guesty_terminal_update_display_v3
       variables:
         mode: string
         property_name: string
@@ -88,12 +88,13 @@ api:
         checkout_label: string
         valid_until_epoch: int
         content_id: string
+        logo_data: string
       then:
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
             id(guesty_content_changed) = content_id.empty()
                 || content_id != id(guesty_content_id)
-                || id(guesty_render_revision) != 4;
+                || id(guesty_render_revision) != 6;
             id(guesty_mode) = mode;
             id(guesty_property_name) = property_name;
             id(guesty_welcome_title) = welcome_title;
@@ -102,6 +103,7 @@ api:
             id(guesty_wifi_name) = wifi_name;
             id(guesty_wifi_password) = wifi_password;
             id(guesty_checkout_label) = checkout_label;
+            id(guesty_logo_data) = logo_data;
             id(guesty_valid_until_epoch) = valid_until_epoch;
             id(guesty_screen_sensitive) = mode == "welcome";
             id(guesty_has_wifi) =
@@ -146,7 +148,7 @@ api:
                     - display.page.show: guesty_idle_page
               - component.update: guesty_epaper
               - delay: 7s
-              - lambda: id(guesty_render_revision) = 4;
+              - lambda: id(guesty_render_revision) = 6;
             else:
               # No panel refresh is needed, but restored globals (especially
               # the renewed privacy lease) need one scheduler cycle before
@@ -186,6 +188,9 @@ globals:
     type: std::string
     initial_value: '""'
   - id: guesty_checkout_label
+    type: std::string
+    initial_value: '""'
+  - id: guesty_logo_data
     type: std::string
     initial_value: '""'
   - id: guesty_has_wifi
@@ -357,6 +362,7 @@ sensor:
     id: guesty_battery_level
     name: Battery level
     unit_of_measurement: "%"
+    accuracy_decimals: 0
     icon: mdi:battery
     device_class: battery
     state_class: measurement
@@ -400,7 +406,7 @@ text_sensor:
     entity_category: diagnostic
     update_interval: never
     lambda: |-
-      std::string action = "${device_name}_guesty_terminal_update_display_v2";
+      std::string action = "${device_name}_guesty_terminal_update_display_v3";
       for (char &character : action) {
         if (character == '-') character = '_';
       }
@@ -446,6 +452,22 @@ binary_sensor:
     filters:
       - delayed_on: 20ms
       - delayed_off: 20ms
+
+button:
+  # Both controls are exposed as entities of this ESPHome display device.
+  # Refresh is deliberately explicit and therefore bypasses the automatic
+  # duplicate-image suppression used for background Guesty synchronisation.
+  - platform: template
+    id: guesty_refresh_display
+    name: Display aktualisieren
+    icon: mdi:refresh
+    on_press:
+      - component.update: guesty_epaper
+  - platform: restart
+    id: guesty_restart
+    name: Neustart
+    icon: mdi:restart
+    entity_category: diagnostic
 
 time:
   - platform: pcf8563
@@ -549,7 +571,6 @@ display:
 
           // Compact door-code field
           if (!id(guesty_door_code).empty()) {
-            it.rectangle(32, 250, 345, 105);
             it.print(48, 263, id(guesty_font_label), "DEIN TÜRCODE");
             esphome::font::Font *code_font = id(guesty_door_code).size() > 8
                 ? id(guesty_font_door_code_small)
@@ -568,8 +589,6 @@ display:
             const int qr_y = 176;
             it.filled_rectangle(qr_x - 10, qr_y - 10,
                                 qr_size + 20, qr_size + 20, COLOR_OFF);
-            it.rectangle(qr_x - 10, qr_y - 10,
-                         qr_size + 20, qr_size + 20, COLOR_ON);
             it.qr_code(qr_x, qr_y, id(guesty_wifi_qr), COLOR_ON, qr_scale);
 
             const int details_y = qr_y + qr_size + 17;
@@ -583,12 +602,48 @@ display:
             }
           }
 
-          // Footer
-          it.line(32, 430, 768, 430);
-          it.print(32, 445, id(guesty_font_detail),
+          // Taller footer with one global, borderless logo shared by every
+          // display. The fixed 144x48 canvas contains four packed gray levels.
+          it.line(32, 402, 768, 402);
+          it.print(32, 430, id(guesty_font_detail),
                    id(guesty_checkout_label).c_str());
-          it.print(768, 445, id(guesty_font_detail_bold),
-                   TextAlign::TOP_RIGHT, "Bei Fragen sind wir für dich da.");
+          constexpr int logo_width = 144;
+          constexpr int logo_height = 48;
+          constexpr int logo_x = 624;
+          constexpr int logo_y = 416;
+          constexpr size_t logo_hex_length =
+              logo_width * logo_height / 4 * 2;
+          if (id(guesty_logo_data).size() == logo_hex_length) {
+            const auto hex_value = [](char character) -> uint8_t {
+              if (character >= '0' && character <= '9') {
+                return character - '0';
+              }
+              if (character >= 'a' && character <= 'f') {
+                return character - 'a' + 10;
+              }
+              if (character >= 'A' && character <= 'F') {
+                return character - 'A' + 10;
+              }
+              return 0;
+            };
+            for (int y = 0; y < logo_height; y++) {
+              for (int x = 0; x < logo_width; x++) {
+                const size_t pixel = y * logo_width + x;
+                const size_t byte_index = pixel / 4;
+                const size_t hex_index = byte_index * 2;
+                const uint8_t packed =
+                    (hex_value(id(guesty_logo_data)[hex_index]) << 4)
+                    | hex_value(id(guesty_logo_data)[hex_index + 1]);
+                const uint8_t level =
+                    (packed >> ((3 - (pixel & 0x03)) * 2)) & 0x03;
+                if (level < 3) {
+                  const uint8_t ink = (3 - level) * 85;
+                  it.draw_pixel_at(logo_x + x, logo_y + y,
+                                   Color(ink, ink, ink));
+                }
+              }
+            }
+          }
 
       - id: guesty_idle_page
         lambda: |-
@@ -615,6 +670,16 @@ deep_sleep:
     mode: ANY_LOW
 
 interval:
+  # On battery this runs once during boot before deep sleep. While USB power
+  # keeps the device online, refresh the battery entity every five minutes.
+  - interval: 5min
+    then:
+      - output.turn_on: guesty_battery_enable
+      - delay: 200ms
+      - component.update: guesty_battery_voltage
+      - delay: 20ms
+      - component.update: guesty_battery_level
+      - output.turn_off: guesty_battery_enable
   - interval: 15s
     then:
       - script.execute: guesty_read_external_power

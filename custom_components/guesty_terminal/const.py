@@ -12,12 +12,16 @@ CONF_ENDPOINT_ENTITY = "endpoint_entity"
 CONF_LISTING_ID = "listing_id"
 CONF_WELCOME_TITLE = "welcome_title"
 CONF_WELCOME_TEXT = "welcome_text"
+CONF_DATE_TIME_FORMAT = "date_time_format"
 CONF_LEAD_HOURS = "lead_hours"
 CONF_CLEAR_AFTER_MINUTES = "clear_after_minutes"
 CONF_SHOW_DOOR_CODE = "show_door_code"
 CONF_SHOW_WIFI = "show_wifi"
 CONF_REMOVE_MAPPING = "remove_mapping"
 CONF_POLL_MINUTES = "poll_minutes"
+CONF_LOGO_DATA = "logo_data"
+CONF_LOGO_UPLOAD = "logo_upload"
+CONF_REMOVE_LOGO = "remove_logo"
 CONF_FIRMWARE_DEVICE_NAME = "firmware_device_name"
 CONF_FIRMWARE_FRIENDLY_NAME = "firmware_friendly_name"
 CONF_FIRMWARE_POWER_MODE = "firmware_power_mode"
@@ -30,6 +34,10 @@ DEFAULT_WELCOME_TEXT = (
     "Schön, dass du da bist.\n"
     "Wir wünschen dir einen entspannten und angenehmen Aufenthalt."
 )
+DATE_TIME_FORMAT_EU = "eu"
+DATE_TIME_FORMAT_US = "us"
+DATE_TIME_FORMATS = (DATE_TIME_FORMAT_EU, DATE_TIME_FORMAT_US)
+DEFAULT_DATE_TIME_FORMAT = DATE_TIME_FORMAT_EU
 DEFAULT_LEAD_HOURS = 1
 DEFAULT_CLEAR_AFTER_MINUTES = 30
 DEFAULT_POLL_MINUTES = 5
@@ -46,6 +54,7 @@ ENDPOINT_ORIGINAL_NAME = "GuestyTerminal Endpoint"
 ENDPOINT_ENTITY_SUFFIX = "_guesty_terminal_endpoint"
 DISPLAY_ACTION_SUFFIX = "_guesty_terminal_update_display"
 DISPLAY_ACTION_V2_SUFFIX = "_guesty_terminal_update_display_v2"
+DISPLAY_ACTION_V3_SUFFIX = "_guesty_terminal_update_display_v3"
 
 SERVICE_REFRESH = "refresh"
 SERVICE_FORCE_REDRAW = "force_redraw"

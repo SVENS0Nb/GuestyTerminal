@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 from collections.abc import Callable
@@ -15,8 +16,16 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 
 from .api import GuestyClient
-from .const import CONF_MAPPINGS, DISPLAY_ACTION_SUFFIX, DISPLAY_ACTION_V2_SUFFIX
+from .const import (
+    CONF_LOGO_DATA,
+    CONF_MAPPINGS,
+    DISPLAY_ACTION_SUFFIX,
+    DISPLAY_ACTION_V2_SUFFIX,
+    DISPLAY_ACTION_V3_SUFFIX,
+    MODE_WELCOME,
+)
 from .coordinator import GuestyTerminalCoordinator
+from .logo import logo_fingerprint, valid_logo_data
 from .models import DisplayPayload, Listing
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,6 +39,7 @@ async def async_send_display_payload(
     lock: asyncio.Lock | None = None,
     *,
     force_redraw: bool = False,
+    logo_data: str = "",
 ) -> bool:
     """Send one payload directly to a reachable ESPHome display."""
     endpoint_state = hass.states.get(endpoint_entity)
@@ -41,7 +51,7 @@ async def async_send_display_payload(
 
     action = endpoint_state.state.strip()
     if not _ACTION_PATTERN.fullmatch(action) or not action.endswith(
-        (DISPLAY_ACTION_SUFFIX, DISPLAY_ACTION_V2_SUFFIX)
+        (DISPLAY_ACTION_SUFFIX, DISPLAY_ACTION_V2_SUFFIX, DISPLAY_ACTION_V3_SUFFIX)
     ):
         _LOGGER.warning("Ignoring invalid ESPHome display endpoint %s", action)
         return False
@@ -52,10 +62,24 @@ async def async_send_display_payload(
     send_lock = lock or asyncio.Lock()
     async with send_lock:
         try:
-            include_content_id = action.endswith(DISPLAY_ACTION_V2_SUFFIX)
+            include_content_id = action.endswith(
+                (DISPLAY_ACTION_V2_SUFFIX, DISPLAY_ACTION_V3_SUFFIX)
+            )
             service_data = payload.as_service_data(
                 include_content_id=include_content_id
             )
+            if action.endswith(DISPLAY_ACTION_V3_SUFFIX):
+                active_logo = (
+                    valid_logo_data(logo_data) if payload.mode == MODE_WELCOME else ""
+                )
+                service_data["logo_data"] = active_logo
+                if include_content_id:
+                    visible_id = "\0".join(
+                        (service_data["content_id"], logo_fingerprint(active_logo))
+                    )
+                    service_data["content_id"] = hashlib.sha256(
+                        visible_id.encode("ascii")
+                    ).hexdigest()[:24]
             if force_redraw and include_content_id:
                 # An empty fingerprint is the firmware's explicit one-shot
                 # recovery signal. Normal duplicate suppression remains on.
@@ -89,9 +113,10 @@ async def async_clear_configured_displays(
     if not isinstance(raw_mappings, dict):
         return
     idle = DisplayPayload.idle(Listing("", "Unterkunft"))
+    logo_data = valid_logo_data(entry.options.get(CONF_LOGO_DATA))
     await asyncio.gather(
         *(
-            async_send_display_payload(hass, endpoint, idle)
+            async_send_display_payload(hass, endpoint, idle, logo_data=logo_data)
             for endpoint in raw_mappings
             if isinstance(endpoint, str)
         ),
@@ -257,4 +282,5 @@ class GuestyTerminalRuntime:
             payload,
             lock,
             force_redraw=force_redraw,
+            logo_data=valid_logo_data(self.entry.options.get(CONF_LOGO_DATA)),
         )
