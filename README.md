@@ -141,12 +141,16 @@ Für weitere Displays die Beispieldatei kopieren und einen eindeutigen
 2. Eine PNG- oder JPEG-Datei mit maximal 5 MB auswählen.
 3. Speichern. Die Integration entfernt transparente bzw. weiße Außenflächen,
    skaliert das Logo proportional auf 144 × 48 Pixel und quantisiert es auf die
-   vier E-Paper-Graustufen.
+   vier E-Paper-Graustufen. Das sichtbare Motiv wird innerhalb dieser Fläche
+   rechtsbündig ausgerichtet und endet wie der linke Fußtext mit 32 Pixel
+   Abstand zum Displayrand.
 
 Das Logo wird einmal zentral gespeichert und gilt für alle Display-Zuordnungen.
 Es erscheint ohne Rahmen unten rechts in der höheren Fußleiste. Ersetzen oder
 Entfernen wird nach der einmaligen Firmwareaktualisierung dynamisch an alle
 erreichbaren Displays übertragen und erfordert keine weitere Kompilierung.
+Bereits gespeicherte Logos werden automatisch rechts ausgerichtet; ein erneuter
+Upload ist nicht erforderlich.
 
 ## Listing einem Display zuordnen
 

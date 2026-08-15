@@ -63,7 +63,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.9") == 2
+    assert rendered.count("ref: v0.3.10") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
 

@@ -31,6 +31,35 @@ def _panel_level(gray: int) -> int:
     return 3
 
 
+def _right_align_packed(data: bytes) -> bytes:
+    """Move visible pixels to the right edge of the fixed logo canvas."""
+    rightmost_ink = -1
+    for index in range(LOGO_WIDTH * LOGO_HEIGHT):
+        byte_index = index // LOGO_PIXELS_PER_BYTE
+        shift = (3 - (index % LOGO_PIXELS_PER_BYTE)) * 2
+        if ((data[byte_index] >> shift) & 0x03) < 3:
+            rightmost_ink = max(rightmost_ink, index % LOGO_WIDTH)
+
+    if rightmost_ink < 0 or rightmost_ink == LOGO_WIDTH - 1:
+        return data
+
+    offset = LOGO_WIDTH - 1 - rightmost_ink
+    aligned = bytearray([0xFF] * LOGO_DATA_BYTES)
+    for index in range(LOGO_WIDTH * LOGO_HEIGHT):
+        source_byte = index // LOGO_PIXELS_PER_BYTE
+        source_shift = (3 - (index % LOGO_PIXELS_PER_BYTE)) * 2
+        level = (data[source_byte] >> source_shift) & 0x03
+        if level == 3:
+            continue
+        target = index + offset
+        target_byte = target // LOGO_PIXELS_PER_BYTE
+        target_shift = (3 - (target % LOGO_PIXELS_PER_BYTE)) * 2
+        aligned[target_byte] = (aligned[target_byte] & ~(0x03 << target_shift)) | (
+            level << target_shift
+        )
+    return bytes(aligned)
+
+
 def encode_logo(path: Path) -> str:
     """Return a fixed-size, four-gray, two-bits-per-pixel logo as hex."""
     try:
@@ -61,7 +90,7 @@ def encode_logo(path: Path) -> str:
     canvas = Image.new("L", (LOGO_WIDTH, LOGO_HEIGHT), 255)
     canvas.paste(
         cropped,
-        ((LOGO_WIDTH - cropped.width) // 2, (LOGO_HEIGHT - cropped.height) // 2),
+        (LOGO_WIDTH - cropped.width, (LOGO_HEIGHT - cropped.height) // 2),
     )
 
     packed = bytearray(LOGO_DATA_BYTES)
@@ -85,7 +114,7 @@ def valid_logo_data(value: object) -> str:
     if not isinstance(value, str) or len(value) != LOGO_DATA_HEX_LENGTH:
         return ""
     try:
-        bytes.fromhex(value)
+        data = bytes.fromhex(value)
     except ValueError:
         return ""
-    return value.lower()
+    return _right_align_packed(data).hex()
