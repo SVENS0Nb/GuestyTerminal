@@ -385,16 +385,17 @@ void GuestyEPaperGray4::write_plane_(uint8_t command, uint8_t bit_index) {
       const uint8_t first = source[column * 2U];
       const uint8_t second = source[column * 2U + 1U];
       uint8_t output = 0;
-      // The UC8179 wire representation is inverted: the logical panel level
-      // 0 (black) is transmitted as binary 11, while 3 (white) is 00.
-      output |= (1U - ((first >> (6U + bit_index)) & 0x01U)) << 7U;
-      output |= (1U - ((first >> (4U + bit_index)) & 0x01U)) << 6U;
-      output |= (1U - ((first >> (2U + bit_index)) & 0x01U)) << 5U;
-      output |= (1U - ((first >> bit_index) & 0x01U)) << 4U;
-      output |= (1U - ((second >> (6U + bit_index)) & 0x01U)) << 3U;
-      output |= (1U - ((second >> (4U + bit_index)) & 0x01U)) << 2U;
-      output |= (1U - ((second >> (2U + bit_index)) & 0x01U)) << 1U;
-      output |= 1U - ((second >> bit_index) & 0x01U);
+      // UC8179 DTM1 receives the least-significant level bit and DTM2 the
+      // most-significant bit. Seeed's OTP driver uses the levels directly:
+      // 00=black, 01=dark gray, 10=light gray, 11=white.
+      output |= ((first >> (6U + bit_index)) & 0x01U) << 7U;
+      output |= ((first >> (4U + bit_index)) & 0x01U) << 6U;
+      output |= ((first >> (2U + bit_index)) & 0x01U) << 5U;
+      output |= ((first >> bit_index) & 0x01U) << 4U;
+      output |= ((second >> (6U + bit_index)) & 0x01U) << 3U;
+      output |= ((second >> (4U + bit_index)) & 0x01U) << 2U;
+      output |= ((second >> (2U + bit_index)) & 0x01U) << 1U;
+      output |= (second >> bit_index) & 0x01U;
       row_buffer[column] = output;
     }
     this->write_array(row_buffer, BYTES_PER_ROW);
