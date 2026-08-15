@@ -37,10 +37,16 @@
         }
       },
       "mapping": {
-        "title": "Assign listing and display",
-        "description": "Each ESPHome display can be assigned to one Guesty listing. Repeat this dialog for additional displays.",
+        "title": "Select display mapping",
+        "description": "Choose the display whose listing and welcome text you want to edit.",
         "data": {
-          "endpoint_entity": "reTerminal display",
+          "endpoint_entity": "reTerminal display"
+        }
+      },
+      "mapping_details": {
+        "title": "Edit display mapping",
+        "description": "Existing settings are loaded from the selected display mapping.",
+        "data": {
           "listing_id": "Guesty listing",
           "welcome_title": "Welcome heading",
           "welcome_text": "Welcome text",

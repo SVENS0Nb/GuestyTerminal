@@ -37,10 +37,16 @@
         }
       },
       "mapping": {
-        "title": "Listing und Display zuordnen",
-        "description": "Jedes ESPHome-Display kann genau einem Guesty-Listing zugeordnet werden. Wiederhole diesen Dialog für weitere Displays.",
+        "title": "Display-Zuordnung auswählen",
+        "description": "Wähle das Display aus, dessen Listing und Begrüßung du bearbeiten möchtest.",
         "data": {
-          "endpoint_entity": "reTerminal-Display",
+          "endpoint_entity": "reTerminal-Display"
+        }
+      },
+      "mapping_details": {
+        "title": "Display-Zuordnung bearbeiten",
+        "description": "Vorhandene Einstellungen werden aus der ausgewählten Display-Zuordnung übernommen.",
+        "data": {
           "listing_id": "Guesty-Listing",
           "welcome_title": "Begrüßungsüberschrift",
           "welcome_text": "Begrüßungstext",

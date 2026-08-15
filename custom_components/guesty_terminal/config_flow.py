@@ -202,6 +202,8 @@ class GuestyTerminalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
     """Configure display mappings and refresh behavior."""
 
+    _mapping_endpoint: str | None = None
+
     async def async_step_init(
         self, _user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -258,7 +260,7 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
     async def async_step_mapping(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Add, replace, or remove one listing-to-display mapping."""
+        """Select the display whose mapping should be edited."""
         endpoints = self._endpoint_choices()
         listings = self._listing_choices()
         if not endpoints:
@@ -267,9 +269,53 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
             return self.async_abort(reason="no_listings")
 
         if user_input is not None:
-            endpoint = user_input[CONF_ENDPOINT_ENTITY]
-            options = deepcopy(dict(self.config_entry.options))
-            mappings = deepcopy(options.get(CONF_MAPPINGS, {}))
+            self._mapping_endpoint = user_input[CONF_ENDPOINT_ENTITY]
+            return await self.async_step_mapping_details()
+
+        endpoint_values = {str(choice["value"]) for choice in endpoints}
+        raw_mappings = self.config_entry.options.get(CONF_MAPPINGS, {})
+        mapped_endpoint = (
+            next(
+                (endpoint for endpoint in raw_mappings if endpoint in endpoint_values),
+                None,
+            )
+            if isinstance(raw_mappings, dict)
+            else None
+        )
+        default_endpoint = mapped_endpoint or str(endpoints[0]["value"])
+
+        return self.async_show_form(
+            step_id="mapping",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_ENDPOINT_ENTITY, default=default_endpoint
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=endpoints, mode=SelectSelectorMode.DROPDOWN
+                        )
+                    )
+                }
+            ),
+        )
+
+    async def async_step_mapping_details(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Edit or remove the selected display mapping."""
+        endpoint = self._mapping_endpoint
+        if endpoint is None:
+            return await self.async_step_mapping()
+
+        listings = self._listing_choices()
+        if not listings:
+            return self.async_abort(reason="no_listings")
+
+        options = deepcopy(dict(self.config_entry.options))
+        raw_mappings = options.get(CONF_MAPPINGS, {})
+        mappings = deepcopy(raw_mappings) if isinstance(raw_mappings, dict) else {}
+
+        if user_input is not None:
             if user_input.get(CONF_REMOVE_MAPPING):
                 # Clear reachable E-paper immediately. A short payload lease is
                 # the fallback when the battery display is currently asleep.
@@ -290,28 +336,51 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
             options[CONF_MAPPINGS] = mappings
             return self.async_create_entry(data=options)
 
+        raw_mapping = mappings.get(endpoint)
+        current = (
+            MappingOptions.from_dict(endpoint, raw_mapping)
+            if isinstance(raw_mapping, dict)
+            else None
+        )
+        listing_values = {str(choice["value"]) for choice in listings}
+        listing_field = (
+            vol.Required(CONF_LISTING_ID, default=current.listing_id)
+            if current is not None and current.listing_id in listing_values
+            else vol.Required(CONF_LISTING_ID)
+        )
+
         return self.async_show_form(
-            step_id="mapping",
+            step_id="mapping_details",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_ENDPOINT_ENTITY): SelectSelector(
-                        SelectSelectorConfig(
-                            options=endpoints, mode=SelectSelectorMode.DROPDOWN
-                        )
-                    ),
-                    vol.Required(CONF_LISTING_ID): SelectSelector(
+                    listing_field: SelectSelector(
                         SelectSelectorConfig(
                             options=listings, mode=SelectSelectorMode.DROPDOWN
                         )
                     ),
                     vol.Required(
-                        CONF_WELCOME_TITLE, default=DEFAULT_WELCOME_TITLE
+                        CONF_WELCOME_TITLE,
+                        default=(
+                            current.welcome_title
+                            if current is not None
+                            else DEFAULT_WELCOME_TITLE
+                        ),
                     ): TextSelector(TextSelectorConfig(multiline=False)),
                     vol.Required(
-                        CONF_WELCOME_TEXT, default=DEFAULT_WELCOME_TEXT
+                        CONF_WELCOME_TEXT,
+                        default=(
+                            current.welcome_text
+                            if current is not None
+                            else DEFAULT_WELCOME_TEXT
+                        ),
                     ): TextSelector(TextSelectorConfig(multiline=True)),
                     vol.Required(
-                        CONF_LEAD_HOURS, default=DEFAULT_LEAD_HOURS
+                        CONF_LEAD_HOURS,
+                        default=(
+                            current.lead_hours
+                            if current is not None
+                            else DEFAULT_LEAD_HOURS
+                        ),
                     ): NumberSelector(
                         NumberSelectorConfig(
                             min=0, max=48, step=1, mode=NumberSelectorMode.BOX
@@ -319,14 +388,26 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                     ),
                     vol.Required(
                         CONF_CLEAR_AFTER_MINUTES,
-                        default=DEFAULT_CLEAR_AFTER_MINUTES,
+                        default=(
+                            current.clear_after_minutes
+                            if current is not None
+                            else DEFAULT_CLEAR_AFTER_MINUTES
+                        ),
                     ): NumberSelector(
                         NumberSelectorConfig(
                             min=0, max=120, step=5, mode=NumberSelectorMode.BOX
                         )
                     ),
-                    vol.Required(CONF_SHOW_DOOR_CODE, default=True): BooleanSelector(),
-                    vol.Required(CONF_SHOW_WIFI, default=True): BooleanSelector(),
+                    vol.Required(
+                        CONF_SHOW_DOOR_CODE,
+                        default=(
+                            current.show_door_code if current is not None else True
+                        ),
+                    ): BooleanSelector(),
+                    vol.Required(
+                        CONF_SHOW_WIFI,
+                        default=current.show_wifi if current is not None else True,
+                    ): BooleanSelector(),
                     vol.Optional(CONF_REMOVE_MAPPING, default=False): BooleanSelector(),
                 }
             ),
