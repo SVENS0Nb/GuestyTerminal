@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 #include "esphome/components/display/display_buffer.h"
 #include "esphome/components/spi/spi.h"
 #include "esphome/core/component.h"
@@ -30,6 +32,7 @@ class GuestyEPaperGray4
   static constexpr uint16_t WIDTH = 800;
   static constexpr uint16_t HEIGHT = 480;
   static constexpr uint32_t IDLE_TIMEOUT_MS = 45000;
+  static constexpr size_t PARTIAL_BUFFER_CAPACITY = 2048;
 
   void set_dc_pin(GPIOPin *dc_pin) { this->dc_pin_ = dc_pin; }
   void set_reset_pin(GPIOPin *reset_pin) { this->reset_pin_ = reset_pin; }
@@ -38,7 +41,20 @@ class GuestyEPaperGray4
   void set_data_pin(GPIOPin *data_pin) { this->data_pin_ = data_pin; }
   void set_lut_mode(LutMode lut_mode) { this->configured_lut_mode_ = lut_mode; }
   void set_reset_duration(uint32_t duration) { this->reset_duration_ = duration; }
+  void set_partial_refresh_window(uint16_t x, uint16_t y, uint16_t width,
+                                  uint16_t height) {
+    this->partial_x_ = x;
+    this->partial_y_ = y;
+    this->partial_width_ = width;
+    this->partial_height_ = height;
+    this->partial_refresh_configured_ = true;
+  }
+  void set_max_partial_updates(uint8_t updates) {
+    this->max_partial_updates_ = updates;
+  }
+  void request_partial_update() { this->partial_update_requested_ = true; }
   bool last_update_successful() const { return this->last_update_successful_; }
+  bool last_update_was_partial() const { return this->last_update_was_partial_; }
 
   float get_setup_priority() const override;
   void setup() override;
@@ -68,8 +84,18 @@ class GuestyEPaperGray4
   bool reset_panel_();
   bool select_lut_mode_();
   bool init_gray_mode_();
+  bool init_partial_mode_();
   void write_lut_(uint8_t command, const uint8_t *lut, size_t length);
   void write_plane_(uint8_t command, uint8_t bit_index);
+  void set_partial_ram_area_();
+  void write_partial_bitmap_(uint8_t command, const uint8_t *bitmap);
+  bool refresh_partial_();
+  bool display_partial_(const uint8_t *previous, const uint8_t *current);
+  size_t partial_buffer_length_() const;
+  void extract_partial_bitmap_(uint8_t *destination) const;
+  bool retained_partial_frame_valid_() const;
+  void store_retained_partial_frame_(uint8_t partial_count);
+  void invalidate_retained_partial_frame_();
   void log_frame_levels_();
   bool refresh_();
   bool display_();
@@ -84,6 +110,16 @@ class GuestyEPaperGray4
   bool panel_asleep_{true};
   bool lut_mode_selected_{false};
   bool last_update_successful_{false};
+  bool last_update_was_partial_{false};
+  bool partial_refresh_configured_{false};
+  bool partial_update_requested_{false};
+  uint16_t partial_x_{0};
+  uint16_t partial_y_{0};
+  uint16_t partial_width_{0};
+  uint16_t partial_height_{0};
+  uint8_t max_partial_updates_{5};
+  std::array<uint8_t, PARTIAL_BUFFER_CAPACITY> partial_previous_{};
+  std::array<uint8_t, PARTIAL_BUFFER_CAPACITY> partial_current_{};
   LutMode configured_lut_mode_{LUT_MODE_AUTO};
 };
 

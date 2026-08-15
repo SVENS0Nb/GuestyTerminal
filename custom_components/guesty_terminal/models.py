@@ -506,6 +506,11 @@ class DisplayPayload:
         """Return an opaque stable ID for the visible E-paper contents."""
         return self._content_id(include_weather=True)
 
+    @property
+    def base_content_id(self) -> str:
+        """Return the visible-content ID without the volatile weather block."""
+        return self._content_id(include_weather=False)
+
     def _content_id(self, *, include_weather: bool) -> str:
         """Return a fingerprint compatible with the target renderer version."""
         visible_fields = [

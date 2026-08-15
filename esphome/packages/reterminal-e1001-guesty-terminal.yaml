@@ -76,7 +76,7 @@ api:
             - delay: 1s
             - component.update: guesty_terminal_endpoint
   actions:
-    - action: guesty_terminal_update_display_v5
+    - action: guesty_terminal_update_display_v6
       variables:
         mode: string
         property_name: string
@@ -88,6 +88,8 @@ api:
         checkout_label: string
         valid_until_epoch: int
         content_id: string
+        base_content_id: string
+        force_redraw: bool
         logo_data: string
         booking_summary: string
         weather_condition: string
@@ -95,9 +97,17 @@ api:
       then:
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            id(guesty_content_changed) = content_id.empty()
+            const bool renderer_current = id(guesty_render_revision) == 9;
+            id(guesty_content_changed) = force_redraw || content_id.empty()
                 || content_id != id(guesty_content_id)
-                || id(guesty_render_revision) != 8;
+                || !renderer_current;
+            id(guesty_weather_only_changed) = id(guesty_content_changed)
+                && !force_redraw
+                && renderer_current
+                && !content_id.empty()
+                && !base_content_id.empty()
+                && base_content_id == id(guesty_base_content_id)
+                && mode == "welcome";
             id(guesty_mode) = mode;
             id(guesty_property_name) = property_name;
             id(guesty_welcome_title) = welcome_title;
@@ -115,10 +125,6 @@ api:
                 mode == "welcome" && !wifi_name.empty();
             id(guesty_has_weather) = mode == "welcome"
                 && (!weather_condition.empty() || !weather_temperature.empty());
-
-            if (id(guesty_content_changed)) {
-              id(guesty_content_id) = content_id;
-            }
 
             if (id(guesty_content_changed) && id(guesty_has_wifi)) {
               const auto escape_wifi = [](const std::string &input) {
@@ -153,13 +159,20 @@ api:
                     - display.page.show: guesty_welcome_page
                   else:
                     - display.page.show: guesty_idle_page
+              - lambda: |-
+                  if (id(guesty_weather_only_changed)) {
+                    id(guesty_epaper).request_partial_update();
+                  }
               - component.update: guesty_epaper
               - delay: 7s
               - if:
                   condition:
                     lambda: return id(guesty_epaper).last_update_successful();
                   then:
-                    - lambda: id(guesty_render_revision) = 8;
+                    - lambda: |-
+                        id(guesty_content_id) = content_id;
+                        id(guesty_base_content_id) = base_content_id;
+                        id(guesty_render_revision) = 9;
                     - text_sensor.template.publish:
                         id: guesty_last_booking
                         state: !lambda |-
@@ -233,9 +246,19 @@ globals:
   - id: guesty_content_changed
     type: bool
     initial_value: "true"
+  - id: guesty_weather_only_changed
+    type: bool
+    initial_value: "false"
   # Persist only an opaque, reservation-salted display fingerprint. This lets
   # the device skip identical E-paper refreshes without storing credentials.
   - id: guesty_content_id
+    type: std::string
+    restore_value: true
+    max_restore_data_length: 24
+    initial_value: '""'
+  # The non-weather fingerprint lets a temperature or condition change use a
+  # small differential update even after the ESP32 wakes from deep sleep.
+  - id: guesty_base_content_id
     type: std::string
     restore_value: true
     max_restore_data_length: 24
@@ -247,8 +270,8 @@ globals:
     type: uint32_t
     restore_value: true
     initial_value: "0"
-  # Only privacy state and the opaque fingerprint survive deep sleep. Door and
-  # WiFi credentials deliberately do not get written to flash.
+  # Only privacy state, opaque fingerprints and the monochrome weather window
+  # survive deep sleep. Door and WiFi credentials are never written to flash.
   - id: guesty_valid_until_epoch
     type: uint32_t
     restore_value: true
@@ -302,7 +325,7 @@ font:
     bpp: 4
     glyphsets:
       - GF_Latin_Core
-  - file: "gfonts://Inter@700"
+  - file: "gfonts://Inter@800"
     id: guesty_font_label
     size: 16
     bpp: 4
@@ -338,6 +361,31 @@ font:
     bpp: 4
     glyphsets:
       - GF_Latin_Core
+  # Material Design Icons 7.4.47, the same established pictogram family used
+  # throughout Home Assistant. Only the weather glyphs below are compiled into
+  # the firmware; the complete webfont is never stored on the device.
+  - file:
+      type: web
+      url: "https://raw.githubusercontent.com/Templarian/MaterialDesign-Webfont/v7.4.47/fonts/materialdesignicons-webfont.ttf"
+    id: guesty_font_weather_icon
+    size: 48
+    bpp: 4
+    glyphs:
+      - "\U000F002A" # mdi-alert-outline
+      - "\U000F0590" # mdi-weather-cloudy
+      - "\U000F0591" # mdi-weather-fog
+      - "\U000F0592" # mdi-weather-hail
+      - "\U000F0593" # mdi-weather-lightning
+      - "\U000F0594" # mdi-weather-night
+      - "\U000F0595" # mdi-weather-partly-cloudy
+      - "\U000F0596" # mdi-weather-pouring
+      - "\U000F0597" # mdi-weather-rainy
+      - "\U000F0598" # mdi-weather-snowy
+      - "\U000F0599" # mdi-weather-sunny
+      - "\U000F059D" # mdi-weather-windy
+      - "\U000F059E" # mdi-weather-windy-variant
+      - "\U000F067E" # mdi-weather-lightning-rainy
+      - "\U000F067F" # mdi-weather-snowy-rainy
 
 qr_code:
   - id: guesty_wifi_qr
@@ -448,7 +496,7 @@ text_sensor:
     entity_category: diagnostic
     update_interval: never
     lambda: |-
-      std::string action = "${device_name}_guesty_terminal_update_display_v5";
+      std::string action = "${device_name}_guesty_terminal_update_display_v6";
       for (char &character : action) {
         if (character == '-') character = '_';
       }
@@ -542,6 +590,12 @@ display:
       number: GPIO13
       mode: INPUT_PULLUP
       inverted: false
+    partial_refresh:
+      x: 640
+      y: 8
+      width: 136
+      height: 64
+      max_updates: 5
     update_interval: never
     pages:
       - id: guesty_welcome_page
@@ -614,85 +668,30 @@ display:
                              y + height - radius - 1, radius, light_gray);
           };
 
-          const auto draw_weather_icon = [&](int x, int y,
-                                             const std::string &condition) {
-            const auto draw_sun = [&](int center_x, int center_y) {
-              it.circle(center_x, center_y, 8);
-              it.line(center_x, center_y - 15, center_x, center_y - 11);
-              it.line(center_x, center_y + 11, center_x, center_y + 15);
-              it.line(center_x - 15, center_y, center_x - 11, center_y);
-              it.line(center_x + 11, center_y, center_x + 15, center_y);
-              it.line(center_x - 11, center_y - 11,
-                      center_x - 8, center_y - 8);
-              it.line(center_x + 8, center_y - 8,
-                      center_x + 11, center_y - 11);
-            };
-            const auto draw_cloud = [&](int cloud_x, int cloud_y) {
-              it.circle(cloud_x + 15, cloud_y + 18, 8);
-              it.circle(cloud_x + 27, cloud_y + 13, 11);
-              it.circle(cloud_x + 40, cloud_y + 19, 8);
-              it.line(cloud_x + 7, cloud_y + 19,
-                      cloud_x + 7, cloud_y + 27);
-              it.line(cloud_x + 48, cloud_y + 19,
-                      cloud_x + 48, cloud_y + 27);
-              it.line(cloud_x + 7, cloud_y + 27,
-                      cloud_x + 48, cloud_y + 27);
-            };
-
-            if (condition == "sunny") {
-              draw_sun(x + 23, y + 23);
-              return;
-            }
-            if (condition == "clear-night") {
-              it.filled_circle(x + 23, y + 23, 12);
-              it.filled_circle(x + 29, y + 17, 11, COLOR_OFF);
-              return;
-            }
-            if (condition == "fog") {
-              it.line(x + 2, y + 13, x + 43, y + 13);
-              it.line(x + 8, y + 23, x + 49, y + 23);
-              it.line(x + 2, y + 33, x + 43, y + 33);
-              return;
-            }
-            if (condition == "windy" || condition == "windy-variant") {
-              it.line(x + 2, y + 13, x + 38, y + 13);
-              it.line(x + 8, y + 23, x + 48, y + 23);
-              it.line(x + 2, y + 33, x + 34, y + 33);
-              it.circle(x + 39, y + 9, 4);
-              return;
-            }
-
-            if (condition == "partlycloudy") {
-              draw_sun(x + 17, y + 15);
-            }
-            draw_cloud(x, y + 5);
-            if (condition == "rainy" || condition == "pouring"
-                || condition == "snowy-rainy"
-                || condition == "lightning-rainy") {
-              it.line(x + 14, y + 36, x + 10, y + 44);
-              it.line(x + 27, y + 36, x + 23, y + 44);
-              it.line(x + 40, y + 36, x + 36, y + 44);
-            }
-            if (condition == "snowy" || condition == "snowy-rainy"
-                || condition == "hail") {
-              it.line(x + 13, y + 37, x + 13, y + 45);
-              it.line(x + 9, y + 41, x + 17, y + 41);
-              it.line(x + 35, y + 37, x + 35, y + 45);
-              it.line(x + 31, y + 41, x + 39, y + 41);
-            }
-            if (condition == "lightning"
-                || condition == "lightning-rainy") {
-              it.line(x + 28, y + 34, x + 22, y + 43);
-              it.line(x + 22, y + 43, x + 30, y + 43);
-              it.line(x + 30, y + 43, x + 25, y + 50);
-            }
+          const auto weather_icon = [](const std::string &condition) {
+            if (condition == "sunny") return "\U000F0599";
+            if (condition == "clear-night") return "\U000F0594";
+            if (condition == "fog") return "\U000F0591";
+            if (condition == "hail") return "\U000F0592";
+            if (condition == "lightning") return "\U000F0593";
+            if (condition == "lightning-rainy") return "\U000F067E";
+            if (condition == "partlycloudy") return "\U000F0595";
+            if (condition == "pouring") return "\U000F0596";
+            if (condition == "rainy") return "\U000F0597";
+            if (condition == "snowy") return "\U000F0598";
+            if (condition == "snowy-rainy") return "\U000F067F";
+            if (condition == "windy") return "\U000F059D";
+            if (condition == "windy-variant") return "\U000F059E";
+            if (condition == "exceptional") return "\U000F002A";
+            return "\U000F0590";
           };
 
           // Header
           it.print(32, 24, id(guesty_font_property),
                    id(guesty_property_name).c_str());
           if (id(guesty_has_weather)) {
-            draw_weather_icon(654, 18, id(guesty_weather_condition));
+            it.print(650, 12, id(guesty_font_weather_icon),
+                     weather_icon(id(guesty_weather_condition)));
             it.print(768, 27, id(guesty_font_weather_temperature),
                      TextAlign::TOP_RIGHT,
                      id(guesty_weather_temperature).c_str());
@@ -721,11 +720,11 @@ display:
             draw_rounded_panel(408, 242, 360, 136, 12);
             it.print(432, 260, id(guesty_font_label), "WIFI");
             it.print(432, 304, id(guesty_font_detail_bold), "Name:");
-            it.print(486, 304, id(guesty_font_detail),
+            it.print(491, 304, id(guesty_font_detail),
                      clipped(id(guesty_wifi_name), 15).c_str());
             if (!id(guesty_wifi_password).empty()) {
               it.print(432, 334, id(guesty_font_detail_bold), "Key:");
-              it.print(470, 334, id(guesty_font_detail),
+              it.print(475, 334, id(guesty_font_detail),
                        clipped(id(guesty_wifi_password), 15).c_str());
             }
 
@@ -857,6 +856,7 @@ interval:
                       id(guesty_screen_sensitive) = false;
                       id(guesty_valid_until_epoch) = 0;
                       id(guesty_content_id).clear();
+                      id(guesty_base_content_id).clear();
                   - display.page.show: guesty_idle_page
                   - component.update: guesty_epaper
                   - delay: 7s
@@ -901,6 +901,7 @@ interval:
                 id(guesty_screen_sensitive) = false;
                 id(guesty_valid_until_epoch) = 0;
                 id(guesty_content_id).clear();
+                id(guesty_base_content_id).clear();
             - display.page.show: guesty_idle_page
             - component.update: guesty_epaper
             - delay: 7s

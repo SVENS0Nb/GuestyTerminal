@@ -20,6 +20,39 @@ DEPENDENCIES = ["spi"]
 CONF_CLOCK_PIN = "clock_pin"
 CONF_DATA_PIN = "data_pin"
 CONF_LUT_MODE = "lut_mode"
+CONF_PARTIAL_REFRESH = "partial_refresh"
+CONF_X = "x"
+CONF_Y = "y"
+CONF_WIDTH = "width"
+CONF_HEIGHT = "height"
+CONF_MAX_UPDATES = "max_updates"
+
+
+def _validate_partial_refresh(config):
+    """Keep the retained monochrome window bounded and byte aligned."""
+    if config[CONF_X] + config[CONF_WIDTH] > 800:
+        raise cv.Invalid("partial refresh window exceeds display width")
+    if config[CONF_Y] + config[CONF_HEIGHT] > 480:
+        raise cv.Invalid("partial refresh window exceeds display height")
+    if config[CONF_X] % 8 or config[CONF_WIDTH] % 8:
+        raise cv.Invalid("partial refresh x and width must be multiples of 8")
+    if config[CONF_WIDTH] * config[CONF_HEIGHT] // 8 > 2048:
+        raise cv.Invalid("partial refresh window exceeds the 2048-byte limit")
+    return config
+
+
+PARTIAL_REFRESH_SCHEMA = cv.All(
+    cv.Schema(
+        {
+            cv.Required(CONF_X): cv.int_range(min=0, max=799),
+            cv.Required(CONF_Y): cv.int_range(min=0, max=479),
+            cv.Required(CONF_WIDTH): cv.int_range(min=8, max=800),
+            cv.Required(CONF_HEIGHT): cv.int_range(min=1, max=480),
+            cv.Optional(CONF_MAX_UPDATES, default=5): cv.int_range(min=1, max=20),
+        }
+    ),
+    _validate_partial_refresh,
+)
 
 guesty_epaper_gray4_ns = cg.esphome_ns.namespace("guesty_epaper_gray4")
 GuestyEPaperGray4 = guesty_epaper_gray4_ns.class_(
@@ -45,6 +78,7 @@ CONFIG_SCHEMA = cv.All(
             cv.Required(CONF_CLOCK_PIN): pins.gpio_output_pin_schema,
             cv.Required(CONF_DATA_PIN): pins.gpio_output_pin_schema,
             cv.Optional(CONF_LUT_MODE, default="auto"): cv.enum(LUT_MODES, lower=True),
+            cv.Optional(CONF_PARTIAL_REFRESH): PARTIAL_REFRESH_SCHEMA,
             cv.Optional(CONF_RESET_DURATION): cv.All(
                 cv.positive_time_period_milliseconds,
                 cv.Range(max=core.TimePeriod(milliseconds=500)),
@@ -79,6 +113,17 @@ async def to_code(config):
     data_pin = await cg.gpio_pin_expression(config[CONF_DATA_PIN])
     cg.add(var.set_data_pin(data_pin))
     cg.add(var.set_lut_mode(config[CONF_LUT_MODE]))
+
+    if partial := config.get(CONF_PARTIAL_REFRESH):
+        cg.add(
+            var.set_partial_refresh_window(
+                partial[CONF_X],
+                partial[CONF_Y],
+                partial[CONF_WIDTH],
+                partial[CONF_HEIGHT],
+            )
+        )
+        cg.add(var.set_max_partial_updates(partial[CONF_MAX_UPDATES]))
 
     if CONF_RESET_DURATION in config:
         cg.add(var.set_reset_duration(config[CONF_RESET_DURATION]))

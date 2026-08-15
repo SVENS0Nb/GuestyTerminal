@@ -59,23 +59,25 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert 'friendly_name: "GuestyTerminal Display 2"' in rendered
     assert "power_mode: auto" in rendered
     assert "battery_sleep_duration: 30min" in rendered
+    assert "usb_power_probe_interval" not in rendered
     assert f'key: "{expected_key}"' in rendered
     assert "ssid: !secret wifi_ssid" in rendered
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.12") == 2
+    assert rendered.count("ref: v0.3.13") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
+    assert "guesty_power_wake" not in rendered
 
 
 def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     package = PACKAGE_FILE.read_text(encoding="utf-8")
 
-    assert package.count("bpp: 4") == 10
+    assert package.count("bpp: 4") == 11
     assert "lut_mode: ${gray_lut_mode}" in package
-    assert "id(guesty_render_revision) != 8" in package
-    assert "guesty_terminal_update_display_v5" in package
+    assert "id(guesty_render_revision) == 9" in package
+    assert "guesty_terminal_update_display_v6" in package
     assert '"Bei Fragen sind wir für dich da."' not in package
     assert "id(guesty_logo_data).size() == logo_hex_length" in package
     assert "it.line(32, 402, 768, 402)" in package
@@ -86,13 +88,25 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "draw_rounded_panel(408, 242, 360, 136, 12)" in package
     assert 'id(guesty_font_label), "TÜRCODE"' in package
     assert 'id(guesty_font_label), "WIFI"' in package
+    assert 'file: "gfonts://Inter@800"\n    id: guesty_font_label' in package
     assert 'id(guesty_font_detail_bold), "Name:"' in package
     assert 'id(guesty_font_detail_bold), "Key:"' in package
+    assert "it.print(491, 304, id(guesty_font_detail)," in package
+    assert "it.print(475, 334, id(guesty_font_detail)," in package
     assert "const int qr_modules = id(guesty_wifi_qr).get_size()" in package
     assert "const int qr_margin = (136 - qr_size) / 2" in package
     assert "const int qr_x = 768 - qr_margin - qr_size" in package
-    assert "draw_weather_icon(654, 18" in package
+    assert "MaterialDesign-Webfont/v7.4.47" in package
+    assert "id: guesty_font_weather_icon" in package
+    assert 'return "\\U000F0599"' in package
+    assert "draw_weather_icon" not in package
     assert "id(guesty_font_weather_temperature)" in package
+    assert "base_content_id: string" in package
+    assert "force_redraw: bool" in package
+    assert "id(guesty_weather_only_changed)" in package
+    assert "request_partial_update()" in package
+    assert "partial_refresh:" in package
+    assert "max_updates: 5" in package
     assert "on_client_connected:" in package
     assert 'state: "__guesty_reconnecting__"' in package
     assert "id: guesty_battery_level" in package
@@ -106,6 +120,26 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "name: Angezeigte Buchung" in package
     assert "last_update_successful()" in package
     assert 'state: "Keine aktive Buchung"' in package
+    assert "usb_power_probe_interval" not in package
+    assert "guesty_enter_battery_sleep" not in package
+    assert "guesty_power_wake" not in package
+    assert package.count("deep_sleep.enter: guesty_deep_sleep") == 2
+    assert "sleep_duration: ${battery_sleep_duration}" in package
+    assert "id: guesty_read_external_power" in package
+    assert "id(guesty_external_power).publish_state((status & 0x04) != 0)" in package
+    gray_driver_path = (
+        Path(__file__).parents[1]
+        / "esphome"
+        / "components"
+        / "guesty_epaper_gray4"
+        / "guesty_epaper_gray4.cpp"
+    )
+    gray_driver = gray_driver_path.read_text(encoding="utf-8")
+    assert "RTC_DATA_ATTR static RetainedPartialFrame" in gray_driver
+    assert "display_partial_" in gray_driver
+    assert "retained_partial_frame.partial_count" in gray_driver
+    assert "this->command_(0x90)" in gray_driver
+    assert "this->command_(0x12)" in gray_driver
     driver_path = (
         Path(__file__).parents[1]
         / "esphome"
@@ -178,7 +212,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.12", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.13", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -190,8 +224,9 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.12") == 2
-    assert 'version: "0.3.12"' in updated
+    assert updated.count("ref: v0.3.13") == 2
+    assert 'version: "0.3.13"' in updated
+    assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
     assert user_owned.read_text(encoding="utf-8").startswith("# User-owned")
@@ -207,13 +242,13 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.12", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.13", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.12", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.13", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")

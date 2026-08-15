@@ -182,6 +182,9 @@ Die Wetterauswahl wird ebenfalls pro Display gespeichert. Ist keine Entität
 ausgewählt oder ist sie nicht verfügbar, bleibt der Wetterbereich leer. Die
 Firmware zeigt nur das zum aktuellen Zustand passende Symbol und die gerundete
 Temperatur samt Einheit; eine zusätzliche Beschreibung wird nicht eingeblendet.
+Die Symbole stammen aus dem fest auf Version 7.4.47 gesetzten
+[Material-Design-Icons-Wetterset](https://pictogrammers.com/library/mdi/). In die
+Firmware werden nur die tatsächlich benötigten Wetterglyphen eingebaut.
 
 Verfügbare Platzhalter für Begrüßungen:
 
@@ -207,8 +210,10 @@ Der Standardtitel lautet `Willkommen, {first_name}!`.
   online** ausgewählt werden.
 - Bei angeschlossenem USB-Strom bleibt das Gerät online. Wird der Strom später
   getrennt, wechselt es automatisch beim nächsten 15-Sekunden-Test in den
-  Akkubetrieb. Wird USB während des Deep Sleep angeschlossen, erkennt das Gerät
-  dies beim nächsten regulären Aufwachen und bleibt anschließend online.
+  Akkubetrieb. Im Akkubetrieb schläft es für das konfigurierte Intervall –
+  standardmäßig 30 Minuten – vollständig. Wird währenddessen USB angeschlossen,
+  erkennt das Gerät dies beim nächsten regulären Aufwachen und bleibt danach
+  online.
 - Die grüne Taste kann das Gerät zusätzlich aus dem Deep Sleep wecken.
 - GPIO-Status-LED, Lade-LED-Ausgang, Buzzer und Mikrofon-Stromversorgung werden
   von der Firmware deaktiviert. Nach einem vollständigen stromlosen Neustart
@@ -228,9 +233,16 @@ Der Standardtitel lautet `Willkommen, {first_name}!`.
   Auf dem Gerät bleibt dafür nur eine kryptografische, mit der Reservierungs-ID
   gesalzene Inhalts-ID erhalten; die Zugangsdaten selbst werden nicht dauerhaft
   gespeichert.
-- Änderungen an Wetterzustand oder gerundeter Temperatur gehören zum sichtbaren
-  Inhalt und lösen genau eine Aktualisierung aus. Unveränderte Wetterdaten
-  verursachen kein E-Paper-Blinken.
+- Ändert sich ausschließlich der Wetterzustand oder die gerundete Temperatur,
+  aktualisiert die Firmware nur das 136 × 64 Pixel große Wetterfenster oben
+  rechts. Dieser differentielle Schwarzweiß-Refresh verursacht kein
+  vollständiges Kontrastblinken. Nach fünf aufeinanderfolgenden Teilupdates
+  folgt beim nächsten Wetterwechsel automatisch ein vollständiger
+  Vier-Graustufen-Refresh gegen Ghosting. Änderungen an Buchung, Logo,
+  Zugangsdaten oder Layout werden immer vollständig aktualisiert. Kann ein
+  Teilupdate nicht sicher ausgeführt werden, fällt der Treiber automatisch auf
+  einen vollständigen Refresh zurück. Unveränderte Wetterdaten lösen weiterhin
+  überhaupt keine E-Paper-Aktualisierung aus.
 - Jedes Display stellt in Home Assistant seinen Batteriestand sowie die Buttons
   **Display aktualisieren** und **Neustart** bereit. Der Aktualisieren-Button
   zeichnet das aktuelle Bild bewusst sofort neu. Im Deep Sleep sind die beiden
@@ -273,10 +285,11 @@ installiert ihn beim nächsten Aufwachen. Während des eigentlichen Flashens dar
 das Gerät nicht ausgeschaltet werden. Fortschritt und mögliche Fehler sind im
 ESPHome Device Builder sichtbar.
 
-Das Design mit den zwei grauen Zugangsfeldern und das Wetter-Widget werden auf
-dem E1001 gerendert und benötigen daher einmalig Firmware **0.3.11** oder neuer.
-Die Wetterentität kann danach ohne erneutes Kompilieren in der
-GuestyTerminal-Zuordnung geändert werden.
+Das Design mit den zwei grauen Zugangsfeldern wird auf dem E1001 gerendert und
+benötigt Firmware **0.3.11** oder neuer. Die MDI-Wettersymbole und der hybride
+Teilrefresh benötigen Firmware **0.3.13** oder neuer. Die Wetterentität kann
+danach ohne erneutes Kompilieren in der GuestyTerminal-Zuordnung geändert
+werden.
 
 ## Datenschutz
 
@@ -284,6 +297,11 @@ Die von der Integration angelegten Statussensoren enthalten weder Gastnamen
 noch Tür- oder WiFi-Codes. In den Attributen steht lediglich, ob der aktuelle
 Bildschirm solche Daten enthält. Fehlerprotokolle geben ebenfalls keine
 Zugangsdaten aus.
+
+Für Teilupdates behält der RTC-Speicher ausschließlich ein monochromes Abbild
+des kleinen Wetterfensters und die Anzahl der Teilupdates. Zusätzlich werden
+zwei nicht rückrechenbare Inhaltsfingerabdrücke gespeichert. Buchungsname,
+Türcode und WiFi-Zugangsdaten werden dafür nicht dauerhaft abgelegt.
 
 Die ESPHome-Diagnose-Entität **Angezeigte Buchung** ist hiervon bewusst
 ausgenommen: Sie enthält den Gastnamen sowie Check-in und Check-out zur

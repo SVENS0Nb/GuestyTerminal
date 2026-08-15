@@ -58,6 +58,7 @@ DISPLAY_ACTION_V2_SUFFIX = "_guesty_terminal_update_display_v2"
 DISPLAY_ACTION_V3_SUFFIX = "_guesty_terminal_update_display_v3"
 DISPLAY_ACTION_V4_SUFFIX = "_guesty_terminal_update_display_v4"
 DISPLAY_ACTION_V5_SUFFIX = "_guesty_terminal_update_display_v5"
+DISPLAY_ACTION_V6_SUFFIX = "_guesty_terminal_update_display_v6"
 
 SERVICE_REFRESH = "refresh"
 SERVICE_FORCE_REDRAW = "force_redraw"
