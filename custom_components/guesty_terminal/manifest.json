@@ -1,7 +1,7 @@
 {
   "domain": "guesty_terminal",
   "name": "GuestyTerminal",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "config_flow": true,
   "documentation": "https://github.com/SVENS0Nb/GuestyTerminal",
   "issue_tracker": "https://github.com/SVENS0Nb/GuestyTerminal/issues",

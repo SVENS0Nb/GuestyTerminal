@@ -118,10 +118,13 @@ Beim Build erscheinen Hinweise zu GPIO 3, 19 und 20. Diese Pins stammen aus
 der offiziellen E1001-Hardwarebelegung und sind für dieses Board beabsichtigt.
 
 GuestyTerminal verwendet einen eigenen UC8179-Treiber für die vier nativen
-Graustufen des GDEY075T7-Panels. Schriftdateien werden mit 2 Bit pro Pixel
-gerendert, während QR-Code, Rahmen und Türcode weiterhin satt schwarz bleiben.
-Die Initialisierung und Wellenformtabellen basieren auf dem MIT-lizenzierten
-Gray4-Beispiel von Seeed Studio.
+Graustufen des GDEY075T7-Panels. Schriftdateien werden zunächst mit 4 Bit pro
+Pixel gerastert und anschließend auf die vier Panelstufen quantisiert. QR-Code,
+Rahmen und Türcode bleiben dabei satt schwarz. Der Treiber erkennt automatisch,
+ob die jeweilige Panelrevision Seeeds interne OTP-Graustufenwellenform oder die
+mitgelieferten Custom-LUTs benötigt. Initialisierung, Erkennung und
+Wellenformtabellen basieren auf den MIT-lizenzierten UC8179-Implementierungen
+von Seeed Studio.
 
 Für weitere Displays die Beispieldatei kopieren und einen eindeutigen
 `device_name` verwenden. Alle Geräte verwenden dasselbe Layout-Paket.

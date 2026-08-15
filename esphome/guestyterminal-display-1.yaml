@@ -4,6 +4,7 @@ substitutions:
   power_mode: auto
   battery_sleep_duration: 30min
   awake_duration_seconds: "90"
+  gray_lut_mode: auto
 
 external_components:
   - source:
@@ -20,7 +21,7 @@ esphome:
   friendly_name: ${friendly_name}
   project:
     name: guestyterminal.reterminal-e1001
-    version: "0.3.3"
+    version: "0.3.4"
 
 esp32:
   board: esp32-s3-devkitc-1

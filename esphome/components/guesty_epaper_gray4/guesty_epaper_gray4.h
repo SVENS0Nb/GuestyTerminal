@@ -6,6 +6,12 @@
 
 namespace esphome::guesty_epaper_gray4 {
 
+enum LutMode : uint8_t {
+  LUT_MODE_AUTO = 0,
+  LUT_MODE_CUSTOM,
+  LUT_MODE_OTP,
+};
+
 /**
  * Four-level grayscale driver for the Good Display GDEY075T7 panel used by
  * the Seeed Studio reTerminal E1001.
@@ -28,6 +34,9 @@ class GuestyEPaperGray4
   void set_dc_pin(GPIOPin *dc_pin) { this->dc_pin_ = dc_pin; }
   void set_reset_pin(GPIOPin *reset_pin) { this->reset_pin_ = reset_pin; }
   void set_busy_pin(GPIOPin *busy_pin) { this->busy_pin_ = busy_pin; }
+  void set_clock_pin(GPIOPin *clock_pin) { this->clock_pin_ = clock_pin; }
+  void set_data_pin(GPIOPin *data_pin) { this->data_pin_ = data_pin; }
+  void set_lut_mode(LutMode lut_mode) { this->configured_lut_mode_ = lut_mode; }
   void set_reset_duration(uint32_t duration) { this->reset_duration_ = duration; }
 
   float get_setup_priority() const override;
@@ -55,9 +64,17 @@ class GuestyEPaperGray4
   void end_data_();
   bool wait_until_idle_(const char *phase);
   bool reset_panel_();
-  bool init_gray_mode_();
+  bool select_lut_mode_();
+  bool probe_otp_support_();
+  void gpio_write_command_(uint8_t command);
+  uint8_t gpio_read_byte_();
+  bool read_otp_marker_(uint16_t read_length, uint16_t marker_offset,
+                        uint8_t *marker);
+  bool init_custom_gray_mode_();
+  bool init_otp_gray_mode_();
   void write_lut_(uint8_t command, const uint8_t *lut, size_t length);
   void write_plane_(uint8_t command, uint8_t bit_index);
+  void log_frame_levels_();
   bool refresh_();
   void display_();
   void deep_sleep_panel_();
@@ -65,8 +82,13 @@ class GuestyEPaperGray4
   GPIOPin *dc_pin_{nullptr};
   GPIOPin *reset_pin_{nullptr};
   GPIOPin *busy_pin_{nullptr};
+  GPIOPin *clock_pin_{nullptr};
+  GPIOPin *data_pin_{nullptr};
   uint32_t reset_duration_{10};
   bool panel_asleep_{true};
+  bool lut_mode_selected_{false};
+  LutMode configured_lut_mode_{LUT_MODE_AUTO};
+  LutMode active_lut_mode_{LUT_MODE_CUSTOM};
 };
 
 }  // namespace esphome::guesty_epaper_gray4

@@ -5,6 +5,7 @@ substitutions:
   power_mode: auto
   battery_sleep_duration: 30min
   awake_duration_seconds: "90"
+  gray_lut_mode: auto
 
 psram:
   mode: octal
@@ -75,7 +76,8 @@ api:
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
             id(guesty_content_changed) = content_id.empty()
-                || content_id != id(guesty_content_id);
+                || content_id != id(guesty_content_id)
+                || id(guesty_render_revision) != 2;
             id(guesty_mode) = mode;
             id(guesty_property_name) = property_name;
             id(guesty_welcome_title) = welcome_title;
@@ -128,6 +130,7 @@ api:
                     - display.page.show: guesty_idle_page
               - component.update: guesty_epaper
               - delay: 7s
+              - lambda: id(guesty_render_revision) = 2;
             else:
               # No panel refresh is needed, but restored globals (especially
               # the renewed privacy lease) need one scheduler cycle before
@@ -182,6 +185,13 @@ globals:
     restore_value: true
     max_restore_data_length: 24
     initial_value: '""'
+  # A changed renderer or panel driver must repaint once even when the Guesty
+  # payload itself is identical. Increment the expected value above whenever
+  # the visible rendering pipeline changes.
+  - id: guesty_render_revision
+    type: uint32_t
+    restore_value: true
+    initial_value: "0"
   # Only privacy state and the opaque fingerprint survive deep sleep. Door and
   # WiFi credentials deliberately do not get written to flash.
   - id: guesty_valid_until_epoch
@@ -216,61 +226,61 @@ font:
   - file: "gfonts://Inter@600"
     id: guesty_font_property
     size: 17
-    bpp: 2
+    bpp: 4
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Lora@600"
     id: guesty_font_welcome
     size: 46
-    bpp: 2
+    bpp: 4
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Lora@600"
     id: guesty_font_welcome_small
     size: 36
-    bpp: 2
+    bpp: 4
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@600"
     id: guesty_font_body
     size: 21
-    bpp: 2
+    bpp: 4
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@700"
     id: guesty_font_label
     size: 16
-    bpp: 2
+    bpp: 4
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@700"
     id: guesty_font_door_code
     size: 46
-    bpp: 2
+    bpp: 4
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@700"
     id: guesty_font_door_code_small
     size: 32
-    bpp: 2
+    bpp: 4
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@700"
     id: guesty_font_wifi_heading
     size: 28
-    bpp: 2
+    bpp: 4
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@600"
     id: guesty_font_detail
     size: 16
-    bpp: 2
+    bpp: 4
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@700"
     id: guesty_font_detail_bold
     size: 16
-    bpp: 2
+    bpp: 4
     glyphsets:
       - GF_Latin_Core
 
@@ -281,8 +291,12 @@ qr_code:
 
 spi:
   id: guesty_epaper_spi
-  clk_pin: GPIO7
-  mosi_pin: GPIO9
+  clk_pin:
+    number: GPIO7
+    allow_other_uses: true
+  mosi_pin:
+    number: GPIO9
+    allow_other_uses: true
   miso_pin: GPIO8
 
 i2c:
@@ -432,6 +446,13 @@ time:
 display:
   - platform: guesty_epaper_gray4
     id: guesty_epaper
+    clock_pin:
+      number: GPIO7
+      allow_other_uses: true
+    data_pin:
+      number: GPIO9
+      allow_other_uses: true
+    lut_mode: ${gray_lut_mode}
     cs_pin: GPIO10
     dc_pin: GPIO11
     reset_pin:
