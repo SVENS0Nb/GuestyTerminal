@@ -1,0 +1,3 @@
+refresh:
+  name: Daten aktualisieren
+  description: Lädt Guesty-Daten neu und aktualisiert alle erreichbaren Displays.

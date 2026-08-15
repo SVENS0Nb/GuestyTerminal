@@ -1,0 +1,4 @@
+homeassistant==2026.2.3
+pytest>=8.0
+pytest-cov>=6.0
+ruff>=0.11

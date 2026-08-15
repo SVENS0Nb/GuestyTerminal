@@ -1,0 +1,10 @@
+{
+  "domain": "guesty_terminal",
+  "name": "GuestyTerminal",
+  "version": "0.1.0",
+  "config_flow": true,
+  "documentation": "https://github.com/SVENS0Nb/GuestyTerminal",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "requirements": []
+}

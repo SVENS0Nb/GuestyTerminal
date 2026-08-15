@@ -1,0 +1,212 @@
+"""Tests for the Home Assistant configuration and options flows."""
+
+from __future__ import annotations
+
+import asyncio
+import sys
+from types import SimpleNamespace
+
+from custom_components.guesty_terminal.config_flow import (
+    GuestyTerminalConfigFlow,
+    GuestyTerminalOptionsFlow,
+    _validate_credentials,
+)
+from custom_components.guesty_terminal.const import (
+    CONF_CLEAR_AFTER_MINUTES,
+    CONF_CLIENT_ID,
+    CONF_ENDPOINT_ENTITY,
+    CONF_LEAD_HOURS,
+    CONF_LISTING_ID,
+    CONF_MAPPINGS,
+    CONF_POLL_MINUTES,
+    CONF_REMOVE_MAPPING,
+    CONF_SHOW_DOOR_CODE,
+    CONF_SHOW_WIFI,
+    CONF_WELCOME_TEXT,
+    CONF_WELCOME_TITLE,
+    DATA_PENDING_TOKENS,
+    DOMAIN,
+)
+from custom_components.guesty_terminal.models import Listing
+
+MODULE = sys.modules[GuestyTerminalConfigFlow.__module__]
+
+
+class FakeConfigEntries:
+    def __init__(self, entry=None) -> None:
+        self.entry = entry
+
+    def async_get_known_entry(self, _entry_id):
+        return self.entry
+
+
+def _options_flow(entry):
+    flow = GuestyTerminalOptionsFlow()
+    flow.hass = SimpleNamespace(config_entries=FakeConfigEntries(entry))
+    flow.handler = "entry-1"
+    flow.context = {"source": "user"}
+    return flow
+
+
+def test_validate_credentials_caches_fresh_token(monkeypatch) -> None:
+    class FakeClient:
+        def __init__(self, session, client_id, client_secret, *, token_saver):
+            assert session == "session"
+            assert client_id == "client"
+            assert client_secret == "secret"
+            self.token_saver = token_saver
+
+        async def async_get_listings(self):
+            await self.token_saver({"access_token": "token", "expires_at": 123})
+            return [{"_id": "listing-1"}]
+
+    monkeypatch.setattr(MODULE, "GuestyClient", FakeClient)
+    monkeypatch.setattr(MODULE, "async_get_clientsession", lambda _hass: "session")
+    hass = SimpleNamespace(data={})
+    result = asyncio.run(_validate_credentials(hass, " client ", " secret "))
+    assert result == [{"_id": "listing-1"}]
+    assert hass.data[DOMAIN][DATA_PENDING_TOKENS]["client"]["access_token"] == "token"
+
+
+def test_options_choice_helpers_use_friendly_names(monkeypatch) -> None:
+    entity_entries = {
+        "one": SimpleNamespace(
+            entity_id="sensor.one",
+            original_name="GuestyTerminal Endpoint",
+            device_id="device-1",
+        ),
+        "two": SimpleNamespace(
+            entity_id="sensor.z_guesty_terminal_endpoint",
+            original_name="Other",
+            device_id=None,
+        ),
+        "ignored": SimpleNamespace(
+            entity_id="sensor.unrelated", original_name="Other", device_id=None
+        ),
+    }
+    entity_registry = SimpleNamespace(entities=entity_entries)
+    device_registry = SimpleNamespace(
+        async_get=lambda device_id: SimpleNamespace(
+            name_by_user="Apartment A" if device_id == "device-1" else None,
+            name="Fallback",
+        )
+    )
+    monkeypatch.setattr(MODULE.er, "async_get", lambda _hass: entity_registry)
+    monkeypatch.setattr(MODULE.dr, "async_get", lambda _hass: device_registry)
+
+    coordinator = SimpleNamespace(
+        data=SimpleNamespace(
+            listings={
+                "b": Listing("b", "Zulu"),
+                "a": Listing("a", "Alpha"),
+            }
+        )
+    )
+    entry = SimpleNamespace(
+        options={}, runtime_data=SimpleNamespace(coordinator=coordinator)
+    )
+    flow = _options_flow(entry)
+
+    assert [item["label"] for item in flow._endpoint_choices()] == [
+        "Apartment A",
+        "sensor.z_guesty_terminal_endpoint",
+    ]
+    assert [item["label"] for item in flow._listing_choices()] == ["Alpha", "Zulu"]
+
+    coordinator.data = None
+    assert flow._listing_choices() == []
+
+
+def test_options_mapping_can_add_remove_and_show_forms(monkeypatch) -> None:
+    endpoint = "sensor.one_guesty_terminal_endpoint"
+    coordinator = SimpleNamespace(
+        data=SimpleNamespace(listings={"listing-1": Listing("listing-1", "Loft")})
+    )
+    entry = SimpleNamespace(
+        options={CONF_POLL_MINUTES: 5},
+        runtime_data=SimpleNamespace(coordinator=coordinator),
+    )
+    flow = _options_flow(entry)
+    monkeypatch.setattr(
+        flow,
+        "_endpoint_choices",
+        lambda: [{"value": endpoint, "label": "Display"}],
+    )
+
+    form = asyncio.run(flow.async_step_mapping())
+    assert form["type"] == "form"
+    assert form["step_id"] == "mapping"
+
+    created = asyncio.run(
+        flow.async_step_mapping(
+            {
+                CONF_ENDPOINT_ENTITY: endpoint,
+                CONF_LISTING_ID: "listing-1",
+                CONF_WELCOME_TITLE: "Hallo {first_name}",
+                CONF_WELCOME_TEXT: "Willkommen",
+                CONF_LEAD_HOURS: 6,
+                CONF_CLEAR_AFTER_MINUTES: 30,
+                CONF_SHOW_DOOR_CODE: True,
+                CONF_SHOW_WIFI: False,
+                CONF_REMOVE_MAPPING: False,
+            }
+        )
+    )
+    assert created["data"][CONF_MAPPINGS][endpoint][CONF_LISTING_ID] == "listing-1"
+
+    entry.options = created["data"]
+    removed = asyncio.run(
+        flow.async_step_mapping(
+            {
+                CONF_ENDPOINT_ENTITY: endpoint,
+                CONF_REMOVE_MAPPING: True,
+            }
+        )
+    )
+    assert removed["data"][CONF_MAPPINGS] == {}
+
+    general_form = asyncio.run(flow.async_step_general())
+    assert general_form["type"] == "form"
+    general = asyncio.run(flow.async_step_general({CONF_POLL_MINUTES: 10}))
+    assert general["data"][CONF_POLL_MINUTES] == 10
+    menu = asyncio.run(flow.async_step_init())
+    assert menu["menu_options"] == ("mapping", "general")
+
+
+def test_options_mapping_aborts_without_displays_or_listings(monkeypatch) -> None:
+    coordinator = SimpleNamespace(data=SimpleNamespace(listings={}))
+    entry = SimpleNamespace(
+        options={}, runtime_data=SimpleNamespace(coordinator=coordinator)
+    )
+    flow = _options_flow(entry)
+    monkeypatch.setattr(flow, "_endpoint_choices", lambda: [])
+    assert asyncio.run(flow.async_step_mapping())["reason"] == "no_displays"
+
+    monkeypatch.setattr(
+        flow, "_endpoint_choices", lambda: [{"value": "x", "label": "x"}]
+    )
+    assert asyncio.run(flow.async_step_mapping())["reason"] == "no_listings"
+
+
+def test_user_flow_shows_form_and_aborts_duplicate(monkeypatch) -> None:
+    flow = GuestyTerminalConfigFlow()
+    flow.hass = SimpleNamespace()
+    flow.context = {"source": "user"}
+    monkeypatch.setattr(flow, "_async_current_entries", lambda: [])
+    form = asyncio.run(flow.async_step_user())
+    assert form["type"] == "form"
+
+    monkeypatch.setattr(
+        flow,
+        "_async_current_entries",
+        lambda: [SimpleNamespace(unique_id="existing")],
+    )
+    duplicate = asyncio.run(
+        flow.async_step_user(
+            {CONF_CLIENT_ID: " existing ", "client_secret": " secret "}
+        )
+    )
+    assert duplicate["reason"] == "already_configured"
+    assert isinstance(
+        GuestyTerminalConfigFlow.async_get_options_flow(None), GuestyTerminalOptionsFlow
+    )

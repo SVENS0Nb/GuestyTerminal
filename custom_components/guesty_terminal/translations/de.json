@@ -1,0 +1,69 @@
+{
+  "title": "GuestyTerminal",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Mit Guesty verbinden",
+        "description": "Erstelle die Zugangsdaten in Guesty unter Integrationen > API & Webhooks. Die Zugangsdaten bleiben in Home Assistant und werden nie an das Display übertragen.",
+        "data": {
+          "client_id": "Client-ID",
+          "client_secret": "Client-Secret"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Guesty erneut verbinden",
+        "data": {
+          "client_id": "Client-ID",
+          "client_secret": "Client-Secret"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Guesty ist momentan nicht erreichbar.",
+      "invalid_auth": "Client-ID oder Client-Secret ist ungültig."
+    },
+    "abort": {
+      "already_configured": "Diese Guesty-Anwendung ist bereits eingerichtet."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "GuestyTerminal konfigurieren",
+        "menu_options": {
+          "mapping": "Listing einem Display zuordnen",
+          "general": "Allgemeine Einstellungen"
+        }
+      },
+      "mapping": {
+        "title": "Listing und Display zuordnen",
+        "description": "Jedes ESPHome-Display kann genau einem Guesty-Listing zugeordnet werden. Wiederhole diesen Dialog für weitere Displays.",
+        "data": {
+          "endpoint_entity": "reTerminal-Display",
+          "listing_id": "Guesty-Listing",
+          "welcome_title": "Begrüßungsüberschrift",
+          "welcome_text": "Begrüßungstext",
+          "lead_hours": "Anzeige vor Check-in (Stunden)",
+          "clear_after_minutes": "Nach Check-out weiter anzeigen (Minuten)",
+          "show_door_code": "Keycode anzeigen",
+          "show_wifi": "WiFi und QR-Code anzeigen",
+          "remove_mapping": "Ausgewählte Display-Zuordnung entfernen"
+        },
+        "data_description": {
+          "welcome_title": "Verfügbare Variablen: first_name, property_name, check_in, check_out",
+          "welcome_text": "Zeilenumbrüche werden auf dem Display übernommen."
+        }
+      },
+      "general": {
+        "title": "Allgemeine Einstellungen",
+        "data": {
+          "poll_minutes": "Guesty-Aktualisierung (Minuten)"
+        }
+      }
+    },
+    "abort": {
+      "no_displays": "Kein kompatibles ESPHome-Display gefunden. Flashe zuerst das mitgelieferte E1001-Paket und wecke das Display auf.",
+      "no_listings": "Guesty hat keine aktiven Listings zurückgegeben."
+    }
+  }
+}

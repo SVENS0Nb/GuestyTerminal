@@ -1,0 +1,69 @@
+{
+  "title": "GuestyTerminal",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Guesty",
+        "description": "Create credentials in Guesty under Integrations > API & Webhooks. Credentials remain in Home Assistant and are never sent to the display.",
+        "data": {
+          "client_id": "Client ID",
+          "client_secret": "Client secret"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reconnect Guesty",
+        "data": {
+          "client_id": "Client ID",
+          "client_secret": "Client secret"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Guesty is currently unavailable.",
+      "invalid_auth": "The Client ID or Client secret is invalid."
+    },
+    "abort": {
+      "already_configured": "This Guesty application is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configure GuestyTerminal",
+        "menu_options": {
+          "mapping": "Assign a listing to a display",
+          "general": "General settings"
+        }
+      },
+      "mapping": {
+        "title": "Assign listing and display",
+        "description": "Each ESPHome display can be assigned to one Guesty listing. Repeat this dialog for additional displays.",
+        "data": {
+          "endpoint_entity": "reTerminal display",
+          "listing_id": "Guesty listing",
+          "welcome_title": "Welcome heading",
+          "welcome_text": "Welcome text",
+          "lead_hours": "Show before check-in (hours)",
+          "clear_after_minutes": "Continue after checkout (minutes)",
+          "show_door_code": "Show keycode",
+          "show_wifi": "Show WiFi and QR code",
+          "remove_mapping": "Remove selected display mapping"
+        },
+        "data_description": {
+          "welcome_title": "Available variables: first_name, property_name, check_in, check_out",
+          "welcome_text": "Line breaks are preserved on the display."
+        }
+      },
+      "general": {
+        "title": "General settings",
+        "data": {
+          "poll_minutes": "Guesty refresh interval (minutes)"
+        }
+      }
+    },
+    "abort": {
+      "no_displays": "No compatible ESPHome display was found. Flash the supplied E1001 package and wake the display first.",
+      "no_listings": "Guesty returned no active listings."
+    }
+  }
+}
