@@ -11,6 +11,7 @@ from custom_components.guesty_terminal.models import (
     extract_keycode_direct,
     extract_keycode_from_custom_fields,
     reservation_listing_id,
+    sanitize_door_code,
 )
 
 
@@ -52,6 +53,8 @@ def test_extracts_direct_keycode_variants() -> None:
         )
         == "7788"
     )
+    assert sanitize_door_code("782070#\ufe0f\u20e3\u200b\n") == "782070#"
+    assert extract_keycode_direct({"keycode": "782070#\ufe0f\u20e3"}) == "782070#"
 
 
 def test_resolves_keycode_by_custom_field_definition() -> None:

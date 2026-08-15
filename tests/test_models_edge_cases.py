@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from custom_components.guesty_terminal.models import (
@@ -124,6 +125,51 @@ def test_reservation_parses_dates_times_names_and_invalid_values() -> None:
     assert Reservation.from_api({"checkIn": "invalid"}, listing) is None
 
 
+def test_local_dates_use_listing_defaults_instead_of_misaligned_utc_times() -> None:
+    listing = Listing(
+        "listing-1",
+        "Loft",
+        timezone="Europe/Berlin",
+        default_check_in="14:00",
+        default_check_out="11:00",
+    )
+    reservation = Reservation.from_api(
+        {
+            "id": "res-channel",
+            "listingId": "listing-1",
+            "status": "confirmed",
+            "checkInDateLocalized": "2026-08-14",
+            "checkOutDateLocalized": "2026-08-16",
+            # Some channel/V3 payloads expose floating local timestamps as UTC.
+            # Guest-facing times must come from the localized date semantics.
+            "checkIn": "2026-08-14T12:00:00Z",
+            "checkOut": "2026-08-16T12:00:00Z",
+        },
+        listing,
+    )
+    assert reservation is not None
+    assert reservation.check_in.hour == 14
+    assert reservation.check_out.hour == 11
+
+    planned = Reservation.from_api(
+        {
+            "id": "res-late",
+            "listingId": "listing-1",
+            "status": "confirmed",
+            "checkInDateLocalized": "2026-08-14",
+            "checkOutDateLocalized": "2026-08-16",
+            "plannedArrival": "15:30",
+            "plannedDeparture": "12:15",
+        },
+        listing,
+    )
+    assert planned is not None
+    assert planned.check_in.hour == 15
+    assert planned.check_in.minute == 30
+    assert planned.check_out.hour == 12
+    assert planned.check_out.minute == 15
+
+
 def test_templates_shortening_visibility_and_service_data() -> None:
     listing = Listing(
         "listing-1",
@@ -161,6 +207,12 @@ def test_templates_shortening_visibility_and_service_data() -> None:
     assert len(payload.wifi_name) == 48
     assert len(payload.wifi_password) == 64
     assert payload.as_service_data()["valid_until_epoch"] == payload.valid_until_epoch
+    content_id = payload.content_id
+    assert len(content_id) == 24
+    assert payload.as_service_data(include_content_id=True)["content_id"] == content_id
+    renewed = replace(payload, valid_until_epoch=payload.valid_until_epoch + 60)
+    assert renewed.content_id == content_id
+    assert replace(payload, door_code="different").content_id != content_id
     assert not DisplayPayload.idle(listing).is_expired()
     assert render_template("broken {", {}) == "broken {"
 

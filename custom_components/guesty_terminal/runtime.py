@@ -15,7 +15,7 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 
 from .api import GuestyClient
-from .const import CONF_MAPPINGS, DISPLAY_ACTION_SUFFIX
+from .const import CONF_MAPPINGS, DISPLAY_ACTION_SUFFIX, DISPLAY_ACTION_V2_SUFFIX
 from .coordinator import GuestyTerminalCoordinator
 from .models import DisplayPayload, Listing
 
@@ -39,7 +39,7 @@ async def async_send_display_payload(
 
     action = endpoint_state.state.strip()
     if not _ACTION_PATTERN.fullmatch(action) or not action.endswith(
-        DISPLAY_ACTION_SUFFIX
+        (DISPLAY_ACTION_SUFFIX, DISPLAY_ACTION_V2_SUFFIX)
     ):
         _LOGGER.warning("Ignoring invalid ESPHome display endpoint %s", action)
         return False
@@ -51,7 +51,12 @@ async def async_send_display_payload(
     async with send_lock:
         try:
             await hass.services.async_call(
-                "esphome", action, payload.as_service_data(), blocking=True
+                "esphome",
+                action,
+                payload.as_service_data(
+                    include_content_id=action.endswith(DISPLAY_ACTION_V2_SUFFIX)
+                ),
+                blocking=True,
             )
         except Exception:  # Home Assistant service errors vary by ESPHome version.
             _LOGGER.debug(

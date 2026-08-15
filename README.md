@@ -35,7 +35,8 @@ installiert daraus die Firmware.
    namens `GuestyTerminal Endpoint`.
 4. In den Optionen der Integration wird diese Entität einem Listing zugeordnet.
 5. Wenn das E1001 aufwacht, überträgt Home Assistant die aktuellen Daten über
-   eine ESPHome Native-API-Aktion und das Gerät zeichnet den Bildschirm.
+   eine ESPHome Native-API-Aktion. Das Gerät zeichnet nur dann neu, wenn sich
+   der sichtbare Inhalt tatsächlich geändert hat.
 
 ## Voraussetzungen
 
@@ -165,6 +166,11 @@ Der Standardtitel lautet `Willkommen, {first_name}!`.
   Abruf bis 30 Minuten nach Check-out. Nach dem Entfernen einer Zuordnung oder
   Integration verschwinden die Zugangsdaten dadurch auch dann zeitnah, wenn das
   Display beim Entfernen geschlafen hat.
+- Wiederholte Abgleiche und 30-Minuten-Aufwachzyklen mit identischen Daten
+  lösen keine E-Paper-Aktualisierung und damit auch kein Kontrastblinken aus.
+  Auf dem Gerät bleibt dafür nur eine kryptografische, mit der Reservierungs-ID
+  gesalzene Inhalts-ID erhalten; die Zugangsdaten selbst werden nicht dauerhaft
+  gespeichert.
 - Türcode, WiFi-Name und WiFi-Passwort werden auf dem E1001 nur im RAM gehalten.
 - Der WiFi-QR-Code wird lokal erzeugt. Sonderzeichen werden nach dem WiFi-QR-
   Format maskiert; es wird kein externer QR-Dienst verwendet.

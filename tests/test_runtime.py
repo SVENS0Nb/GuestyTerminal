@@ -20,6 +20,7 @@ from custom_components.guesty_terminal.runtime import (
 
 ENDPOINT = "sensor.guestyterminal_display_1_guesty_terminal_endpoint"
 ACTION = "guestyterminal_display_1_guesty_terminal_update_display"
+ACTION_V2 = "guestyterminal_display_1_guesty_terminal_update_display_v2"
 
 
 class FakeServices:
@@ -29,7 +30,7 @@ class FakeServices:
         self.calls = []
 
     def has_service(self, domain, action):
-        return self.available and domain == "esphome" and action == ACTION
+        return self.available and domain == "esphome" and action in (ACTION, ACTION_V2)
 
     async def async_call(self, domain, action, data, *, blocking):
         self.calls.append((domain, action, data, blocking))
@@ -100,6 +101,14 @@ def test_pushes_valid_payload_and_push_all() -> None:
     hass.services.calls.clear()
     asyncio.run(runtime.async_push_all())
     assert len(hass.services.calls) == 1
+
+
+def test_v2_action_receives_stable_content_id() -> None:
+    runtime, hass, _coordinator = _runtime(state=ACTION_V2)
+    asyncio.run(runtime.async_push_endpoint(ENDPOINT))
+    sent = hass.services.calls[0][2]
+    assert sent["content_id"] == runtime.coordinator.data.payloads[ENDPOINT].content_id
+    assert len(sent["content_id"]) == 24
 
 
 def test_push_ignores_missing_offline_and_invalid_endpoints() -> None:

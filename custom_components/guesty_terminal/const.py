@@ -45,6 +45,7 @@ DEFAULT_FIRMWARE_AWAKE_SECONDS = 90
 ENDPOINT_ORIGINAL_NAME = "GuestyTerminal Endpoint"
 ENDPOINT_ENTITY_SUFFIX = "_guesty_terminal_endpoint"
 DISPLAY_ACTION_SUFFIX = "_guesty_terminal_update_display"
+DISPLAY_ACTION_V2_SUFFIX = "_guesty_terminal_update_display_v2"
 
 SERVICE_REFRESH = "refresh"
 TOKEN_STORE_VERSION = 1

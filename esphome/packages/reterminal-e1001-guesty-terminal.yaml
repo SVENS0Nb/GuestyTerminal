@@ -59,7 +59,7 @@ esphome:
 api:
   reboot_timeout: 0s
   actions:
-    - action: guesty_terminal_update_display
+    - action: guesty_terminal_update_display_v2
       variables:
         mode: string
         property_name: string
@@ -70,9 +70,12 @@ api:
         wifi_password: string
         checkout_label: string
         valid_until_epoch: int
+        content_id: string
       then:
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
+            id(guesty_content_changed) = content_id.empty()
+                || content_id != id(guesty_content_id);
             id(guesty_mode) = mode;
             id(guesty_property_name) = property_name;
             id(guesty_welcome_title) = welcome_title;
@@ -86,7 +89,11 @@ api:
             id(guesty_has_wifi) =
                 mode == "welcome" && !wifi_name.empty();
 
-            if (id(guesty_has_wifi)) {
+            if (id(guesty_content_changed)) {
+              id(guesty_content_id) = content_id;
+            }
+
+            if (id(guesty_content_changed) && id(guesty_has_wifi)) {
               const auto escape_wifi = [](const std::string &input) {
                 std::string escaped;
                 escaped.reserve(input.size() + 8);
@@ -110,13 +117,22 @@ api:
             }
         - if:
             condition:
-              lambda: return mode == "welcome";
+              lambda: return id(guesty_content_changed);
             then:
-              - display.page.show: guesty_welcome_page
+              - if:
+                  condition:
+                    lambda: return mode == "welcome";
+                  then:
+                    - display.page.show: guesty_welcome_page
+                  else:
+                    - display.page.show: guesty_idle_page
+              - component.update: guesty_epaper
+              - delay: 7s
             else:
-              - display.page.show: guesty_idle_page
-        - component.update: guesty_epaper
-        - delay: 7s
+              # No panel refresh is needed, but restored globals (especially
+              # the renewed privacy lease) need one scheduler cycle before
+              # battery mode enters deep sleep.
+              - delay: 1200ms
         - if:
             condition:
               lambda: |-
@@ -156,7 +172,17 @@ globals:
   - id: guesty_has_wifi
     type: bool
     initial_value: "false"
-  # Only the expiry and sensitive-screen flag survive deep sleep. Door and
+  - id: guesty_content_changed
+    type: bool
+    initial_value: "true"
+  # Persist only an opaque, reservation-salted display fingerprint. This lets
+  # the device skip identical E-paper refreshes without storing credentials.
+  - id: guesty_content_id
+    type: std::string
+    restore_value: true
+    max_restore_data_length: 24
+    initial_value: '""'
+  # Only privacy state and the opaque fingerprint survive deep sleep. Door and
   # WiFi credentials deliberately do not get written to flash.
   - id: guesty_valid_until_epoch
     type: uint32_t
@@ -187,29 +213,29 @@ script:
           }
 
 font:
-  - file: "gfonts://Inter@500"
+  - file: "gfonts://Inter@600"
     id: guesty_font_property
-    size: 16
+    size: 17
     glyphsets:
       - GF_Latin_Core
-  - file: "gfonts://Lora@500"
+  - file: "gfonts://Lora@600"
     id: guesty_font_welcome
     size: 46
     glyphsets:
       - GF_Latin_Core
-  - file: "gfonts://Lora@500"
+  - file: "gfonts://Lora@600"
     id: guesty_font_welcome_small
     size: 36
     glyphsets:
       - GF_Latin_Core
-  - file: "gfonts://Inter@400"
+  - file: "gfonts://Inter@600"
     id: guesty_font_body
-    size: 20
+    size: 21
     glyphsets:
       - GF_Latin_Core
-  - file: "gfonts://Inter@500"
+  - file: "gfonts://Inter@700"
     id: guesty_font_label
-    size: 15
+    size: 16
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@700"
@@ -227,14 +253,14 @@ font:
     size: 28
     glyphsets:
       - GF_Latin_Core
-  - file: "gfonts://Inter@400"
+  - file: "gfonts://Inter@600"
     id: guesty_font_detail
-    size: 14
+    size: 16
     glyphsets:
       - GF_Latin_Core
-  - file: "gfonts://Inter@500"
+  - file: "gfonts://Inter@700"
     id: guesty_font_detail_bold
-    size: 14
+    size: 16
     glyphsets:
       - GF_Latin_Core
 
@@ -334,7 +360,7 @@ text_sensor:
     entity_category: diagnostic
     update_interval: never
     lambda: |-
-      std::string action = "${device_name}_guesty_terminal_update_display";
+      std::string action = "${device_name}_guesty_terminal_update_display_v2";
       for (char &character : action) {
         if (character == '-') character = '_';
       }
@@ -578,6 +604,7 @@ interval:
                       id(guesty_has_wifi) = false;
                       id(guesty_screen_sensitive) = false;
                       id(guesty_valid_until_epoch) = 0;
+                      id(guesty_content_id).clear();
                   - display.page.show: guesty_idle_page
                   - component.update: guesty_epaper
                   - delay: 7s
@@ -611,5 +638,6 @@ interval:
                 id(guesty_has_wifi) = false;
                 id(guesty_screen_sensitive) = false;
                 id(guesty_valid_until_epoch) = 0;
+                id(guesty_content_id).clear();
             - display.page.show: guesty_idle_page
             - component.update: guesty_epaper
