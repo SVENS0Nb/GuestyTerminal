@@ -93,7 +93,7 @@ api:
             id(guesty_update_received_this_boot) = true;
             id(guesty_content_changed) = content_id.empty()
                 || content_id != id(guesty_content_id)
-                || id(guesty_render_revision) != 3;
+                || id(guesty_render_revision) != 4;
             id(guesty_mode) = mode;
             id(guesty_property_name) = property_name;
             id(guesty_welcome_title) = welcome_title;
@@ -146,7 +146,7 @@ api:
                     - display.page.show: guesty_idle_page
               - component.update: guesty_epaper
               - delay: 7s
-              - lambda: id(guesty_render_revision) = 3;
+              - lambda: id(guesty_render_revision) = 4;
             else:
               # No panel refresh is needed, but restored globals (especially
               # the renewed privacy lease) need one scheduler cycle before
@@ -476,6 +476,7 @@ display:
       inverted: false
     busy_pin:
       number: GPIO13
+      mode: INPUT_PULLUP
       inverted: false
     update_interval: never
     pages:

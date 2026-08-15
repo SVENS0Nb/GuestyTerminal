@@ -63,7 +63,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.6") == 2
+    assert rendered.count("ref: v0.3.7") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
 
@@ -73,7 +73,7 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
 
     assert package.count("bpp: 4") == 10
     assert "lut_mode: ${gray_lut_mode}" in package
-    assert "id(guesty_render_revision) != 3" in package
+    assert "id(guesty_render_revision) != 4" in package
     assert "on_client_connected:" in package
     assert 'state: "__guesty_reconnecting__"' in package
     driver = (
@@ -86,6 +86,11 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert '"Framebuffer levels:' in driver
     assert "00=black, 01=dark gray, 10=light gray, 11=white" in driver
     assert "1U - ((first >>" not in driver
+    assert "probe_otp_support_" not in driver
+    assert "write_lut_(0x25, LUT_BORDER_GRAY" in driver
+    assert "write_plane_(0x10, 1)" in driver
+    assert "write_plane_(0x13, 0)" in driver
+    assert "Display BUSY never asserted" in driver
 
 
 @pytest.mark.parametrize(
