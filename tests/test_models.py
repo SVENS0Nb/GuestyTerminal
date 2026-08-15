@@ -100,7 +100,7 @@ def test_builds_welcome_payload_inside_lead_window() -> None:
     assert payload.door_code == "4827"
     assert payload.wifi_name == "Guest-WLAN"
     assert payload.wifi_password == "Beispiel-2026"
-    assert payload.checkout_label == "Check-out: 17.08. · 11:00 Uhr"
+    assert payload.checkout_label == "Check-out: 17.08. - 11:00 Uhr"
     assert (
         payload.booking_summary == "Anna Beispiel · 14.08.2026 15:00 – 17.08.2026 11:00"
     )
@@ -124,7 +124,7 @@ def test_uses_per_display_us_date_and_12_hour_time_format() -> None:
 
     assert payload.welcome_title == "Anreise: 08/14/2026 · 3:00 PM"
     assert payload.welcome_text == "Abreise: 08/17/2026 · 11:00 AM"
-    assert payload.checkout_label == "Check-out: 08/17 · 11:00 AM"
+    assert payload.checkout_label == "Check-out: 08/17 - 11:00 AM"
     assert (
         payload.booking_summary
         == "Anna Beispiel · 08/14/2026 3:00 PM – 08/17/2026 11:00 AM"
@@ -134,11 +134,45 @@ def test_uses_per_display_us_date_and_12_hour_time_format() -> None:
 def test_older_mapping_defaults_to_eu_date_and_time_format() -> None:
     mapping = MappingOptions.from_dict("sensor.display", {"listing_id": "listing-1"})
     assert mapping.date_time_format == "eu"
+    assert mapping.weather_entity == ""
 
     invalid = MappingOptions.from_dict(
         "sensor.display", {"listing_id": "listing-1", "date_time_format": "other"}
     )
     assert invalid.date_time_format == "eu"
+
+
+def test_builds_weather_fields_into_visible_content() -> None:
+    options = MappingOptions(
+        endpoint_entity="sensor.display_guesty_terminal_endpoint",
+        listing_id="listing-1",
+        weather_entity="weather.home",
+    )
+    payload = build_display_payload(
+        _listing(),
+        [_reservation()],
+        options,
+        now=datetime(2026, 8, 14, 12, 0, tzinfo=UTC),
+        weather_condition="PartlyCloudy",
+        weather_temperature="18 °C",
+    )
+
+    assert payload.weather_condition == "partlycloudy"
+    assert payload.weather_temperature == "18 °C"
+    assert payload.as_service_data(include_weather=True)["weather_condition"] == (
+        "partlycloudy"
+    )
+    assert (
+        payload.as_service_data(include_content_id=True, include_weather=True)[
+            "content_id"
+        ]
+        == payload.content_id
+    )
+    assert (
+        payload.as_service_data(include_content_id=True)["content_id"]
+        != payload.content_id
+    )
+    assert "weather_condition" not in payload.as_service_data()
 
 
 def test_uses_idle_payload_before_lead_window() -> None:

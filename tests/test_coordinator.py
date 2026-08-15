@@ -13,7 +13,7 @@ from custom_components.guesty_terminal.api import (
     GuestyAuthenticationError,
     GuestyError,
 )
-from custom_components.guesty_terminal.const import CONF_MAPPINGS
+from custom_components.guesty_terminal.const import CONF_MAPPINGS, CONF_WEATHER_ENTITY
 from custom_components.guesty_terminal.coordinator import GuestyTerminalCoordinator
 
 
@@ -77,8 +77,22 @@ class FakeClient:
         return self.account
 
 
-def _coordinator(options=None, client=None) -> GuestyTerminalCoordinator:
+class FakeStates:
+    def __init__(self, states=None) -> None:
+        self.states = states or {}
+
+    def get(self, entity_id):
+        return self.states.get(entity_id)
+
+
+def _coordinator(
+    options=None, client=None, *, states=None
+) -> GuestyTerminalCoordinator:
     coordinator = object.__new__(GuestyTerminalCoordinator)
+    coordinator.hass = SimpleNamespace(
+        states=FakeStates(states),
+        config=SimpleNamespace(units=SimpleNamespace(temperature_unit="°C")),
+    )
     coordinator.entry = SimpleNamespace(options=options or {})
     coordinator.client = client or FakeClient()
     coordinator._keycode_cache = {}
@@ -118,6 +132,35 @@ def test_mapping_options_ignores_invalid_records() -> None:
 
     coordinator.entry.options = {CONF_MAPPINGS: []}
     assert coordinator.mapping_options() == []
+
+
+def test_weather_values_round_temperature_and_tolerate_invalid_states() -> None:
+    mapping = _mapping()
+    mapping[CONF_WEATHER_ENTITY] = "weather.home"
+    coordinator = _coordinator(
+        {CONF_MAPPINGS: {"sensor.display": mapping}},
+        states={
+            "weather.home": SimpleNamespace(
+                state="partlycloudy",
+                attributes={"temperature": 18.4, "temperature_unit": "°C"},
+            )
+        },
+    )
+    options = coordinator.mapping_options()[0]
+    assert coordinator._weather_values(options) == ("partlycloudy", "18 °C")
+
+    coordinator.hass.states.states["weather.home"] = SimpleNamespace(
+        state="sunny", attributes={"temperature": "invalid"}
+    )
+    assert coordinator._weather_values(options) == ("sunny", "")
+
+    coordinator.hass.states.states["weather.home"] = SimpleNamespace(
+        state="unavailable", attributes={}
+    )
+    assert coordinator._weather_values(options) == ("", "")
+    assert coordinator._weather_values(
+        coordinator.mapping_options()[0].__class__("sensor.display", "listing-1")
+    ) == ("", "")
 
 
 def test_keycode_resolution_uses_direct_values_and_cache() -> None:
@@ -218,9 +261,17 @@ def test_update_builds_payload_and_fetches_missing_listing_details() -> None:
         },
     ]
     client.guests["guest-1"] = {"firstName": "Anna"}
+    mapping = _mapping()
+    mapping[CONF_WEATHER_ENTITY] = "weather.home"
     coordinator = _coordinator(
-        {CONF_MAPPINGS: {endpoint: _mapping()}},
+        {CONF_MAPPINGS: {endpoint: mapping}},
         client,
+        states={
+            "weather.home": SimpleNamespace(
+                state="sunny",
+                attributes={"temperature": 21.6, "temperature_unit": "°C"},
+            )
+        },
     )
 
     data = asyncio.run(coordinator._async_update_data())
@@ -231,6 +282,8 @@ def test_update_builds_payload_and_fetches_missing_listing_details() -> None:
     assert len(data.reservations) == 1
     assert data.payloads[endpoint].door_code == "4827"
     assert data.payloads[endpoint].welcome_title == "Hallo Anna"
+    assert data.payloads[endpoint].weather_condition == "sunny"
+    assert data.payloads[endpoint].weather_temperature == "22 °C"
     assert client.guest_calls == ["guest-1"]
 
 

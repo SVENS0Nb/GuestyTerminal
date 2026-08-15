@@ -44,8 +44,10 @@ def test_status_sensor_reports_only_non_sensitive_diagnostics() -> None:
         "top-secret",
         "Check-out morgen",
         123456,
+        weather_condition="sunny",
+        weather_temperature="18 °C",
     )
-    mapping = MappingOptions(ENDPOINT, "listing-1")
+    mapping = MappingOptions(ENDPOINT, "listing-1", weather_entity="weather.home")
     coordinator = FakeCoordinator(
         SimpleNamespace(payloads={ENDPOINT: payload}, listings={"listing-1": listing}),
         [mapping],
@@ -57,6 +59,8 @@ def test_status_sensor_reports_only_non_sensitive_diagnostics() -> None:
     assert attributes["listing_name"] == "Loft"
     assert attributes["contains_door_code"] is True
     assert attributes["contains_wifi"] is True
+    assert attributes["weather_entity"] == "weather.home"
+    assert attributes["contains_weather"] is True
     assert attributes["valid_until_epoch"] == 123456
     assert "top-secret" not in repr(attributes)
     assert sensor.unique_id.startswith("guesty_terminal_")

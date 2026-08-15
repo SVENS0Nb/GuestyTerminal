@@ -8,6 +8,8 @@ from PIL import Image, ImageDraw
 from custom_components.guesty_terminal.logo import (
     LOGO_DATA_BYTES,
     LOGO_DATA_HEX_LENGTH,
+    LOGO_HEIGHT,
+    LOGO_WIDTH,
     LogoError,
     encode_logo,
     logo_fingerprint,
@@ -23,6 +25,17 @@ def _write_logo(path: Path) -> None:
     image.save(path)
 
 
+def _ink_bounds(encoded: str) -> tuple[int, int] | None:
+    packed = bytes.fromhex(encoded)
+    columns: list[int] = []
+    for index in range(LOGO_WIDTH * LOGO_HEIGHT):
+        byte_index = index // 4
+        shift = (3 - (index % 4)) * 2
+        if ((packed[byte_index] >> shift) & 0x03) < 3:
+            columns.append(index % LOGO_WIDTH)
+    return (min(columns), max(columns)) if columns else None
+
+
 def test_logo_is_cropped_scaled_and_packed_into_four_gray_data(tmp_path) -> None:
     path = tmp_path / "logo.png"
     _write_logo(path)
@@ -33,8 +46,21 @@ def test_logo_is_cropped_scaled_and_packed_into_four_gray_data(tmp_path) -> None
     assert len(bytes.fromhex(encoded)) == LOGO_DATA_BYTES
     assert encoded != "ff" * LOGO_DATA_BYTES
     assert valid_logo_data(encoded.upper()) == encoded
+    assert _ink_bounds(encoded)[1] == LOGO_WIDTH - 1
     assert len(logo_fingerprint(encoded)) == 16
     assert logo_fingerprint(encoded) == logo_fingerprint(encoded)
+
+
+def test_existing_centered_logo_is_right_aligned_without_reupload() -> None:
+    legacy = bytearray([0xFF] * LOGO_DATA_BYTES)
+    pixel = 20
+    byte_index = pixel // 4
+    shift = (3 - (pixel % 4)) * 2
+    legacy[byte_index] &= ~(0x03 << shift)
+
+    aligned = valid_logo_data(legacy.hex())
+
+    assert _ink_bounds(aligned) == (LOGO_WIDTH - 1, LOGO_WIDTH - 1)
 
 
 def test_logo_rejects_blank_unreadable_and_invalid_stored_data(tmp_path) -> None:

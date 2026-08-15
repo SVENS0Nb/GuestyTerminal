@@ -33,6 +33,7 @@ from custom_components.guesty_terminal.const import (
     CONF_REMOVE_MAPPING,
     CONF_SHOW_DOOR_CODE,
     CONF_SHOW_WIFI,
+    CONF_WEATHER_ENTITY,
     CONF_WELCOME_TEXT,
     CONF_WELCOME_TITLE,
     DATA_PENDING_TOKENS,
@@ -175,11 +176,15 @@ def test_options_mapping_can_add_remove_and_show_forms(monkeypatch) -> None:
                 CONF_CLEAR_AFTER_MINUTES: 30,
                 CONF_SHOW_DOOR_CODE: True,
                 CONF_SHOW_WIFI: False,
+                CONF_WEATHER_ENTITY: "weather.home",
                 CONF_REMOVE_MAPPING: False,
             }
         )
     )
     assert created["data"][CONF_MAPPINGS][endpoint][CONF_LISTING_ID] == "listing-1"
+    assert (
+        created["data"][CONF_MAPPINGS][endpoint][CONF_WEATHER_ENTITY] == "weather.home"
+    )
 
     entry.options = created["data"]
     removed = asyncio.run(
@@ -233,6 +238,7 @@ def test_options_mapping_remembers_each_configured_display(monkeypatch) -> None:
                     CONF_CLEAR_AFTER_MINUTES: 35,
                     CONF_SHOW_DOOR_CODE: True,
                     CONF_SHOW_WIFI: False,
+                    CONF_WEATHER_ENTITY: "weather.loft",
                 },
                 endpoints[1]: {
                     CONF_LISTING_ID: "listing-2",
@@ -243,6 +249,7 @@ def test_options_mapping_remembers_each_configured_display(monkeypatch) -> None:
                     CONF_CLEAR_AFTER_MINUTES: 45,
                     CONF_SHOW_DOOR_CODE: False,
                     CONF_SHOW_WIFI: True,
+                    CONF_WEATHER_ENTITY: "weather.garden",
                 },
             }
         },
@@ -273,6 +280,7 @@ def test_options_mapping_remembers_each_configured_display(monkeypatch) -> None:
     assert first[CONF_CLEAR_AFTER_MINUTES] == 35
     assert first[CONF_SHOW_DOOR_CODE] is True
     assert first[CONF_SHOW_WIFI] is False
+    assert first[CONF_WEATHER_ENTITY] == "weather.loft"
 
     second_form = asyncio.run(
         flow.async_step_mapping({CONF_ENDPOINT_ENTITY: endpoints[1]})
@@ -286,6 +294,7 @@ def test_options_mapping_remembers_each_configured_display(monkeypatch) -> None:
     assert second[CONF_CLEAR_AFTER_MINUTES] == 45
     assert second[CONF_SHOW_DOOR_CODE] is False
     assert second[CONF_SHOW_WIFI] is True
+    assert second[CONF_WEATHER_ENTITY] == "weather.garden"
 
 
 def test_general_options_upload_and_remove_one_global_logo(

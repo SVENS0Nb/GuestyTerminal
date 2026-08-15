@@ -14,6 +14,10 @@ aktuellen Reservierung auf einem Seeed Studio reTerminal E1001 an:
 - lokal erzeugter, direkt verbindender WiFi-QR-Code;
 - Check-out-Zeit;
 - pro Display wählbares EU- oder US-Datums- und Zeitformat;
+- optionales Wettersymbol mit gerundeter Außentemperatur aus einer pro Display
+  wählbaren Home-Assistant-Wetterentität;
+- einheitliches Design mit zwei gleich großen, hellgrauen Feldern für Türcode
+  und WiFi;
 - höhere, aufgeräumte Fußleiste mit optionalem globalem Unterkunftslogo;
 - vier echte Graustufen für geglättete, besser lesbare Schriftkanten;
 - automatische neutrale Seite 30 Minuten nach Check-out oder bei Stornierung;
@@ -40,7 +44,8 @@ installiert daraus die Firmware.
 5. Wenn das E1001 aufwacht, überträgt Home Assistant die aktuellen Daten über
    eine ESPHome Native-API-Aktion. Dazu gehört auch das einmal zentral gewählte
    Logo. Das Gerät zeichnet nur dann neu, wenn sich der sichtbare Inhalt
-   tatsächlich geändert hat.
+   tatsächlich geändert hat. Wetterwerte werden auf ganze Grad gerundet, damit
+   kleine Sensorschwankungen keine unnötigen E-Paper-Aktualisierungen auslösen.
 
 ## Voraussetzungen
 
@@ -122,8 +127,8 @@ der offiziellen E1001-Hardwarebelegung und sind für dieses Board beabsichtigt.
 
 GuestyTerminal verwendet einen eigenen UC8179-Treiber für die vier nativen
 Graustufen des GDEY075T7-Panels. Schriftdateien werden zunächst mit 4 Bit pro
-Pixel gerastert und anschließend auf die vier Panelstufen quantisiert. QR-Code,
-QR-Code und Türcode bleiben dabei satt schwarz und werden ohne sichtbare
+Pixel gerastert und anschließend auf die vier Panelstufen quantisiert. QR-Code
+und Türcode bleiben dabei satt schwarz und werden ohne sichtbare
 Umrandung gezeichnet. Da das Panel im OTP nur eine
 Schwarz-Weiß-Wellenform enthält, verwendet der Treiber für vier Graustufen
 ausschließlich die erprobten Register-LUTs und die Initialisierungsfolge aus
@@ -141,12 +146,16 @@ Für weitere Displays die Beispieldatei kopieren und einen eindeutigen
 2. Eine PNG- oder JPEG-Datei mit maximal 5 MB auswählen.
 3. Speichern. Die Integration entfernt transparente bzw. weiße Außenflächen,
    skaliert das Logo proportional auf 144 × 48 Pixel und quantisiert es auf die
-   vier E-Paper-Graustufen.
+   vier E-Paper-Graustufen. Das sichtbare Motiv wird innerhalb dieser Fläche
+   rechtsbündig ausgerichtet und endet wie der linke Fußtext mit 32 Pixel
+   Abstand zum Displayrand.
 
 Das Logo wird einmal zentral gespeichert und gilt für alle Display-Zuordnungen.
 Es erscheint ohne Rahmen unten rechts in der höheren Fußleiste. Ersetzen oder
 Entfernen wird nach der einmaligen Firmwareaktualisierung dynamisch an alle
 erreichbaren Displays übertragen und erfordert keine weitere Kompilierung.
+Bereits gespeicherte Logos werden automatisch rechts ausgerichtet; ein erneuter
+Upload ist nicht erforderlich.
 
 ## Listing einem Display zuordnen
 
@@ -158,12 +167,19 @@ erreichbaren Displays übertragen und erfordert keine weitere Kompilierung.
 4. Zuerst das reTerminal auswählen. Anschließend werden dessen bereits
    gespeichertes Listing, Begrüßung und Anzeigezeitraum geladen und können
    bearbeitet werden.
-5. Für jedes weitere Display wiederholen.
+5. Optional eine Home-Assistant-`weather`-Entität für Wettersymbol und
+   Außentemperatur auswählen.
+6. Für jedes weitere Display wiederholen.
 
 Das Datums- und Zeitformat wird pro Display gespeichert. **EU** verwendet
 beispielsweise `17.08.2026 · 14:00 Uhr`, **US** dagegen
 `08/17/2026 · 2:00 PM`. Die Auswahl gilt auch für die Platzhalter `check_in`
 und `check_out`.
+
+Die Wetterauswahl wird ebenfalls pro Display gespeichert. Ist keine Entität
+ausgewählt oder ist sie nicht verfügbar, bleibt der Wetterbereich leer. Die
+Firmware zeigt nur das zum aktuellen Zustand passende Symbol und die gerundete
+Temperatur samt Einheit; eine zusätzliche Beschreibung wird nicht eingeblendet.
 
 Verfügbare Platzhalter für Begrüßungen:
 
@@ -210,6 +226,9 @@ Der Standardtitel lautet `Willkommen, {first_name}!`.
   Auf dem Gerät bleibt dafür nur eine kryptografische, mit der Reservierungs-ID
   gesalzene Inhalts-ID erhalten; die Zugangsdaten selbst werden nicht dauerhaft
   gespeichert.
+- Änderungen an Wetterzustand oder gerundeter Temperatur gehören zum sichtbaren
+  Inhalt und lösen genau eine Aktualisierung aus. Unveränderte Wetterdaten
+  verursachen kein E-Paper-Blinken.
 - Jedes Display stellt in Home Assistant seinen Batteriestand sowie die Buttons
   **Display aktualisieren** und **Neustart** bereit. Der Aktualisieren-Button
   zeichnet das aktuelle Bild bewusst sofort neu. Im Deep Sleep sind die beiden
@@ -243,6 +262,11 @@ Für eine OTA-Firmwareaktualisierung im Modus **Automatisch** das E1001 an USB
 anschließen und spätestens beim nächsten Aufwachzyklus im ESPHome Device Builder
 installieren. Nach der USB-Erkennung bleibt es online, bis das Kabel entfernt
 wird.
+
+Das Design mit den zwei grauen Zugangsfeldern und das Wetter-Widget werden auf
+dem E1001 gerendert und benötigen daher einmalig Firmware **0.3.11** oder neuer.
+Die Wetterentität kann danach ohne erneutes Kompilieren in der
+GuestyTerminal-Zuordnung geändert werden.
 
 ## Datenschutz
 

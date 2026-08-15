@@ -55,11 +55,13 @@
           "clear_after_minutes": "Nach Check-out weiter anzeigen (Minuten)",
           "show_door_code": "Keycode anzeigen",
           "show_wifi": "WiFi und QR-Code anzeigen",
+          "weather_entity": "Wetterentität für Außentemperatur",
           "remove_mapping": "Ausgewählte Display-Zuordnung entfernen"
         },
         "data_description": {
           "welcome_title": "Verfügbare Variablen: first_name, property_name, check_in, check_out",
-          "welcome_text": "Zeilenumbrüche werden auf dem Display übernommen."
+          "welcome_text": "Zeilenumbrüche werden auf dem Display übernommen.",
+          "weather_entity": "Optional. Zeigt oben rechts das aktuelle Wettersymbol und die gerundete Außentemperatur dieser Home-Assistant-Wetterentität."
         }
       },
       "general": {

@@ -15,6 +15,8 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     BooleanSelector,
+    EntitySelector,
+    EntitySelectorConfig,
     FileSelector,
     FileSelectorConfig,
     NumberSelector,
@@ -52,6 +54,7 @@ from .const import (
     CONF_REMOVE_MAPPING,
     CONF_SHOW_DOOR_CODE,
     CONF_SHOW_WIFI,
+    CONF_WEATHER_ENTITY,
     CONF_WELCOME_TEXT,
     CONF_WELCOME_TITLE,
     DATA_PENDING_TOKENS,
@@ -343,6 +346,7 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                     clear_after_minutes=int(user_input[CONF_CLEAR_AFTER_MINUTES]),
                     show_door_code=bool(user_input[CONF_SHOW_DOOR_CODE]),
                     show_wifi=bool(user_input[CONF_SHOW_WIFI]),
+                    weather_entity=str(user_input.get(CONF_WEATHER_ENTITY, "")).strip(),
                 )
                 mappings[endpoint] = mapping.as_dict()
             options[CONF_MAPPINGS] = mappings
@@ -359,6 +363,11 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
             vol.Required(CONF_LISTING_ID, default=current.listing_id)
             if current is not None and current.listing_id in listing_values
             else vol.Required(CONF_LISTING_ID)
+        )
+        weather_field = (
+            vol.Optional(CONF_WEATHER_ENTITY, default=current.weather_entity)
+            if current is not None and current.weather_entity
+            else vol.Optional(CONF_WEATHER_ENTITY)
         )
 
         return self.async_show_form(
@@ -442,6 +451,9 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                         CONF_SHOW_WIFI,
                         default=current.show_wifi if current is not None else True,
                     ): BooleanSelector(),
+                    weather_field: EntitySelector(
+                        EntitySelectorConfig(domain="weather")
+                    ),
                     vol.Optional(CONF_REMOVE_MAPPING, default=False): BooleanSelector(),
                 }
             ),
