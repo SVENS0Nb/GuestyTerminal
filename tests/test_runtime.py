@@ -24,6 +24,7 @@ ACTION = "guestyterminal_display_1_guesty_terminal_update_display"
 ACTION_V2 = "guestyterminal_display_1_guesty_terminal_update_display_v2"
 ACTION_V3 = "guestyterminal_display_1_guesty_terminal_update_display_v3"
 ACTION_V4 = "guestyterminal_display_1_guesty_terminal_update_display_v4"
+ACTION_V5 = "guestyterminal_display_1_guesty_terminal_update_display_v5"
 
 
 class FakeServices:
@@ -42,6 +43,7 @@ class FakeServices:
                 ACTION_V2,
                 ACTION_V3,
                 ACTION_V4,
+                ACTION_V5,
             )
         )
 
@@ -174,6 +176,33 @@ def test_v4_action_receives_confirmed_booking_summary() -> None:
     asyncio.run(runtime.async_push_endpoint(ENDPOINT))
 
     sent = hass.services.calls[0][2]
+    assert sent["booking_summary"] == welcome.booking_summary
+    assert len(sent["content_id"]) == 24
+    assert sent["logo_data"] == ""
+
+
+def test_v5_action_receives_weather_and_booking_data() -> None:
+    welcome = DisplayPayload(
+        mode="welcome",
+        property_name="LOFT",
+        welcome_title="Hallo Anna",
+        welcome_text="Willkommen",
+        door_code="4827",
+        wifi_name="WiFi",
+        wifi_password="secret",
+        checkout_label="morgen",
+        valid_until_epoch=int(datetime(2100, 1, 1, tzinfo=UTC).timestamp()),
+        weather_condition="partlycloudy",
+        weather_temperature="18 °C",
+        booking_summary="Anna Beispiel · 14.08.2026 15:00 – 17.08.2026 11:00",
+    )
+    runtime, hass, _coordinator = _runtime(state=ACTION_V5, payload=welcome)
+
+    asyncio.run(runtime.async_push_endpoint(ENDPOINT))
+
+    sent = hass.services.calls[0][2]
+    assert sent["weather_condition"] == "partlycloudy"
+    assert sent["weather_temperature"] == "18 °C"
     assert sent["booking_summary"] == welcome.booking_summary
     assert len(sent["content_id"]) == 24
     assert sent["logo_data"] == ""

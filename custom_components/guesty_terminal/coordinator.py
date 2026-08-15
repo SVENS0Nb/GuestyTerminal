@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import logging
+import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -85,6 +88,35 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
             if mapping.endpoint_entity and mapping.listing_id:
                 mappings.append(mapping)
         return mappings
+
+    def _weather_values(self, mapping: MappingOptions) -> tuple[str, str]:
+        """Return a compact weather condition and rounded outdoor temperature."""
+        if not mapping.weather_entity:
+            return "", ""
+        state = self.hass.states.get(mapping.weather_entity)
+        if state is None or state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+            return "", ""
+
+        condition = str(state.state).strip().lower().replace("_", "-")
+        attributes = getattr(state, "attributes", {})
+        if not isinstance(attributes, Mapping):
+            return condition, ""
+        temperature = attributes.get("temperature")
+        try:
+            numeric_temperature = float(temperature)
+        except (TypeError, ValueError):
+            return condition, ""
+        if not math.isfinite(numeric_temperature):
+            return condition, ""
+
+        unit = str(attributes.get("temperature_unit") or "").strip()
+        if not unit:
+            units = getattr(getattr(self.hass, "config", None), "units", None)
+            unit = str(getattr(units, "temperature_unit", "")).strip()
+        temperature_label = f"{numeric_temperature:.0f}"
+        if unit:
+            temperature_label = f"{temperature_label} {unit}"
+        return condition, temperature_label
 
     async def _async_keycode(self, raw: dict[str, Any]) -> str:
         direct = extract_keycode_direct(raw)
@@ -219,8 +251,13 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                 listing = listings.get(mapping.listing_id)
                 if listing is None:
                     continue
+                weather_condition, weather_temperature = self._weather_values(mapping)
                 payloads[mapping.endpoint_entity] = build_display_payload(
-                    listing, reservations, mapping
+                    listing,
+                    reservations,
+                    mapping,
+                    weather_condition=weather_condition,
+                    weather_temperature=weather_temperature,
                 )
 
             return GuestyTerminalData(

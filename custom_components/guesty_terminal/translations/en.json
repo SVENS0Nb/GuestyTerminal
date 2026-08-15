@@ -55,11 +55,13 @@
           "clear_after_minutes": "Continue after checkout (minutes)",
           "show_door_code": "Show keycode",
           "show_wifi": "Show WiFi and QR code",
+          "weather_entity": "Weather entity for outdoor temperature",
           "remove_mapping": "Remove selected display mapping"
         },
         "data_description": {
           "welcome_title": "Available variables: first_name, property_name, check_in, check_out",
-          "welcome_text": "Line breaks are preserved on the display."
+          "welcome_text": "Line breaks are preserved on the display.",
+          "weather_entity": "Optional. Shows the current weather symbol and rounded outdoor temperature from this Home Assistant weather entity in the top-right corner."
         }
       },
       "general": {

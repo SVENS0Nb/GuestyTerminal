@@ -72,5 +72,9 @@ class GuestyTerminalStatusSensor(
             "listing_name": listing.display_name if listing else None,
             "contains_door_code": bool(payload.door_code),
             "contains_wifi": bool(payload.wifi_name and payload.wifi_password),
+            "weather_entity": mapping.weather_entity or None,
+            "contains_weather": bool(
+                payload.weather_condition or payload.weather_temperature
+            ),
             "valid_until_epoch": payload.valid_until_epoch or None,
         }

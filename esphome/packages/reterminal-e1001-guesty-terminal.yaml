@@ -76,7 +76,7 @@ api:
             - delay: 1s
             - component.update: guesty_terminal_endpoint
   actions:
-    - action: guesty_terminal_update_display_v4
+    - action: guesty_terminal_update_display_v5
       variables:
         mode: string
         property_name: string
@@ -90,12 +90,14 @@ api:
         content_id: string
         logo_data: string
         booking_summary: string
+        weather_condition: string
+        weather_temperature: string
       then:
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
             id(guesty_content_changed) = content_id.empty()
                 || content_id != id(guesty_content_id)
-                || id(guesty_render_revision) != 7;
+                || id(guesty_render_revision) != 8;
             id(guesty_mode) = mode;
             id(guesty_property_name) = property_name;
             id(guesty_welcome_title) = welcome_title;
@@ -105,10 +107,14 @@ api:
             id(guesty_wifi_password) = wifi_password;
             id(guesty_checkout_label) = checkout_label;
             id(guesty_logo_data) = logo_data;
+            id(guesty_weather_condition) = weather_condition;
+            id(guesty_weather_temperature) = weather_temperature;
             id(guesty_valid_until_epoch) = valid_until_epoch;
             id(guesty_screen_sensitive) = mode == "welcome";
             id(guesty_has_wifi) =
                 mode == "welcome" && !wifi_name.empty();
+            id(guesty_has_weather) = mode == "welcome"
+                && (!weather_condition.empty() || !weather_temperature.empty());
 
             if (id(guesty_content_changed)) {
               id(guesty_content_id) = content_id;
@@ -153,7 +159,7 @@ api:
                   condition:
                     lambda: return id(guesty_epaper).last_update_successful();
                   then:
-                    - lambda: id(guesty_render_revision) = 7;
+                    - lambda: id(guesty_render_revision) = 8;
                     - text_sensor.template.publish:
                         id: guesty_last_booking
                         state: !lambda |-
@@ -212,7 +218,16 @@ globals:
   - id: guesty_logo_data
     type: std::string
     initial_value: '""'
+  - id: guesty_weather_condition
+    type: std::string
+    initial_value: '""'
+  - id: guesty_weather_temperature
+    type: std::string
+    initial_value: '""'
   - id: guesty_has_wifi
+    type: bool
+    initial_value: "false"
+  - id: guesty_has_weather
     type: bool
     initial_value: "false"
   - id: guesty_content_changed
@@ -305,12 +320,6 @@ font:
     bpp: 4
     glyphsets:
       - GF_Latin_Core
-  - file: "gfonts://Inter@700"
-    id: guesty_font_wifi_heading
-    size: 28
-    bpp: 4
-    glyphsets:
-      - GF_Latin_Core
   - file: "gfonts://Inter@600"
     id: guesty_font_detail
     size: 16
@@ -320,6 +329,12 @@ font:
   - file: "gfonts://Inter@700"
     id: guesty_font_detail_bold
     size: 16
+    bpp: 4
+    glyphsets:
+      - GF_Latin_Core
+  - file: "gfonts://Inter@600"
+    id: guesty_font_weather_temperature
+    size: 22
     bpp: 4
     glyphsets:
       - GF_Latin_Core
@@ -433,7 +448,7 @@ text_sensor:
     entity_category: diagnostic
     update_interval: never
     lambda: |-
-      std::string action = "${device_name}_guesty_terminal_update_display_v4";
+      std::string action = "${device_name}_guesty_terminal_update_display_v5";
       for (char &character : action) {
         if (character == '-') character = '_';
       }
@@ -583,9 +598,105 @@ display:
             return value.substr(0, prefix_end) + "…";
           };
 
+          const auto draw_rounded_panel = [&](int x, int y, int width,
+                                               int height, int radius) {
+            const Color light_gray(85, 85, 85);
+            it.filled_rectangle(x + radius, y, width - radius * 2,
+                                height, light_gray);
+            it.filled_rectangle(x, y + radius, width,
+                                height - radius * 2, light_gray);
+            it.filled_circle(x + radius, y + radius, radius, light_gray);
+            it.filled_circle(x + width - radius - 1, y + radius,
+                             radius, light_gray);
+            it.filled_circle(x + radius, y + height - radius - 1,
+                             radius, light_gray);
+            it.filled_circle(x + width - radius - 1,
+                             y + height - radius - 1, radius, light_gray);
+          };
+
+          const auto draw_weather_icon = [&](int x, int y,
+                                             const std::string &condition) {
+            const auto draw_sun = [&](int center_x, int center_y) {
+              it.circle(center_x, center_y, 8);
+              it.line(center_x, center_y - 15, center_x, center_y - 11);
+              it.line(center_x, center_y + 11, center_x, center_y + 15);
+              it.line(center_x - 15, center_y, center_x - 11, center_y);
+              it.line(center_x + 11, center_y, center_x + 15, center_y);
+              it.line(center_x - 11, center_y - 11,
+                      center_x - 8, center_y - 8);
+              it.line(center_x + 8, center_y - 8,
+                      center_x + 11, center_y - 11);
+            };
+            const auto draw_cloud = [&](int cloud_x, int cloud_y) {
+              it.circle(cloud_x + 15, cloud_y + 18, 8);
+              it.circle(cloud_x + 27, cloud_y + 13, 11);
+              it.circle(cloud_x + 40, cloud_y + 19, 8);
+              it.line(cloud_x + 7, cloud_y + 19,
+                      cloud_x + 7, cloud_y + 27);
+              it.line(cloud_x + 48, cloud_y + 19,
+                      cloud_x + 48, cloud_y + 27);
+              it.line(cloud_x + 7, cloud_y + 27,
+                      cloud_x + 48, cloud_y + 27);
+            };
+
+            if (condition == "sunny") {
+              draw_sun(x + 23, y + 23);
+              return;
+            }
+            if (condition == "clear-night") {
+              it.filled_circle(x + 23, y + 23, 12);
+              it.filled_circle(x + 29, y + 17, 11, COLOR_OFF);
+              return;
+            }
+            if (condition == "fog") {
+              it.line(x + 2, y + 13, x + 43, y + 13);
+              it.line(x + 8, y + 23, x + 49, y + 23);
+              it.line(x + 2, y + 33, x + 43, y + 33);
+              return;
+            }
+            if (condition == "windy" || condition == "windy-variant") {
+              it.line(x + 2, y + 13, x + 38, y + 13);
+              it.line(x + 8, y + 23, x + 48, y + 23);
+              it.line(x + 2, y + 33, x + 34, y + 33);
+              it.circle(x + 39, y + 9, 4);
+              return;
+            }
+
+            if (condition == "partlycloudy") {
+              draw_sun(x + 17, y + 15);
+            }
+            draw_cloud(x, y + 5);
+            if (condition == "rainy" || condition == "pouring"
+                || condition == "snowy-rainy"
+                || condition == "lightning-rainy") {
+              it.line(x + 14, y + 36, x + 10, y + 44);
+              it.line(x + 27, y + 36, x + 23, y + 44);
+              it.line(x + 40, y + 36, x + 36, y + 44);
+            }
+            if (condition == "snowy" || condition == "snowy-rainy"
+                || condition == "hail") {
+              it.line(x + 13, y + 37, x + 13, y + 45);
+              it.line(x + 9, y + 41, x + 17, y + 41);
+              it.line(x + 35, y + 37, x + 35, y + 45);
+              it.line(x + 31, y + 41, x + 39, y + 41);
+            }
+            if (condition == "lightning"
+                || condition == "lightning-rainy") {
+              it.line(x + 28, y + 34, x + 22, y + 43);
+              it.line(x + 22, y + 43, x + 30, y + 43);
+              it.line(x + 30, y + 43, x + 25, y + 50);
+            }
+          };
+
           // Header
           it.print(32, 24, id(guesty_font_property),
                    id(guesty_property_name).c_str());
+          if (id(guesty_has_weather)) {
+            draw_weather_icon(654, 18, id(guesty_weather_condition));
+            it.print(768, 27, id(guesty_font_weather_temperature),
+                     TextAlign::TOP_RIGHT,
+                     id(guesty_weather_temperature).c_str());
+          }
           esphome::font::Font *title_font = id(guesty_welcome_title).size() > 24
               ? id(guesty_font_welcome_small)
               : id(guesty_font_welcome);
@@ -596,37 +707,36 @@ display:
           draw_lines(32, 142, id(guesty_welcome_text),
                      id(guesty_font_body), 28, 3);
 
-          // Compact door-code field
+          // Design 2: two equal, borderless access panels.
           if (!id(guesty_door_code).empty()) {
-            it.print(48, 263, id(guesty_font_label), "DEIN TÜRCODE");
+            draw_rounded_panel(32, 242, 360, 136, 12);
+            it.print(56, 260, id(guesty_font_label), "TÜRCODE");
             esphome::font::Font *code_font = id(guesty_door_code).size() > 8
                 ? id(guesty_font_door_code_small)
                 : id(guesty_font_door_code);
-            it.print(48, 287, code_font, id(guesty_door_code).c_str());
+            it.print(56, 292, code_font, id(guesty_door_code).c_str());
           }
 
-          // WiFi panel
           if (id(guesty_has_wifi)) {
-            constexpr int wifi_center_x = 660;
-            it.print(wifi_center_x, 132, id(guesty_font_wifi_heading),
-                     TextAlign::TOP_CENTER, "WiFi");
-            const int qr_scale = 4;
-            const int qr_size = id(guesty_wifi_qr).get_size() * qr_scale;
-            const int qr_x = wifi_center_x - qr_size / 2;
-            const int qr_y = 176;
-            it.filled_rectangle(qr_x - 10, qr_y - 10,
-                                qr_size + 20, qr_size + 20, COLOR_OFF);
-            it.qr_code(qr_x, qr_y, id(guesty_wifi_qr), COLOR_ON, qr_scale);
-
-            const int details_y = qr_y + qr_size + 17;
-            it.print(wifi_center_x, details_y, id(guesty_font_detail_bold),
-                     TextAlign::TOP_CENTER,
-                     clipped(id(guesty_wifi_name), 27).c_str());
+            draw_rounded_panel(408, 242, 360, 136, 12);
+            it.print(432, 260, id(guesty_font_label), "WIFI");
+            it.print(432, 304, id(guesty_font_detail_bold), "Name:");
+            it.print(486, 304, id(guesty_font_detail),
+                     clipped(id(guesty_wifi_name), 15).c_str());
             if (!id(guesty_wifi_password).empty()) {
-              it.print(wifi_center_x, details_y + 20, id(guesty_font_detail),
-                       TextAlign::TOP_CENTER,
-                       clipped(id(guesty_wifi_password), 27).c_str());
+              it.print(432, 334, id(guesty_font_detail_bold), "Key:");
+              it.print(470, 334, id(guesty_font_detail),
+                       clipped(id(guesty_wifi_password), 15).c_str());
             }
+
+            const int qr_modules = id(guesty_wifi_qr).get_size();
+            const int qr_scale = qr_modules > 0
+                ? std::max(1, 88 / qr_modules) : 1;
+            const int qr_size = qr_modules * qr_scale;
+            const int qr_margin = (136 - qr_size) / 2;
+            const int qr_x = 768 - qr_margin - qr_size;
+            const int qr_y = 242 + qr_margin;
+            it.qr_code(qr_x, qr_y, id(guesty_wifi_qr), COLOR_ON, qr_scale);
           }
 
           // Taller footer with one global, borderless logo shared by every
@@ -739,8 +849,11 @@ interval:
                       id(guesty_door_code).clear();
                       id(guesty_wifi_name).clear();
                       id(guesty_wifi_password).clear();
+                      id(guesty_weather_condition).clear();
+                      id(guesty_weather_temperature).clear();
                       id(guesty_checkout_label).clear();
                       id(guesty_has_wifi) = false;
+                      id(guesty_has_weather) = false;
                       id(guesty_screen_sensitive) = false;
                       id(guesty_valid_until_epoch) = 0;
                       id(guesty_content_id).clear();
@@ -780,8 +893,11 @@ interval:
                 id(guesty_door_code).clear();
                 id(guesty_wifi_name).clear();
                 id(guesty_wifi_password).clear();
+                id(guesty_weather_condition).clear();
+                id(guesty_weather_temperature).clear();
                 id(guesty_checkout_label).clear();
                 id(guesty_has_wifi) = false;
+                id(guesty_has_weather) = false;
                 id(guesty_screen_sensitive) = false;
                 id(guesty_valid_until_epoch) = 0;
                 id(guesty_content_id).clear();

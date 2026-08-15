@@ -379,6 +379,7 @@ class MappingOptions:
     clear_after_minutes: int = DEFAULT_CLEAR_AFTER_MINUTES
     show_door_code: bool = True
     show_wifi: bool = True
+    weather_entity: str = ""
 
     @classmethod
     def from_dict(cls, endpoint: str, data: Mapping[str, Any]) -> MappingOptions:
@@ -398,6 +399,7 @@ class MappingOptions:
             ),
             show_door_code=bool(data.get("show_door_code", True)),
             show_wifi=bool(data.get("show_wifi", True)),
+            weather_entity=_string(data.get("weather_entity")),
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -411,6 +413,7 @@ class MappingOptions:
             "clear_after_minutes": self.clear_after_minutes,
             "show_door_code": self.show_door_code,
             "show_wifi": self.show_wifi,
+            "weather_entity": self.weather_entity,
         }
 
 
@@ -468,6 +471,8 @@ class DisplayPayload:
     wifi_password: str
     checkout_label: str
     valid_until_epoch: int
+    weather_condition: str = ""
+    weather_temperature: str = ""
     booking_summary: str = ""
     reservation_id: str = field(default="", compare=False, repr=False)
 
@@ -484,6 +489,8 @@ class DisplayPayload:
             wifi_password="",
             checkout_label="",
             valid_until_epoch=0,
+            weather_condition="",
+            weather_temperature="",
             booking_summary="Keine aktive Buchung",
         )
 
@@ -497,7 +504,11 @@ class DisplayPayload:
     @property
     def content_id(self) -> str:
         """Return an opaque stable ID for the visible E-paper contents."""
-        visible_fields = (
+        return self._content_id(include_weather=True)
+
+    def _content_id(self, *, include_weather: bool) -> str:
+        """Return a fingerprint compatible with the target renderer version."""
+        visible_fields = [
             self.mode,
             self.property_name,
             self.welcome_title,
@@ -506,7 +517,11 @@ class DisplayPayload:
             self.wifi_name,
             self.wifi_password,
             self.checkout_label,
-        )
+        ]
+        if include_weather and (self.weather_condition or self.weather_temperature):
+            visible_fields.extend(
+                (self.weather_condition, self.weather_temperature)
+            )
         # The high-entropy Guesty reservation ID salts credential-bearing
         # screens. Only the opaque digest is persisted by the device.
         serialized = "\0".join((self.reservation_id, *visible_fields))
@@ -517,6 +532,7 @@ class DisplayPayload:
         *,
         include_content_id: bool = False,
         include_booking_summary: bool = False,
+        include_weather: bool = False,
     ) -> dict[str, Any]:
         """Return the exact ESPHome action payload."""
         data = {
@@ -531,9 +547,12 @@ class DisplayPayload:
             "valid_until_epoch": self.valid_until_epoch,
         }
         if include_content_id:
-            data["content_id"] = self.content_id
+            data["content_id"] = self._content_id(include_weather=include_weather)
         if include_booking_summary:
             data["booking_summary"] = self.booking_summary
+        if include_weather:
+            data["weather_condition"] = self.weather_condition
+            data["weather_temperature"] = self.weather_temperature
         return data
 
 
@@ -581,6 +600,8 @@ def build_display_payload(
     options: MappingOptions,
     *,
     now: datetime | None = None,
+    weather_condition: str = "",
+    weather_temperature: str = "",
 ) -> DisplayPayload:
     """Build the guest or idle screen for a configured display."""
     current = now or datetime.now(UTC)
@@ -604,8 +625,8 @@ def build_display_payload(
         check_out_display = checkout_local.strftime("%m/%d/%Y · %I:%M %p").replace(
             "· 0", "· "
         )
-        checkout_label = checkout_local.strftime("Check-out: %m/%d · %I:%M %p").replace(
-            "· 0", "· "
+        checkout_label = checkout_local.strftime("Check-out: %m/%d - %I:%M %p").replace(
+            "- 0", "- "
         )
         booking_check_in = check_in_local.strftime("%m/%d/%Y %I:%M %p").replace(
             " 0", " "
@@ -616,7 +637,7 @@ def build_display_payload(
     else:
         check_in_display = check_in_local.strftime("%d.%m.%Y · %H:%M Uhr")
         check_out_display = checkout_local.strftime("%d.%m.%Y · %H:%M Uhr")
-        checkout_label = checkout_local.strftime("Check-out: %d.%m. · %H:%M Uhr")
+        checkout_label = checkout_local.strftime("Check-out: %d.%m. - %H:%M Uhr")
         booking_check_in = check_in_local.strftime("%d.%m.%Y %H:%M")
         booking_check_out = checkout_local.strftime("%d.%m.%Y %H:%M")
 
@@ -653,6 +674,8 @@ def build_display_payload(
         wifi_password=_shorten(listing.wifi_password, 64) if options.show_wifi else "",
         checkout_label=checkout_label,
         valid_until_epoch=int(visible_until.timestamp()),
+        weather_condition=_shorten(_string(weather_condition).lower(), 32),
+        weather_temperature=_shorten(_string(weather_temperature), 16),
         booking_summary=_shorten(
             f"{reservation.guest_name or reservation.first_name} · "
             f"{booking_check_in} – {booking_check_out}",
