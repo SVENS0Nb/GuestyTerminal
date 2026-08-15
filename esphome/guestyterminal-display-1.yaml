@@ -5,6 +5,13 @@ substitutions:
   battery_sleep_duration: 30min
   awake_duration_seconds: "90"
 
+external_components:
+  - source:
+      type: local
+      path: components
+    components:
+      - guesty_epaper_gray4
+
 packages:
   guesty_terminal: !include packages/reterminal-e1001-guesty-terminal.yaml
 
@@ -13,7 +20,7 @@ esphome:
   friendly_name: ${friendly_name}
   project:
     name: guestyterminal.reterminal-e1001
-    version: "0.3.2"
+    version: "0.3.3"
 
 esp32:
   board: esp32-s3-devkitc-1

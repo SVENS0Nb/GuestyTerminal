@@ -13,6 +13,7 @@ aktuellen Reservierung auf einem Seeed Studio reTerminal E1001 an:
 - WiFi-Name und Passwort;
 - lokal erzeugter, direkt verbindender WiFi-QR-Code;
 - Check-out-Zeit;
+- vier echte Graustufen für geglättete, besser lesbare Schriftkanten;
 - automatische neutrale Seite 30 Minuten nach Check-out oder bei Stornierung;
 - Zuordnung eines Guesty-Listings zu jedem Display in der Home-Assistant-UI;
 - Firmware-Assistent für gerätespezifische E1001-Konfigurationen.
@@ -115,6 +116,12 @@ Geräteschlüssel erhalten, damit der OTA-Zugriff nicht verloren geht.
 
 Beim Build erscheinen Hinweise zu GPIO 3, 19 und 20. Diese Pins stammen aus
 der offiziellen E1001-Hardwarebelegung und sind für dieses Board beabsichtigt.
+
+GuestyTerminal verwendet einen eigenen UC8179-Treiber für die vier nativen
+Graustufen des GDEY075T7-Panels. Schriftdateien werden mit 2 Bit pro Pixel
+gerendert, während QR-Code, Rahmen und Türcode weiterhin satt schwarz bleiben.
+Die Initialisierung und Wellenformtabellen basieren auf dem MIT-lizenzierten
+Gray4-Beispiel von Seeed Studio.
 
 Für weitere Displays die Beispieldatei kopieren und einen eindeutigen
 `device_name` verwenden. Alle Geräte verwenden dasselbe Layout-Paket.

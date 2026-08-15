@@ -10,7 +10,7 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
-FIRMWARE_VERSION = "0.3.2"
+FIRMWARE_VERSION = "0.3.3"
 FIRMWARE_HEADER = "# Managed by the GuestyTerminal firmware assistant."
 POWER_MODES = ("auto", "battery", "mains")
 _DEVICE_NAME_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,22}[a-z0-9])?$")
@@ -116,6 +116,15 @@ substitutions:
   power_mode: {options.power_mode}
   battery_sleep_duration: {options.wake_interval_minutes}min
   awake_duration_seconds: "{options.awake_seconds}"
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/SVENS0Nb/GuestyTerminal
+      ref: v{FIRMWARE_VERSION}
+    components:
+      - guesty_epaper_gray4
+    refresh: 1d
 
 packages:
   guesty_terminal:

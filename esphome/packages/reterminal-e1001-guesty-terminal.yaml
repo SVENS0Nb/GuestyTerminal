@@ -216,51 +216,61 @@ font:
   - file: "gfonts://Inter@600"
     id: guesty_font_property
     size: 17
+    bpp: 2
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Lora@600"
     id: guesty_font_welcome
     size: 46
+    bpp: 2
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Lora@600"
     id: guesty_font_welcome_small
     size: 36
+    bpp: 2
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@600"
     id: guesty_font_body
     size: 21
+    bpp: 2
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@700"
     id: guesty_font_label
     size: 16
+    bpp: 2
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@700"
     id: guesty_font_door_code
     size: 46
+    bpp: 2
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@700"
     id: guesty_font_door_code_small
     size: 32
+    bpp: 2
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@700"
     id: guesty_font_wifi_heading
     size: 28
+    bpp: 2
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@600"
     id: guesty_font_detail
     size: 16
+    bpp: 2
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@700"
     id: guesty_font_detail_bold
     size: 16
+    bpp: 2
     glyphsets:
       - GF_Latin_Core
 
@@ -420,9 +430,8 @@ time:
         - pcf8563.write_time:
 
 display:
-  - platform: waveshare_epaper
+  - platform: guesty_epaper_gray4
     id: guesty_epaper
-    model: 7.50inv2
     cs_pin: GPIO10
     dc_pin: GPIO11
     reset_pin:
@@ -430,7 +439,7 @@ display:
       inverted: false
     busy_pin:
       number: GPIO13
-      inverted: true
+      inverted: false
     update_interval: never
     pages:
       - id: guesty_welcome_page
