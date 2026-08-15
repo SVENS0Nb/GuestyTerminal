@@ -287,9 +287,11 @@ ESPHome Device Builder sichtbar.
 
 Das Design mit den zwei grauen Zugangsfeldern wird auf dem E1001 gerendert und
 benötigt Firmware **0.3.11** oder neuer. Die MDI-Wettersymbole und der hybride
-Teilrefresh benötigen Firmware **0.3.13** oder neuer. Die Wetterentität kann
-danach ohne erneutes Kompilieren in der GuestyTerminal-Zuordnung geändert
-werden.
+Teilrefresh benötigen Firmware **0.3.13** oder neuer. Firmware **0.3.14**
+rekonstruiert nach jedem Deep Sleep beide vollständigen Controller-RAM-Ebenen,
+bevor nur das Wetterfenster differentiell aktualisiert wird. Dadurch bleiben
+alle Pixel außerhalb des Teilfensters definiert. Die Wetterentität kann ohne
+erneutes Kompilieren in der GuestyTerminal-Zuordnung geändert werden.
 
 ## Datenschutz
 

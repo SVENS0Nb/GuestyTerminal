@@ -97,7 +97,7 @@ api:
       then:
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            const bool renderer_current = id(guesty_render_revision) == 9;
+            const bool renderer_current = id(guesty_render_revision) == 10;
             id(guesty_content_changed) = force_redraw || content_id.empty()
                 || content_id != id(guesty_content_id)
                 || !renderer_current;
@@ -172,7 +172,7 @@ api:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
-                        id(guesty_render_revision) = 9;
+                        id(guesty_render_revision) = 10;
                     - text_sensor.template.publish:
                         id: guesty_last_booking
                         state: !lambda |-

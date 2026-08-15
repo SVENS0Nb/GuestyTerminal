@@ -33,6 +33,7 @@ class GuestyEPaperGray4
   static constexpr uint16_t HEIGHT = 480;
   static constexpr uint32_t IDLE_TIMEOUT_MS = 45000;
   static constexpr size_t PARTIAL_BUFFER_CAPACITY = 2048;
+  static constexpr size_t MONOCHROME_FRAME_LENGTH = WIDTH * HEIGHT / 8U;
 
   void set_dc_pin(GPIOPin *dc_pin) { this->dc_pin_ = dc_pin; }
   void set_reset_pin(GPIOPin *reset_pin) { this->reset_pin_ = reset_pin; }
@@ -87,8 +88,10 @@ class GuestyEPaperGray4
   bool init_partial_mode_();
   void write_lut_(uint8_t command, const uint8_t *lut, size_t length);
   void write_plane_(uint8_t command, uint8_t bit_index);
+  uint8_t monochrome_byte_(uint16_t row, uint16_t byte_column) const;
+  void write_monochrome_frame_(uint8_t command,
+                               const uint8_t *partial_override);
   void set_partial_ram_area_();
-  void write_partial_bitmap_(uint8_t command, const uint8_t *bitmap);
   bool refresh_partial_();
   bool display_partial_(const uint8_t *previous, const uint8_t *current);
   size_t partial_buffer_length_() const;
