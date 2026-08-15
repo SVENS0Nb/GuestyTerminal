@@ -183,8 +183,7 @@ def test_options_mapping_can_add_remove_and_show_forms(monkeypatch) -> None:
     )
     assert created["data"][CONF_MAPPINGS][endpoint][CONF_LISTING_ID] == "listing-1"
     assert (
-        created["data"][CONF_MAPPINGS][endpoint][CONF_WEATHER_ENTITY]
-        == "weather.home"
+        created["data"][CONF_MAPPINGS][endpoint][CONF_WEATHER_ENTITY] == "weather.home"
     )
 
     entry.options = created["data"]

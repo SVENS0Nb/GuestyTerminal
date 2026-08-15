@@ -346,9 +346,7 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                     clear_after_minutes=int(user_input[CONF_CLEAR_AFTER_MINUTES]),
                     show_door_code=bool(user_input[CONF_SHOW_DOOR_CODE]),
                     show_wifi=bool(user_input[CONF_SHOW_WIFI]),
-                    weather_entity=str(
-                        user_input.get(CONF_WEATHER_ENTITY, "")
-                    ).strip(),
+                    weather_entity=str(user_input.get(CONF_WEATHER_ENTITY, "")).strip(),
                 )
                 mappings[endpoint] = mapping.as_dict()
             options[CONF_MAPPINGS] = mappings

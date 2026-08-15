@@ -519,9 +519,7 @@ class DisplayPayload:
             self.checkout_label,
         ]
         if include_weather and (self.weather_condition or self.weather_temperature):
-            visible_fields.extend(
-                (self.weather_condition, self.weather_temperature)
-            )
+            visible_fields.extend((self.weather_condition, self.weather_temperature))
         # The high-entropy Guesty reservation ID salts credential-bearing
         # screens. Only the opaque digest is persisted by the device.
         serialized = "\0".join((self.reservation_id, *visible_fields))

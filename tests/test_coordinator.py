@@ -91,9 +91,7 @@ def _coordinator(
     coordinator = object.__new__(GuestyTerminalCoordinator)
     coordinator.hass = SimpleNamespace(
         states=FakeStates(states),
-        config=SimpleNamespace(
-            units=SimpleNamespace(temperature_unit="°C")
-        ),
+        config=SimpleNamespace(units=SimpleNamespace(temperature_unit="°C")),
     )
     coordinator.entry = SimpleNamespace(options=options or {})
     coordinator.client = client or FakeClient()

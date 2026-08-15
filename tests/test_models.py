@@ -162,9 +162,12 @@ def test_builds_weather_fields_into_visible_content() -> None:
     assert payload.as_service_data(include_weather=True)["weather_condition"] == (
         "partlycloudy"
     )
-    assert payload.as_service_data(
-        include_content_id=True, include_weather=True
-    )["content_id"] == payload.content_id
+    assert (
+        payload.as_service_data(include_content_id=True, include_weather=True)[
+            "content_id"
+        ]
+        == payload.content_id
+    )
     assert (
         payload.as_service_data(include_content_id=True)["content_id"]
         != payload.content_id
