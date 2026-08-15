@@ -2,6 +2,9 @@
 
 <img src="assets/guestyterminal-logo.png" alt="GuestyTerminal Logo" width="128">
 
+Das Logo wird zusätzlich als lokales Home-Assistant-Brand-Asset ausgeliefert
+und erscheint ab Home Assistant 2026.3 direkt auf der Integrationsseite.
+
 Dieses Projekt verbindet Guesty mit Home Assistant und zeigt die Daten der
 aktuellen Reservierung auf einem Seeed Studio reTerminal E1001 an:
 

@@ -54,7 +54,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "ssid: !secret wifi_ssid" in rendered
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
-    assert "ref: v0.3.0" in rendered
+    assert "ref: v0.3.1" in rendered
 
 
 @pytest.mark.parametrize(

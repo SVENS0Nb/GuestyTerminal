@@ -186,7 +186,15 @@ def test_options_mapping_can_add_remove_and_show_forms(monkeypatch) -> None:
     general = asyncio.run(flow.async_step_general({CONF_POLL_MINUTES: 10}))
     assert general["data"][CONF_POLL_MINUTES] == 10
     menu = asyncio.run(flow.async_step_init())
-    assert menu["menu_options"] == ("mapping", "firmware", "general")
+    assert menu["menu_options"] == {
+        "mapping": "Assign a listing to a display",
+        "firmware": "Create E1001 firmware",
+        "general": "General settings",
+    }
+
+    flow.hass.config = SimpleNamespace(language="de-DE")
+    menu = asyncio.run(flow.async_step_init())
+    assert menu["menu_options"]["firmware"] == "E1001-Firmware erstellen"
 
 
 def test_options_firmware_writes_esphome_config(tmp_path) -> None:

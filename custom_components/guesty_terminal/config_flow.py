@@ -205,9 +205,22 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
     async def async_step_init(
         self, _user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        return self.async_show_menu(
-            step_id="init", menu_options=("mapping", "firmware", "general")
-        )
+        language = str(
+            getattr(getattr(self.hass, "config", None), "language", "en")
+        ).lower()
+        if language.startswith("de"):
+            menu_options = {
+                "mapping": "Listing einem Display zuordnen",
+                "firmware": "E1001-Firmware erstellen",
+                "general": "Allgemeine Einstellungen",
+            }
+        else:
+            menu_options = {
+                "mapping": "Assign a listing to a display",
+                "firmware": "Create E1001 firmware",
+                "general": "General settings",
+            }
+        return self.async_show_menu(step_id="init", menu_options=menu_options)
 
     def _runtime(self) -> GuestyTerminalRuntime:
         return self.config_entry.runtime_data
