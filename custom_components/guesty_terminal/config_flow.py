@@ -34,6 +34,7 @@ from .const import (
     CONF_CLEAR_AFTER_MINUTES,
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
+    CONF_DATE_TIME_FORMAT,
     CONF_ENDPOINT_ENTITY,
     CONF_FIRMWARE_AWAKE_SECONDS,
     CONF_FIRMWARE_DEVICE_NAME,
@@ -54,7 +55,10 @@ from .const import (
     CONF_WELCOME_TEXT,
     CONF_WELCOME_TITLE,
     DATA_PENDING_TOKENS,
+    DATE_TIME_FORMAT_EU,
+    DATE_TIME_FORMAT_US,
     DEFAULT_CLEAR_AFTER_MINUTES,
+    DEFAULT_DATE_TIME_FORMAT,
     DEFAULT_FIRMWARE_AWAKE_SECONDS,
     DEFAULT_FIRMWARE_DEVICE_NAME,
     DEFAULT_FIRMWARE_FRIENDLY_NAME,
@@ -334,6 +338,7 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                     listing_id=user_input[CONF_LISTING_ID],
                     welcome_title=user_input[CONF_WELCOME_TITLE],
                     welcome_text=user_input[CONF_WELCOME_TEXT],
+                    date_time_format=user_input[CONF_DATE_TIME_FORMAT],
                     lead_hours=int(user_input[CONF_LEAD_HOURS]),
                     clear_after_minutes=int(user_input[CONF_CLEAR_AFTER_MINUTES]),
                     show_door_code=bool(user_input[CONF_SHOW_DOOR_CODE]),
@@ -381,6 +386,28 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                             else DEFAULT_WELCOME_TEXT
                         ),
                     ): TextSelector(TextSelectorConfig(multiline=True)),
+                    vol.Required(
+                        CONF_DATE_TIME_FORMAT,
+                        default=(
+                            current.date_time_format
+                            if current is not None
+                            else DEFAULT_DATE_TIME_FORMAT
+                        ),
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=[
+                                SelectOptionDict(
+                                    value=DATE_TIME_FORMAT_EU,
+                                    label="EU – 17.08.2026 · 14:00 Uhr",
+                                ),
+                                SelectOptionDict(
+                                    value=DATE_TIME_FORMAT_US,
+                                    label="US – 08/17/2026 · 2:00 PM",
+                                ),
+                            ],
+                            mode=SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
                     vol.Required(
                         CONF_LEAD_HOURS,
                         default=(

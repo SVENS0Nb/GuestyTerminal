@@ -12,6 +12,7 @@ CONF_ENDPOINT_ENTITY = "endpoint_entity"
 CONF_LISTING_ID = "listing_id"
 CONF_WELCOME_TITLE = "welcome_title"
 CONF_WELCOME_TEXT = "welcome_text"
+CONF_DATE_TIME_FORMAT = "date_time_format"
 CONF_LEAD_HOURS = "lead_hours"
 CONF_CLEAR_AFTER_MINUTES = "clear_after_minutes"
 CONF_SHOW_DOOR_CODE = "show_door_code"
@@ -33,6 +34,10 @@ DEFAULT_WELCOME_TEXT = (
     "Schön, dass du da bist.\n"
     "Wir wünschen dir einen entspannten und angenehmen Aufenthalt."
 )
+DATE_TIME_FORMAT_EU = "eu"
+DATE_TIME_FORMAT_US = "us"
+DATE_TIME_FORMATS = (DATE_TIME_FORMAT_EU, DATE_TIME_FORMAT_US)
+DEFAULT_DATE_TIME_FORMAT = DATE_TIME_FORMAT_EU
 DEFAULT_LEAD_HOURS = 1
 DEFAULT_CLEAR_AFTER_MINUTES = 30
 DEFAULT_POLL_MINUTES = 5

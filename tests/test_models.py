@@ -103,6 +103,37 @@ def test_builds_welcome_payload_inside_lead_window() -> None:
     assert payload.checkout_label == "Check-out: 17.08. · 11:00 Uhr"
 
 
+def test_uses_per_display_us_date_and_12_hour_time_format() -> None:
+    options = MappingOptions(
+        endpoint_entity="sensor.us_display_guesty_terminal_endpoint",
+        listing_id="listing-1",
+        welcome_title="Anreise: {check_in}",
+        welcome_text="Abreise: {check_out}",
+        date_time_format="us",
+    )
+
+    payload = build_display_payload(
+        _listing(),
+        [_reservation()],
+        options,
+        now=datetime(2026, 8, 14, 12, 0, tzinfo=UTC),
+    )
+
+    assert payload.welcome_title == "Anreise: 08/14/2026 · 3:00 PM"
+    assert payload.welcome_text == "Abreise: 08/17/2026 · 11:00 AM"
+    assert payload.checkout_label == "Check-out: 08/17 · 11:00 AM"
+
+
+def test_older_mapping_defaults_to_eu_date_and_time_format() -> None:
+    mapping = MappingOptions.from_dict("sensor.display", {"listing_id": "listing-1"})
+    assert mapping.date_time_format == "eu"
+
+    invalid = MappingOptions.from_dict(
+        "sensor.display", {"listing_id": "listing-1", "date_time_format": "other"}
+    )
+    assert invalid.date_time_format == "eu"
+
+
 def test_uses_idle_payload_before_lead_window() -> None:
     options = MappingOptions(
         endpoint_entity="sensor.guestyterminal_display_1_guesty_terminal_endpoint",

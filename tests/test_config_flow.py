@@ -15,6 +15,7 @@ from custom_components.guesty_terminal.config_flow import (
 from custom_components.guesty_terminal.const import (
     CONF_CLEAR_AFTER_MINUTES,
     CONF_CLIENT_ID,
+    CONF_DATE_TIME_FORMAT,
     CONF_ENDPOINT_ENTITY,
     CONF_FIRMWARE_AWAKE_SECONDS,
     CONF_FIRMWARE_DEVICE_NAME,
@@ -169,6 +170,7 @@ def test_options_mapping_can_add_remove_and_show_forms(monkeypatch) -> None:
                 CONF_LISTING_ID: "listing-1",
                 CONF_WELCOME_TITLE: "Hallo {first_name}",
                 CONF_WELCOME_TEXT: "Willkommen",
+                CONF_DATE_TIME_FORMAT: "eu",
                 CONF_LEAD_HOURS: 6,
                 CONF_CLEAR_AFTER_MINUTES: 30,
                 CONF_SHOW_DOOR_CODE: True,
@@ -226,6 +228,7 @@ def test_options_mapping_remembers_each_configured_display(monkeypatch) -> None:
                     CONF_LISTING_ID: "listing-1",
                     CONF_WELCOME_TITLE: "Hallo {first_name}",
                     CONF_WELCOME_TEXT: "Willkommen im Loft",
+                    CONF_DATE_TIME_FORMAT: "eu",
                     CONF_LEAD_HOURS: 2,
                     CONF_CLEAR_AFTER_MINUTES: 35,
                     CONF_SHOW_DOOR_CODE: True,
@@ -235,6 +238,7 @@ def test_options_mapping_remembers_each_configured_display(monkeypatch) -> None:
                     CONF_LISTING_ID: "listing-2",
                     CONF_WELCOME_TITLE: "Moin {first_name}",
                     CONF_WELCOME_TEXT: "Willkommen im Garten",
+                    CONF_DATE_TIME_FORMAT: "us",
                     CONF_LEAD_HOURS: 4,
                     CONF_CLEAR_AFTER_MINUTES: 45,
                     CONF_SHOW_DOOR_CODE: False,
@@ -264,6 +268,7 @@ def test_options_mapping_remembers_each_configured_display(monkeypatch) -> None:
     assert first[CONF_LISTING_ID] == "listing-1"
     assert first[CONF_WELCOME_TITLE] == "Hallo {first_name}"
     assert first[CONF_WELCOME_TEXT] == "Willkommen im Loft"
+    assert first[CONF_DATE_TIME_FORMAT] == "eu"
     assert first[CONF_LEAD_HOURS] == 2
     assert first[CONF_CLEAR_AFTER_MINUTES] == 35
     assert first[CONF_SHOW_DOOR_CODE] is True
@@ -276,6 +281,7 @@ def test_options_mapping_remembers_each_configured_display(monkeypatch) -> None:
     assert second[CONF_LISTING_ID] == "listing-2"
     assert second[CONF_WELCOME_TITLE] == "Moin {first_name}"
     assert second[CONF_WELCOME_TEXT] == "Willkommen im Garten"
+    assert second[CONF_DATE_TIME_FORMAT] == "us"
     assert second[CONF_LEAD_HOURS] == 4
     assert second[CONF_CLEAR_AFTER_MINUTES] == 45
     assert second[CONF_SHOW_DOOR_CODE] is False

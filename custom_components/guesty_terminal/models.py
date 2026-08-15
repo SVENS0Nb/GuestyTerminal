@@ -14,7 +14,10 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .const import (
     ACTIVE_RESERVATION_STATUSES,
+    DATE_TIME_FORMAT_US,
+    DATE_TIME_FORMATS,
     DEFAULT_CLEAR_AFTER_MINUTES,
+    DEFAULT_DATE_TIME_FORMAT,
     DEFAULT_LEAD_HOURS,
     DEFAULT_WELCOME_TEXT,
     DEFAULT_WELCOME_TITLE,
@@ -365,6 +368,7 @@ class MappingOptions:
     listing_id: str
     welcome_title: str = DEFAULT_WELCOME_TITLE
     welcome_text: str = DEFAULT_WELCOME_TEXT
+    date_time_format: str = DEFAULT_DATE_TIME_FORMAT
     lead_hours: int = DEFAULT_LEAD_HOURS
     clear_after_minutes: int = DEFAULT_CLEAR_AFTER_MINUTES
     show_door_code: bool = True
@@ -373,11 +377,15 @@ class MappingOptions:
     @classmethod
     def from_dict(cls, endpoint: str, data: Mapping[str, Any]) -> MappingOptions:
         """Create options with defaults for older stored entries."""
+        date_time_format = _string(data.get("date_time_format"))
+        if date_time_format not in DATE_TIME_FORMATS:
+            date_time_format = DEFAULT_DATE_TIME_FORMAT
         return cls(
             endpoint_entity=endpoint,
             listing_id=_string(data.get("listing_id")),
             welcome_title=_string(data.get("welcome_title")) or DEFAULT_WELCOME_TITLE,
             welcome_text=_string(data.get("welcome_text")) or DEFAULT_WELCOME_TEXT,
+            date_time_format=date_time_format,
             lead_hours=int(data.get("lead_hours", DEFAULT_LEAD_HOURS)),
             clear_after_minutes=int(
                 data.get("clear_after_minutes", DEFAULT_CLEAR_AFTER_MINUTES)
@@ -392,6 +400,7 @@ class MappingOptions:
             "listing_id": self.listing_id,
             "welcome_title": self.welcome_title,
             "welcome_text": self.welcome_text,
+            "date_time_format": self.date_time_format,
             "lead_hours": self.lead_hours,
             "clear_after_minutes": self.clear_after_minutes,
             "show_door_code": self.show_door_code,
@@ -571,15 +580,31 @@ def build_display_payload(
         return DisplayPayload.idle(listing)
 
     zone = _timezone(listing.timezone)
+    check_in_local = reservation.check_in.astimezone(zone)
+    checkout_local = reservation.check_out.astimezone(zone)
+    if options.date_time_format == DATE_TIME_FORMAT_US:
+        check_in_display = check_in_local.strftime("%m/%d/%Y · %I:%M %p").replace(
+            "· 0", "· "
+        )
+        check_out_display = checkout_local.strftime("%m/%d/%Y · %I:%M %p").replace(
+            "· 0", "· "
+        )
+        checkout_label = checkout_local.strftime("Check-out: %m/%d · %I:%M %p").replace(
+            "· 0", "· "
+        )
+    else:
+        check_in_display = check_in_local.strftime("%d.%m.%Y · %H:%M Uhr")
+        check_out_display = checkout_local.strftime("%d.%m.%Y · %H:%M Uhr")
+        checkout_label = checkout_local.strftime("Check-out: %d.%m. · %H:%M Uhr")
+
     values = {
         "first_name": reservation.first_name,
         "property_name": listing.display_name,
-        "check_in": reservation.check_in.astimezone(zone).strftime("%d.%m.%Y"),
-        "check_out": reservation.check_out.astimezone(zone).strftime("%d.%m.%Y"),
+        "check_in": check_in_display,
+        "check_out": check_out_display,
     }
     title = render_template(options.welcome_title, values)
     body = render_template(options.welcome_text, values)
-    checkout_local = reservation.check_out.astimezone(zone)
     stay_visible_until = checkout_local + timedelta(
         minutes=max(0, options.clear_after_minutes)
     )
@@ -603,7 +628,7 @@ def build_display_payload(
         ),
         wifi_name=_shorten(listing.wifi_name, 48) if options.show_wifi else "",
         wifi_password=_shorten(listing.wifi_password, 64) if options.show_wifi else "",
-        checkout_label=checkout_local.strftime("Check-out: %d.%m. · %H:%M Uhr"),
+        checkout_label=checkout_label,
         valid_until_epoch=int(visible_until.timestamp()),
         reservation_id=reservation.reservation_id,
     )

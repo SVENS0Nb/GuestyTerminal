@@ -13,6 +13,7 @@ aktuellen Reservierung auf einem Seeed Studio reTerminal E1001 an:
 - WiFi-Name und Passwort;
 - lokal erzeugter, direkt verbindender WiFi-QR-Code;
 - Check-out-Zeit;
+- pro Display wählbares EU- oder US-Datums- und Zeitformat;
 - höhere, aufgeräumte Fußleiste mit optionalem globalem Unterkunftslogo;
 - vier echte Graustufen für geglättete, besser lesbare Schriftkanten;
 - automatische neutrale Seite 30 Minuten nach Check-out oder bei Stornierung;
@@ -157,6 +158,11 @@ erreichbaren Displays übertragen und erfordert keine weitere Kompilierung.
    gespeichertes Listing, Begrüßung und Anzeigezeitraum geladen und können
    bearbeitet werden.
 5. Für jedes weitere Display wiederholen.
+
+Das Datums- und Zeitformat wird pro Display gespeichert. **EU** verwendet
+beispielsweise `17.08.2026 · 14:00 Uhr`, **US** dagegen
+`08/17/2026 · 2:00 PM`. Die Auswahl gilt auch für die Platzhalter `check_in`
+und `check_out`.
 
 Verfügbare Platzhalter für Begrüßungen:
 

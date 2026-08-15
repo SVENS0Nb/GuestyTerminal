@@ -50,6 +50,7 @@
           "listing_id": "Guesty-Listing",
           "welcome_title": "Begrüßungsüberschrift",
           "welcome_text": "Begrüßungstext",
+          "date_time_format": "Datums- und Zeitformat",
           "lead_hours": "Anzeige vor Check-in (Stunden)",
           "clear_after_minutes": "Nach Check-out weiter anzeigen (Minuten)",
           "show_door_code": "Keycode anzeigen",
