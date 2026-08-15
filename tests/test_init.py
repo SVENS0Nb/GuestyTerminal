@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
+from homeassistant.const import Platform
+
 import custom_components.guesty_terminal as integration
 from custom_components.guesty_terminal.const import (
     CONF_CLEAR_AFTER_MINUTES,
@@ -170,7 +172,7 @@ def test_setup_and_unload_entry(monkeypatch) -> None:
     assert FakeStore.instances[0].saved[-1]["access_token"] == "renewed"
     assert created["coordinator"].refreshed
     assert created["runtime"].started
-    assert config_entries.forwarded
+    assert config_entries.forwarded == [(entry, (Platform.BUTTON, Platform.SENSOR))]
 
     assert asyncio.run(integration.async_unload_entry(hass, entry))
     assert created["runtime"].stopped

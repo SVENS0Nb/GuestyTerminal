@@ -22,7 +22,9 @@ aktuellen Reservierung auf einem Seeed Studio reTerminal E1001 an:
 - vier echte Graustufen für geglättete, besser lesbare Schriftkanten;
 - automatische neutrale Seite 30 Minuten nach Check-out oder bei Stornierung;
 - Zuordnung eines Guesty-Listings zu jedem Display in der Home-Assistant-UI;
-- Firmware-Assistent für gerätespezifische E1001-Konfigurationen.
+- Firmware-Assistent für gerätespezifische E1001-Konfigurationen;
+- zentraler Home-Assistant-Knopf für OTA-Sammelupdates aller von
+  GuestyTerminal verwalteten Displays.
 
 Die Guesty-Zugangsdaten verbleiben in Home Assistant. Sie werden niemals auf
 dem ESP32 gespeichert oder an das Display übertragen.
@@ -50,8 +52,8 @@ installiert daraus die Firmware.
 ## Voraussetzungen
 
 - Home Assistant 2025.12 oder neuer;
-- das Home-Assistant-Add-on **ESPHome Device Builder** mit Unterstützung für
-  `api.actions` und `qr_code`;
+- das Home-Assistant-Add-on **ESPHome Device Builder 2026.7 oder neuer** mit
+  Unterstützung für Sammelupdates, `api.actions` und `qr_code`;
 - Guesty Open API-Zugriff mit Client-ID und Client-Secret;
 - reTerminal E1001 im 2,4-GHz-WLAN;
 - in Guesty gepflegte Listing-Felder `wifiName` und `wifiPassword`;
@@ -258,10 +260,18 @@ einmal neu. Sie fragt Guesty nicht erneut ab und ist für die Wiederherstellung
 nach einem Treiber- oder Firmwarewechsel gedacht. Im normalen Betrieb bleibt
 die automatische Unterdrückung identischer E-Paper-Aktualisierungen aktiv.
 
-Für eine OTA-Firmwareaktualisierung im Modus **Automatisch** das E1001 an USB
-anschließen und spätestens beim nächsten Aufwachzyklus im ESPHome Device Builder
-installieren. Nach der USB-Erkennung bleibt es online, bis das Kabel entfernt
-wird.
+Die Konfigurationsentität **Alle Display-Firmwares aktualisieren** hebt zuerst
+alle durch den Firmware-Assistenten erzeugten YAML-Dateien auf die aktuelle
+GuestyTerminal-Version. Danach übergibt sie sämtliche Konfigurationen als einen
+OTA-Sammelauftrag an den ESPHome Device Builder. Gerätespezifische WiFi-, API-,
+OTA- und Fallback-Zugangsdaten bleiben unverändert. Fremde ESPHome-Dateien
+werden weder verändert noch installiert.
+
+Am Strom angeschlossene Displays werden nach dem Build direkt aktualisiert.
+Für schlafende Akku-Displays merkt der Device Builder den Auftrag vor und
+installiert ihn beim nächsten Aufwachen. Während des eigentlichen Flashens darf
+das Gerät nicht ausgeschaltet werden. Fortschritt und mögliche Fehler sind im
+ESPHome Device Builder sichtbar.
 
 Das Design mit den zwei grauen Zugangsfeldern und das Wetter-Widget werden auf
 dem E1001 gerendert und benötigen daher einmalig Firmware **0.3.11** oder neuer.

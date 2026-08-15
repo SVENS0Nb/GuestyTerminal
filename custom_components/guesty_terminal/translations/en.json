@@ -106,6 +106,39 @@
       "firmware_created": "The configuration was created at {path}. Open ESPHome Device Builder, select {device_name}, then choose Install. USB is recommended for the first installation."
     }
   },
+  "entity": {
+    "button": {
+      "update_all_firmware": {
+        "name": "Update all display firmware"
+      }
+    }
+  },
+  "exceptions": {
+    "firmware_no_managed_configs": {
+      "message": "No GuestyTerminal-managed ESPHome configurations were found. Create the display firmware through GuestyTerminal setup first."
+    },
+    "firmware_config_update_failed": {
+      "message": "The managed ESPHome configurations could not be updated safely."
+    },
+    "firmware_builder_unavailable": {
+      "message": "ESPHome Device Builder is unavailable or not connected to Home Assistant."
+    },
+    "firmware_builder_auth_required": {
+      "message": "ESPHome Device Builder requires separate authentication. Use the Device Builder connected to Home Assistant without additional credentials."
+    },
+    "firmware_builder_too_old": {
+      "message": "ESPHome Device Builder does not support bulk updates yet. Update it to version 2026.7 or later."
+    },
+    "firmware_builder_invalid_response": {
+      "message": "ESPHome Device Builder returned an unexpected response to the bulk request."
+    },
+    "firmware_queue_failed": {
+      "message": "ESPHome Device Builder could not create the firmware jobs."
+    },
+    "firmware_update_in_progress": {
+      "message": "A display firmware bulk update is already being prepared."
+    }
+  },
   "selector": {
     "firmware_power_mode": {
       "options": {
