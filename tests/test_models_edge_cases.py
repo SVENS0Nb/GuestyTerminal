@@ -215,11 +215,16 @@ def test_templates_shortening_visibility_and_service_data() -> None:
     )
     content_id = payload.content_id
     assert len(content_id) == 24
+    assert len(payload.base_content_id) == 24
     assert payload.as_service_data(include_content_id=True)["content_id"] == content_id
     renewed = replace(payload, valid_until_epoch=payload.valid_until_epoch + 60)
     assert renewed.content_id == content_id
     assert replace(payload, door_code="different").content_id != content_id
     assert replace(payload, weather_temperature="19 °C").content_id != content_id
+    assert (
+        replace(payload, weather_temperature="19 °C").base_content_id
+        == payload.base_content_id
+    )
     assert not DisplayPayload.idle(listing).is_expired()
     assert render_template("broken {", {}) == "broken {"
 

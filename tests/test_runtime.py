@@ -25,6 +25,7 @@ ACTION_V2 = "guestyterminal_display_1_guesty_terminal_update_display_v2"
 ACTION_V3 = "guestyterminal_display_1_guesty_terminal_update_display_v3"
 ACTION_V4 = "guestyterminal_display_1_guesty_terminal_update_display_v4"
 ACTION_V5 = "guestyterminal_display_1_guesty_terminal_update_display_v5"
+ACTION_V6 = "guestyterminal_display_1_guesty_terminal_update_display_v6"
 
 
 class FakeServices:
@@ -44,6 +45,7 @@ class FakeServices:
                 ACTION_V3,
                 ACTION_V4,
                 ACTION_V5,
+                ACTION_V6,
             )
         )
 
@@ -206,6 +208,45 @@ def test_v5_action_receives_weather_and_booking_data() -> None:
     assert sent["booking_summary"] == welcome.booking_summary
     assert len(sent["content_id"]) == 24
     assert sent["logo_data"] == ""
+
+
+def test_v6_action_receives_hybrid_refresh_fingerprints() -> None:
+    welcome = DisplayPayload(
+        mode="welcome",
+        property_name="LOFT",
+        welcome_title="Hallo Anna",
+        welcome_text="Willkommen",
+        door_code="4827",
+        wifi_name="WiFi",
+        wifi_password="secret",
+        checkout_label="morgen",
+        valid_until_epoch=int(datetime(2100, 1, 1, tzinfo=UTC).timestamp()),
+        weather_condition="sunny",
+        weather_temperature="19 °C",
+        booking_summary="Anna · 14.08.2026 – 17.08.2026",
+    )
+    runtime, hass, _coordinator = _runtime(state=ACTION_V6, payload=welcome)
+
+    asyncio.run(runtime.async_push_endpoint(ENDPOINT))
+
+    sent = hass.services.calls[0][2]
+    assert sent["weather_condition"] == "sunny"
+    assert sent["weather_temperature"] == "19 °C"
+    assert len(sent["content_id"]) == 24
+    assert len(sent["base_content_id"]) == 24
+    assert sent["content_id"] != sent["base_content_id"]
+    assert sent["force_redraw"] is False
+
+
+def test_v6_force_redraw_keeps_real_fingerprints() -> None:
+    runtime, hass, _coordinator = _runtime(state=ACTION_V6)
+
+    assert asyncio.run(runtime.async_force_redraw_endpoint(ENDPOINT))
+
+    sent = hass.services.calls[0][2]
+    assert len(sent["content_id"]) == 24
+    assert len(sent["base_content_id"]) == 24
+    assert sent["force_redraw"] is True
 
 
 def test_v3_push_all_uses_the_same_global_logo_for_every_display() -> None:

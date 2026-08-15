@@ -24,6 +24,7 @@ from .const import (
     DISPLAY_ACTION_V3_SUFFIX,
     DISPLAY_ACTION_V4_SUFFIX,
     DISPLAY_ACTION_V5_SUFFIX,
+    DISPLAY_ACTION_V6_SUFFIX,
     MODE_WELCOME,
 )
 from .coordinator import GuestyTerminalCoordinator
@@ -32,6 +33,12 @@ from .models import DisplayPayload, Listing
 
 _LOGGER = logging.getLogger(__name__)
 _ACTION_PATTERN = re.compile(r"^[a-z0-9_]+$")
+
+
+def _logo_aware_content_id(content_id: str, logo_data: str) -> str:
+    """Include the global logo in an opaque visible-content fingerprint."""
+    visible_id = "\0".join((content_id, logo_fingerprint(logo_data)))
+    return hashlib.sha256(visible_id.encode("ascii")).hexdigest()[:24]
 
 
 async def async_send_display_payload(
@@ -59,6 +66,7 @@ async def async_send_display_payload(
             DISPLAY_ACTION_V3_SUFFIX,
             DISPLAY_ACTION_V4_SUFFIX,
             DISPLAY_ACTION_V5_SUFFIX,
+            DISPLAY_ACTION_V6_SUFFIX,
         )
     ):
         _LOGGER.warning("Ignoring invalid ESPHome display endpoint %s", action)
@@ -76,20 +84,28 @@ async def async_send_display_payload(
                     DISPLAY_ACTION_V3_SUFFIX,
                     DISPLAY_ACTION_V4_SUFFIX,
                     DISPLAY_ACTION_V5_SUFFIX,
+                    DISPLAY_ACTION_V6_SUFFIX,
                 )
             )
             service_data = payload.as_service_data(
                 include_content_id=include_content_id,
                 include_booking_summary=action.endswith(
-                    (DISPLAY_ACTION_V4_SUFFIX, DISPLAY_ACTION_V5_SUFFIX)
+                    (
+                        DISPLAY_ACTION_V4_SUFFIX,
+                        DISPLAY_ACTION_V5_SUFFIX,
+                        DISPLAY_ACTION_V6_SUFFIX,
+                    )
                 ),
-                include_weather=action.endswith(DISPLAY_ACTION_V5_SUFFIX),
+                include_weather=action.endswith(
+                    (DISPLAY_ACTION_V5_SUFFIX, DISPLAY_ACTION_V6_SUFFIX)
+                ),
             )
             if action.endswith(
                 (
                     DISPLAY_ACTION_V3_SUFFIX,
                     DISPLAY_ACTION_V4_SUFFIX,
                     DISPLAY_ACTION_V5_SUFFIX,
+                    DISPLAY_ACTION_V6_SUFFIX,
                 )
             ):
                 active_logo = (
@@ -97,13 +113,15 @@ async def async_send_display_payload(
                 )
                 service_data["logo_data"] = active_logo
                 if include_content_id:
-                    visible_id = "\0".join(
-                        (service_data["content_id"], logo_fingerprint(active_logo))
+                    service_data["content_id"] = _logo_aware_content_id(
+                        service_data["content_id"], active_logo
                     )
-                    service_data["content_id"] = hashlib.sha256(
-                        visible_id.encode("ascii")
-                    ).hexdigest()[:24]
-            if force_redraw and include_content_id:
+            if action.endswith(DISPLAY_ACTION_V6_SUFFIX):
+                service_data["base_content_id"] = _logo_aware_content_id(
+                    payload.base_content_id, active_logo
+                )
+                service_data["force_redraw"] = force_redraw
+            elif force_redraw and include_content_id:
                 # An empty fingerprint is the firmware's explicit one-shot
                 # recovery signal. Normal duplicate suppression remains on.
                 service_data["content_id"] = ""
