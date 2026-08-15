@@ -374,6 +374,57 @@ void GuestyEPaperGray4::write_plane_(uint8_t command, uint8_t bit_index) {
   this->end_data_();
 }
 
+uint8_t GuestyEPaperGray4::monochrome_byte_(uint16_t row,
+                                            uint16_t byte_column) const {
+  const uint8_t *source =
+      this->buffer_ + static_cast<uint32_t>(row) * (WIDTH / 4U) +
+      byte_column * 2U;
+  uint8_t output = 0;
+  for (uint8_t pixel = 0; pixel < 8; pixel++) {
+    const uint8_t packed = source[pixel / 4U];
+    const uint8_t shift = (3U - (pixel & 0x03U)) * 2U;
+    const uint8_t gray = (packed >> shift) & 0x03U;
+    if (gray >= 2U)
+      output |= 1U << (7U - pixel);
+  }
+  return output;
+}
+
+void GuestyEPaperGray4::write_monochrome_frame_(
+    uint8_t command, const uint8_t *partial_override) {
+  static constexpr uint16_t BYTES_PER_ROW = WIDTH / 8U;
+  uint8_t row_buffer[BYTES_PER_ROW];
+  const uint16_t partial_byte_start = this->partial_x_ / 8U;
+  const uint16_t partial_bytes_per_row = this->partial_width_ / 8U;
+  const uint16_t partial_byte_end = partial_byte_start + partial_bytes_per_row;
+
+  this->command_(command);
+  this->start_data_();
+  for (uint16_t row = 0; row < HEIGHT; row++) {
+    const bool override_row = partial_override != nullptr &&
+                              row >= this->partial_y_ &&
+                              row < this->partial_y_ + this->partial_height_;
+    for (uint16_t column = 0; column < BYTES_PER_ROW; column++) {
+      if (override_row && column >= partial_byte_start &&
+          column < partial_byte_end) {
+        const size_t override_index =
+            static_cast<size_t>(row - this->partial_y_) *
+                partial_bytes_per_row +
+            (column - partial_byte_start);
+        row_buffer[column] = partial_override[override_index];
+      } else {
+        // Equal previous/current values outside the weather window tell the
+        // differential LUT not to drive those pixels. This also reconstructs
+        // both complete controller RAM planes after every reset/deep sleep.
+        row_buffer[column] = this->monochrome_byte_(row, column);
+      }
+    }
+    this->write_array(row_buffer, BYTES_PER_ROW);
+    App.feed_wdt();
+  }
+  this->end_data_();
+}
+
 void GuestyEPaperGray4::set_partial_ram_area_() {
   const uint16_t x_end = this->partial_x_ + this->partial_width_ - 1;
   const uint16_t y_end = this->partial_y_ + this->partial_height_ - 1;
@@ -389,19 +440,11 @@ void GuestyEPaperGray4::set_partial_ram_area_() {
   this->data_(0x01);
 }
 
-void GuestyEPaperGray4::write_partial_bitmap_(uint8_t command,
-                                               const uint8_t *bitmap) {
-  this->command_(0x91);  // PARTIAL IN
-  this->set_partial_ram_area_();
-  this->command_(command);
-  this->start_data_();
-  this->write_array(bitmap, this->partial_buffer_length_());
-  this->end_data_();
-  this->command_(0x92);  // PARTIAL OUT
-}
-
 bool GuestyEPaperGray4::refresh_partial_() {
   const uint32_t started = millis();
+  // GDEY075T7 produces a cleaner result when the refresh itself is not
+  // wrapped in PARTIAL IN/OUT. The RAM area still constrains the requested
+  // differential update, matching the panel-specific GxEPD2 implementation.
   this->set_partial_ram_area_();
   this->command_(0x12);  // DISPLAY REFRESH
   if (!this->wait_for_busy_cycle_("during partial refresh"))
@@ -418,8 +461,15 @@ bool GuestyEPaperGray4::display_partial_(const uint8_t *previous,
     return false;
   if (!this->init_partial_mode_())
     return false;
-  this->write_partial_bitmap_(0x10, previous);
-  this->write_partial_bitmap_(0x13, current);
+  // A controller reset invalidates both RAM planes even though the physical
+  // E-paper image remains. Rebuild the complete 0x10/0x13 planes so pixels
+  // outside the weather window are always defined and compare equal. Only
+  // the retained old and newly rendered weather bitmaps differ.
+  ESP_LOGI(TAG,
+           "Restoring both %lu-byte controller planes before partial refresh",
+           static_cast<unsigned long>(MONOCHROME_FRAME_LENGTH));
+  this->write_monochrome_frame_(0x10, previous);
+  this->write_monochrome_frame_(0x13, current);
   if (!this->refresh_partial_())
     return false;
   this->deep_sleep_panel_();
