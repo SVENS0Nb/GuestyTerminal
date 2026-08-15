@@ -94,7 +94,7 @@ api:
             id(guesty_update_received_this_boot) = true;
             id(guesty_content_changed) = content_id.empty()
                 || content_id != id(guesty_content_id)
-                || id(guesty_render_revision) != 5;
+                || id(guesty_render_revision) != 6;
             id(guesty_mode) = mode;
             id(guesty_property_name) = property_name;
             id(guesty_welcome_title) = welcome_title;
@@ -148,7 +148,7 @@ api:
                     - display.page.show: guesty_idle_page
               - component.update: guesty_epaper
               - delay: 7s
-              - lambda: id(guesty_render_revision) = 5;
+              - lambda: id(guesty_render_revision) = 6;
             else:
               # No panel refresh is needed, but restored globals (especially
               # the renewed privacy lease) need one scheduler cycle before
@@ -362,6 +362,7 @@ sensor:
     id: guesty_battery_level
     name: Battery level
     unit_of_measurement: "%"
+    accuracy_decimals: 0
     icon: mdi:battery
     device_class: battery
     state_class: measurement
@@ -451,6 +452,22 @@ binary_sensor:
     filters:
       - delayed_on: 20ms
       - delayed_off: 20ms
+
+button:
+  # Both controls are exposed as entities of this ESPHome display device.
+  # Refresh is deliberately explicit and therefore bypasses the automatic
+  # duplicate-image suppression used for background Guesty synchronisation.
+  - platform: template
+    id: guesty_refresh_display
+    name: Display aktualisieren
+    icon: mdi:refresh
+    on_press:
+      - component.update: guesty_epaper
+  - platform: restart
+    id: guesty_restart
+    name: Neustart
+    icon: mdi:restart
+    entity_category: diagnostic
 
 time:
   - platform: pcf8563
@@ -653,6 +670,16 @@ deep_sleep:
     mode: ANY_LOW
 
 interval:
+  # On battery this runs once during boot before deep sleep. While USB power
+  # keeps the device online, refresh the battery entity every five minutes.
+  - interval: 5min
+    then:
+      - output.turn_on: guesty_battery_enable
+      - delay: 200ms
+      - component.update: guesty_battery_voltage
+      - delay: 20ms
+      - component.update: guesty_battery_level
+      - output.turn_off: guesty_battery_enable
   - interval: 15s
     then:
       - script.execute: guesty_read_external_power

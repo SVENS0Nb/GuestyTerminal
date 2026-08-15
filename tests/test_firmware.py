@@ -73,7 +73,7 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
 
     assert package.count("bpp: 4") == 10
     assert "lut_mode: ${gray_lut_mode}" in package
-    assert "id(guesty_render_revision) != 5" in package
+    assert "id(guesty_render_revision) != 6" in package
     assert "guesty_terminal_update_display_v3" in package
     assert '"Bei Fragen sind wir für dich da."' not in package
     assert "id(guesty_logo_data).size() == logo_hex_length" in package
@@ -83,6 +83,13 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "it.filled_rectangle(qr_x - 10, qr_y - 10" in package
     assert "on_client_connected:" in package
     assert 'state: "__guesty_reconnecting__"' in package
+    assert "id: guesty_battery_level" in package
+    assert "accuracy_decimals: 0" in package
+    assert "id: guesty_refresh_display" in package
+    assert "name: Display aktualisieren" in package
+    assert "id: guesty_restart" in package
+    assert "name: Neustart" in package
+    assert "- interval: 5min" in package
     driver = (
         Path(__file__).parents[1]
         / "esphome"

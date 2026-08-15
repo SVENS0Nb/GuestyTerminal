@@ -210,6 +210,11 @@ Der Standardtitel lautet `Willkommen, {first_name}!`.
   Auf dem Gerät bleibt dafür nur eine kryptografische, mit der Reservierungs-ID
   gesalzene Inhalts-ID erhalten; die Zugangsdaten selbst werden nicht dauerhaft
   gespeichert.
+- Jedes Display stellt in Home Assistant seinen Batteriestand sowie die Buttons
+  **Display aktualisieren** und **Neustart** bereit. Der Aktualisieren-Button
+  zeichnet das aktuelle Bild bewusst sofort neu. Im Deep Sleep sind die beiden
+  Buttons bis zum nächsten Aufwachen nicht erreichbar. Der Batteriestand wird
+  bei jedem Aufwachen und bei USB-Betrieb alle fünf Minuten neu gemessen.
 - Türcode, WiFi-Name und WiFi-Passwort werden auf dem E1001 nur im RAM gehalten.
 - Der WiFi-QR-Code wird lokal erzeugt. Sonderzeichen werden nach dem WiFi-QR-
   Format maskiert; es wird kein externer QR-Dienst verwendet.
