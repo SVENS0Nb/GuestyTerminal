@@ -106,6 +106,39 @@
       "firmware_created": "Die Konfiguration wurde unter {path} erstellt. Öffne jetzt den ESPHome Device Builder, wähle {device_name} und anschließend Installieren. Für die Erstinstallation wird USB empfohlen."
     }
   },
+  "entity": {
+    "button": {
+      "update_all_firmware": {
+        "name": "Alle Display-Firmwares aktualisieren"
+      }
+    }
+  },
+  "exceptions": {
+    "firmware_no_managed_configs": {
+      "message": "Es wurden keine von GuestyTerminal verwalteten ESPHome-Konfigurationen gefunden. Erstelle die Display-Firmware zuerst über die GuestyTerminal-Einrichtung."
+    },
+    "firmware_config_update_failed": {
+      "message": "Die verwalteten ESPHome-Konfigurationen konnten nicht sicher aktualisiert werden."
+    },
+    "firmware_builder_unavailable": {
+      "message": "Der ESPHome Device Builder ist nicht erreichbar oder nicht mit Home Assistant verbunden."
+    },
+    "firmware_builder_auth_required": {
+      "message": "Der ESPHome Device Builder verlangt eine eigene Anmeldung. Verwende den mit Home Assistant verbundenen Device Builder ohne zusätzliche Zugangsdaten."
+    },
+    "firmware_builder_too_old": {
+      "message": "Der ESPHome Device Builder unterstützt Sammelupdates noch nicht. Aktualisiere ihn auf Version 2026.7 oder neuer."
+    },
+    "firmware_builder_invalid_response": {
+      "message": "Der ESPHome Device Builder hat eine unerwartete Antwort auf den Sammelauftrag geliefert."
+    },
+    "firmware_queue_failed": {
+      "message": "Der ESPHome Device Builder konnte die Firmware-Aufträge nicht anlegen."
+    },
+    "firmware_update_in_progress": {
+      "message": "Ein Sammelupdate der Display-Firmware wird bereits vorbereitet."
+    }
+  },
   "selector": {
     "firmware_power_mode": {
       "options": {

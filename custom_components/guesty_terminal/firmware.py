@@ -10,10 +10,16 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
-FIRMWARE_VERSION = "0.3.11"
+FIRMWARE_VERSION = "0.3.12"
 FIRMWARE_HEADER = "# Managed by the GuestyTerminal firmware assistant."
 POWER_MODES = ("auto", "battery", "mains")
 _DEVICE_NAME_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,22}[a-z0-9])?$")
+_FIRMWARE_VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
+_GUESTY_REPOSITORY_REF_PATTERN = re.compile(
+    r"(?m)(^\s*url:\s*https://github\.com/SVENS0Nb/GuestyTerminal\s*$"
+    r"\n^\s*ref:\s*v)(\d+\.\d+\.\d+)(\s*$)"
+)
+_PROJECT_VERSION_PATTERN = re.compile(r'(?m)(^\s*version:\s*")(\d+\.\d+\.\d+)("\s*$)')
 
 
 class FirmwareConfigError(ValueError):
@@ -66,6 +72,14 @@ class FirmwareOptions:
             wake_interval_minutes=int(self.wake_interval_minutes),
             awake_seconds=int(self.awake_seconds),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class ManagedFirmwareConfig:
+    """One GuestyTerminal-managed ESPHome configuration prepared for OTA."""
+
+    path: Path
+    changed: bool
 
 
 def _new_api_key() -> str:
@@ -195,3 +209,64 @@ def write_firmware_config(
     finally:
         temporary.unlink(missing_ok=True)
     return destination
+
+
+def _version_tuple(version: str) -> tuple[int, int, int]:
+    """Return a comparable release tuple for a validated firmware version."""
+    if not _FIRMWARE_VERSION_PATTERN.fullmatch(version):
+        raise FirmwareConfigError(f"Invalid firmware version: {version}")
+    return tuple(int(part) for part in version.split("."))  # type: ignore[return-value]
+
+
+def _updated_managed_config(content: str) -> tuple[str, bool]:
+    """Update repository refs in one managed file without touching credentials."""
+    repository_versions = _GUESTY_REPOSITORY_REF_PATTERN.findall(content)
+    project_versions = _PROJECT_VERSION_PATTERN.findall(content)
+    if len(repository_versions) != 2 or len(project_versions) != 1:
+        raise FirmwareConfigError("Managed ESPHome configuration is malformed")
+
+    detected_versions = {
+        *(match[1] for match in repository_versions),
+        project_versions[0][1],
+    }
+    if len(detected_versions) != 1:
+        raise FirmwareConfigError("Managed ESPHome firmware versions do not match")
+
+    installed_config_version = detected_versions.pop()
+    if _version_tuple(installed_config_version) >= _version_tuple(FIRMWARE_VERSION):
+        return content, False
+
+    updated = _GUESTY_REPOSITORY_REF_PATTERN.sub(
+        rf"\g<1>{FIRMWARE_VERSION}\g<3>", content
+    )
+    updated = _PROJECT_VERSION_PATTERN.sub(rf"\g<1>{FIRMWARE_VERSION}\g<3>", updated)
+    return updated, updated != content
+
+
+def update_managed_firmware_configs(directory: Path) -> list[ManagedFirmwareConfig]:
+    """Upgrade every managed ESPHome YAML while preserving private credentials."""
+    if not directory.exists():
+        return []
+
+    prepared: list[tuple[Path, str, bool]] = []
+    for path in sorted(directory.glob("*.yaml")):
+        if not path.is_file():
+            continue
+        content = path.read_text(encoding="utf-8")
+        if not content.startswith(FIRMWARE_HEADER):
+            continue
+        updated, changed = _updated_managed_config(content)
+        prepared.append((path, updated, changed))
+
+    results: list[ManagedFirmwareConfig] = []
+    for path, content, changed in prepared:
+        if changed:
+            temporary = path.with_suffix(".yaml.guestyterminal.tmp")
+            try:
+                temporary.write_text(content, encoding="utf-8")
+                temporary.chmod(path.stat().st_mode & 0o777)
+                os.replace(temporary, path)
+            finally:
+                temporary.unlink(missing_ok=True)
+        results.append(ManagedFirmwareConfig(path=path, changed=changed))
+    return results

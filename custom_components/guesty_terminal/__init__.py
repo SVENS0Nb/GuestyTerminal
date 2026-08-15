@@ -32,7 +32,7 @@ from .coordinator import GuestyTerminalCoordinator
 from .runtime import GuestyTerminalRuntime, async_clear_configured_displays
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = (Platform.SENSOR,)
+PLATFORMS = (Platform.BUTTON, Platform.SENSOR)
 CONFIG_ENTRY_VERSION = 2
 
 
