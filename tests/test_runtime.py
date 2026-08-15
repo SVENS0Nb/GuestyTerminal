@@ -7,12 +7,16 @@ import sys
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
+from custom_components.guesty_terminal.const import CONF_MAPPINGS
 from custom_components.guesty_terminal.models import (
     DisplayPayload,
     Listing,
     MappingOptions,
 )
-from custom_components.guesty_terminal.runtime import GuestyTerminalRuntime
+from custom_components.guesty_terminal.runtime import (
+    GuestyTerminalRuntime,
+    async_clear_configured_displays,
+)
 
 ENDPOINT = "sensor.guestyterminal_display_1_guesty_terminal_endpoint"
 ACTION = "guestyterminal_display_1_guesty_terminal_update_display"
@@ -140,13 +144,34 @@ def test_expired_payload_is_replaced_with_privacy_safe_idle_screen() -> None:
     runtime.coordinator._mappings = []
     hass.services.calls.clear()
     asyncio.run(runtime.async_push_endpoint(ENDPOINT))
-    assert hass.services.calls[0][2]["door_code"] == "4827"
+    assert hass.services.calls[0][2]["door_code"] == ""
 
 
 def test_service_errors_are_isolated() -> None:
     runtime, hass, _ = _runtime(failure=RuntimeError("disconnected"))
     asyncio.run(runtime.async_push_endpoint(ENDPOINT))
     assert len(hass.services.calls) == 1
+
+
+def test_clear_endpoint_all_and_removed_entry() -> None:
+    runtime, hass, _ = _runtime()
+    assert asyncio.run(runtime.async_clear_endpoint(ENDPOINT))
+    assert hass.services.calls[-1][2]["mode"] == "idle"
+    assert hass.services.calls[-1][2]["door_code"] == ""
+
+    hass.services.calls.clear()
+    asyncio.run(runtime.async_clear_all())
+    assert len(hass.services.calls) == 1
+
+    hass.services.calls.clear()
+    entry = SimpleNamespace(
+        options={CONF_MAPPINGS: {ENDPOINT: {"listing_id": "listing-1"}}}
+    )
+    asyncio.run(async_clear_configured_displays(hass, entry))
+    assert hass.services.calls[-1][2]["mode"] == "idle"
+
+    entry.options = {CONF_MAPPINGS: []}
+    asyncio.run(async_clear_configured_displays(hass, entry))
 
 
 def test_start_stop_and_callbacks(monkeypatch) -> None:

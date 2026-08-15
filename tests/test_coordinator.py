@@ -30,6 +30,10 @@ class FakeClient:
         self.reservation_calls = []
         self.custom_calls = []
         self.definition_calls = []
+        self.guests = {}
+        self.guest_calls = []
+        self.account = {"id": "account-current"}
+        self.account_calls = 0
         self.failure: Exception | None = None
 
     async def async_get_listings(self):
@@ -59,6 +63,19 @@ class FakeClient:
             raise value
         return value
 
+    async def async_get_guest(self, guest_id):
+        self.guest_calls.append(guest_id)
+        value = self.guests.get(guest_id, {})
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    async def async_get_current_account(self):
+        self.account_calls += 1
+        if isinstance(self.account, Exception):
+            raise self.account
+        return self.account
+
 
 def _coordinator(options=None, client=None) -> GuestyTerminalCoordinator:
     coordinator = object.__new__(GuestyTerminalCoordinator)
@@ -66,6 +83,8 @@ def _coordinator(options=None, client=None) -> GuestyTerminalCoordinator:
     coordinator.client = client or FakeClient()
     coordinator._keycode_cache = {}
     coordinator._custom_field_definitions = {}
+    coordinator._guest_cache = {}
+    coordinator._account_id = None
     return coordinator
 
 
@@ -134,7 +153,34 @@ def test_keycode_resolution_uses_definitions_and_tolerates_failures() -> None:
     client.definitions["account-2"] = GuestyError("unavailable")
     failed_raw = {"_id": "res-definition-failed", "accountId": "account-2"}
     assert asyncio.run(coordinator._async_keycode(failed_raw)) == ""
-    assert coordinator._custom_field_definitions["account-2"] == []
+    assert "account-2" not in coordinator._custom_field_definitions
+    client.definitions["account-2"] = [{"_id": "unknown", "name": "keycode"}]
+    assert asyncio.run(coordinator._async_keycode(failed_raw)) == "0000"
+
+
+def test_v3_keycode_resolves_current_account_and_retries_guest_failures() -> None:
+    client = FakeClient()
+    client.populated["res-v3"] = {
+        "customFields": [{"fieldId": "field-v3", "value": "1357"}]
+    }
+    client.definitions["account-current"] = [{"_id": "field-v3", "name": "keycode"}]
+    client.guests["guest-1"] = GuestyError("temporary")
+    coordinator = _coordinator(client=client)
+
+    raw = {
+        "reservationId": "res-v3",
+        "guestId": "guest-1",
+        "customFields": [{"fieldId": "field-v3", "value": "1357"}],
+    }
+    assert asyncio.run(coordinator._async_keycode(raw)) == "1357"
+    assert client.account_calls == 1
+    assert coordinator._account_id == "account-current"
+
+    assert asyncio.run(coordinator._async_guest(raw)) == {}
+    client.guests["guest-1"] = {"firstName": "Mia"}
+    assert asyncio.run(coordinator._async_guest(raw))["firstName"] == "Mia"
+    assert asyncio.run(coordinator._async_guest(raw))["firstName"] == "Mia"
+    assert client.guest_calls == ["guest-1", "guest-1"]
 
 
 def test_update_builds_payload_and_fetches_missing_listing_details() -> None:
@@ -157,13 +203,13 @@ def test_update_builds_payload_and_fetches_missing_listing_details() -> None:
     }
     client.reservations = [
         {
-            "_id": "res-1",
-            "listing": {"_id": "listing-1"},
+            "reservationId": "res-1",
+            "stay": [{"listingId": "listing-1"}],
             "status": "confirmed",
-            "guest": {"firstName": "Anna"},
+            "guestId": "guest-1",
             "checkIn": "2026-08-14T12:00:00Z",
             "checkOut": "2099-08-18T10:00:00Z",
-            "keycode": "4827",
+            "notes": {"keyCode": "4827"},
         },
         {
             "_id": "unknown-listing",
@@ -171,6 +217,7 @@ def test_update_builds_payload_and_fetches_missing_listing_details() -> None:
             "status": "confirmed",
         },
     ]
+    client.guests["guest-1"] = {"firstName": "Anna"}
     coordinator = _coordinator(
         {CONF_MAPPINGS: {endpoint: _mapping()}},
         client,
@@ -183,6 +230,8 @@ def test_update_builds_payload_and_fetches_missing_listing_details() -> None:
     assert data.listings["listing-1"].wifi_name == "Guest WiFi"
     assert len(data.reservations) == 1
     assert data.payloads[endpoint].door_code == "4827"
+    assert data.payloads[endpoint].welcome_title == "Hallo Anna"
+    assert client.guest_calls == ["guest-1"]
 
 
 def test_update_skips_full_listing_when_wifi_exists_and_missing_mappings() -> None:

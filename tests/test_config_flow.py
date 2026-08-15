@@ -122,9 +122,18 @@ def test_options_mapping_can_add_remove_and_show_forms(monkeypatch) -> None:
     coordinator = SimpleNamespace(
         data=SimpleNamespace(listings={"listing-1": Listing("listing-1", "Loft")})
     )
+    cleared = []
+
+    async def clear_endpoint(endpoint_entity):
+        cleared.append(endpoint_entity)
+        return True
+
     entry = SimpleNamespace(
         options={CONF_POLL_MINUTES: 5},
-        runtime_data=SimpleNamespace(coordinator=coordinator),
+        runtime_data=SimpleNamespace(
+            coordinator=coordinator,
+            async_clear_endpoint=clear_endpoint,
+        ),
     )
     flow = _options_flow(entry)
     monkeypatch.setattr(
@@ -164,6 +173,7 @@ def test_options_mapping_can_add_remove_and_show_forms(monkeypatch) -> None:
         )
     )
     assert removed["data"][CONF_MAPPINGS] == {}
+    assert cleared == [endpoint]
 
     general_form = asyncio.run(flow.async_step_general())
     assert general_form["type"] == "form"

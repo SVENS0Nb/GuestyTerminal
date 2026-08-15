@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -12,18 +13,26 @@ from homeassistant.helpers.storage import Store
 
 from .api import GuestyClient
 from .const import (
+    CONF_CLEAR_AFTER_MINUTES,
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
+    CONF_LEAD_HOURS,
+    CONF_MAPPINGS,
+    CONF_POLL_MINUTES,
     DATA_PENDING_TOKENS,
+    DEFAULT_CLEAR_AFTER_MINUTES,
+    DEFAULT_LEAD_HOURS,
     DOMAIN,
+    MAX_POLL_MINUTES,
     SERVICE_REFRESH,
     TOKEN_STORE_VERSION,
 )
 from .coordinator import GuestyTerminalCoordinator
-from .runtime import GuestyTerminalRuntime
+from .runtime import GuestyTerminalRuntime, async_clear_configured_displays
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = (Platform.SENSOR,)
+CONFIG_ENTRY_VERSION = 2
 
 
 async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
@@ -79,6 +88,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate early installations to the confirmed-reservation timing policy."""
+    if entry.version >= CONFIG_ENTRY_VERSION:
+        return True
+
+    options = deepcopy(dict(entry.options))
+    mappings = options.get(CONF_MAPPINGS, {})
+    if isinstance(mappings, dict):
+        for raw_mapping in mappings.values():
+            if not isinstance(raw_mapping, dict):
+                continue
+            raw_mapping[CONF_LEAD_HOURS] = DEFAULT_LEAD_HOURS
+            raw_mapping[CONF_CLEAR_AFTER_MINUTES] = DEFAULT_CLEAR_AFTER_MINUTES
+    if CONF_POLL_MINUTES in options:
+        options[CONF_POLL_MINUTES] = min(
+            MAX_POLL_MINUTES,
+            max(2, int(options[CONF_POLL_MINUTES])),
+        )
+    hass.config_entries.async_update_entry(
+        entry,
+        options=options,
+        version=CONFIG_ENTRY_VERSION,
+    )
+    return True
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a Guesty account."""
     runtime: GuestyTerminalRuntime = entry.runtime_data
@@ -87,3 +122,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unloaded:
         hass.data[DOMAIN].pop(entry.entry_id, None)
     return unloaded
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Clear displays and delete the cached OAuth token on permanent removal."""
+    await async_clear_configured_displays(hass, entry)
+    token_store: Store[dict] = Store(
+        hass,
+        TOKEN_STORE_VERSION,
+        f"{DOMAIN}.{entry.entry_id}.token",
+        private=True,
+    )
+    await token_store.async_remove()

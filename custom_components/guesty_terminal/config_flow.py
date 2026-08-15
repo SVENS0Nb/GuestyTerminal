@@ -49,6 +49,7 @@ from .const import (
     DOMAIN,
     ENDPOINT_ENTITY_SUFFIX,
     ENDPOINT_ORIGINAL_NAME,
+    MAX_POLL_MINUTES,
 )
 from .models import MappingOptions
 from .runtime import GuestyTerminalRuntime
@@ -79,7 +80,7 @@ async def _validate_credentials(
 class GuestyTerminalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Configure a Guesty account."""
 
-    VERSION = 1
+    VERSION = 2
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -236,6 +237,9 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
             options = deepcopy(dict(self.config_entry.options))
             mappings = deepcopy(options.get(CONF_MAPPINGS, {}))
             if user_input.get(CONF_REMOVE_MAPPING):
+                # Clear reachable E-paper immediately. A short payload lease is
+                # the fallback when the battery display is currently asleep.
+                await self._runtime().async_clear_endpoint(endpoint)
                 mappings.pop(endpoint, None)
             else:
                 mapping = MappingOptions(
@@ -314,7 +318,10 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                         ),
                     ): NumberSelector(
                         NumberSelectorConfig(
-                            min=2, max=60, step=1, mode=NumberSelectorMode.BOX
+                            min=2,
+                            max=MAX_POLL_MINUTES,
+                            step=1,
+                            mode=NumberSelectorMode.BOX,
                         )
                     )
                 }

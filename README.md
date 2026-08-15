@@ -10,7 +10,7 @@ aktuellen Reservierung auf einem Seeed Studio reTerminal E1001 an:
 - WiFi-Name und Passwort;
 - lokal erzeugter, direkt verbindender WiFi-QR-Code;
 - Check-out-Zeit;
-- automatische neutrale Seite nach Check-out oder Stornierung;
+- automatische neutrale Seite 30 Minuten nach Check-out oder bei Stornierung;
 - Zuordnung eines Guesty-Listings zu jedem Display in der Home-Assistant-UI.
 
 Die Guesty-Zugangsdaten verbleiben in Home Assistant. Sie werden niemals auf
@@ -22,8 +22,8 @@ Dashboard-Konfiguration und ergänzt die sichere Home-Assistant-Aktion.
 
 ## Architektur
 
-1. Die Custom Integration ruft Listings und Reservierungen aus der Guesty Open
-   API ab.
+1. Die Custom Integration ruft Listings und ausschließlich bestätigte
+   Reservierungen über die aktuelle Guesty-v3-Suche ab.
 2. `keycode` wird zuerst direkt aus der Reservierung gelesen. Falls Guesty es
    als Custom Field zurückgibt, löst die Integration die Field-ID über die
    Account-Felddefinitionen auf.
@@ -114,13 +114,17 @@ Der Standardtitel lautet `Willkommen, {first_name}!`.
 
 ## Anzeige- und Sicherheitsverhalten
 
-- Der Gastbildschirm erscheint standardmäßig vier Stunden vor Check-in.
-- Zum Check-out wird er durch eine neutrale Seite ersetzt.
+- Der Gastbildschirm erscheint standardmäßig eine Stunde vor Check-in.
+- 30 Minuten nach Check-out wird er durch eine neutrale Seite ersetzt.
+- Maßgeblich ist ausschließlich der Guesty-Reservierungsstatus `confirmed`.
+  Zahlungsstatus, Zahlungseingang und Auszahlung durch Airbnb oder andere
+  Buchungsportale werden bewusst nicht ausgewertet.
 - Das E1001 wacht alle fünf Minuten auf und bleibt maximal 45 Sekunden aktiv.
-- Weil E-Paper das letzte Bild stromlos behält, speichert das Gerät nur den
-  Ablaufzeitpunkt in Flash. Ist der Bildschirm abgelaufen, löscht es die
-  Zugangsdaten anhand seiner RTC auch dann, wenn Home Assistant nicht erreichbar
-  ist.
+- Weil E-Paper das letzte Bild stromlos behält, erhält jeder Gastbildschirm eine
+  erneuerbare 15-Minuten-Freigabe. Home Assistant erneuert sie beim regulären
+  Abruf bis 30 Minuten nach Check-out. Nach dem Entfernen einer Zuordnung oder
+  Integration verschwinden die Zugangsdaten dadurch auch dann zeitnah, wenn das
+  Display beim Entfernen geschlafen hat.
 - Türcode, WiFi-Name und WiFi-Passwort werden auf dem E1001 nur im RAM gehalten.
 - Der WiFi-QR-Code wird lokal erzeugt. Sonderzeichen werden nach dem WiFi-QR-
   Format maskiert; es wird kein externer QR-Dienst verwendet.

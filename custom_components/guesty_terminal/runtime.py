@@ -15,12 +15,75 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 
 from .api import GuestyClient
-from .const import DISPLAY_ACTION_SUFFIX
+from .const import CONF_MAPPINGS, DISPLAY_ACTION_SUFFIX
 from .coordinator import GuestyTerminalCoordinator
-from .models import DisplayPayload
+from .models import DisplayPayload, Listing
 
 _LOGGER = logging.getLogger(__name__)
 _ACTION_PATTERN = re.compile(r"^[a-z0-9_]+$")
+
+
+async def async_send_display_payload(
+    hass: HomeAssistant,
+    endpoint_entity: str,
+    payload: DisplayPayload,
+    lock: asyncio.Lock | None = None,
+) -> bool:
+    """Send one payload directly to a reachable ESPHome display."""
+    endpoint_state = hass.states.get(endpoint_entity)
+    if endpoint_state is None or endpoint_state.state in (
+        STATE_UNKNOWN,
+        STATE_UNAVAILABLE,
+    ):
+        return False
+
+    action = endpoint_state.state.strip()
+    if not _ACTION_PATTERN.fullmatch(action) or not action.endswith(
+        DISPLAY_ACTION_SUFFIX
+    ):
+        _LOGGER.warning("Ignoring invalid ESPHome display endpoint %s", action)
+        return False
+    if not hass.services.has_service("esphome", action):
+        _LOGGER.debug("ESPHome action %s is not available yet", action)
+        return False
+
+    send_lock = lock or asyncio.Lock()
+    async with send_lock:
+        try:
+            await hass.services.async_call(
+                "esphome", action, payload.as_service_data(), blocking=True
+            )
+        except Exception:  # Home Assistant service errors vary by ESPHome version.
+            _LOGGER.debug(
+                "Could not update sleeping ESPHome display %s",
+                endpoint_entity,
+                exc_info=True,
+            )
+            return False
+    _LOGGER.debug(
+        "Updated GuestyTerminal display %s in %s mode",
+        endpoint_entity,
+        payload.mode,
+    )
+    return True
+
+
+async def async_clear_configured_displays(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    """Best-effort clear when a GuestyTerminal entry is permanently removed."""
+    raw_mappings = entry.options.get(CONF_MAPPINGS, {})
+    if not isinstance(raw_mappings, dict):
+        return
+    idle = DisplayPayload.idle(Listing("", "Unterkunft"))
+    await asyncio.gather(
+        *(
+            async_send_display_payload(hass, endpoint, idle)
+            for endpoint in raw_mappings
+            if isinstance(endpoint, str)
+        ),
+        return_exceptions=True,
+    )
 
 
 @dataclass(slots=True)
@@ -99,23 +162,6 @@ class GuestyTerminalRuntime:
         if payload is None:
             return
 
-        endpoint_state = self.hass.states.get(endpoint_entity)
-        if endpoint_state is None or endpoint_state.state in (
-            STATE_UNKNOWN,
-            STATE_UNAVAILABLE,
-        ):
-            return
-
-        action = endpoint_state.state.strip()
-        if not _ACTION_PATTERN.fullmatch(action) or not action.endswith(
-            DISPLAY_ACTION_SUFFIX
-        ):
-            _LOGGER.warning("Ignoring invalid ESPHome display endpoint %s", action)
-            return
-        if not self.hass.services.has_service("esphome", action):
-            _LOGGER.debug("ESPHome action %s is not available yet", action)
-            return
-
         if payload.is_expired(datetime.now(UTC)):
             mapping = next(
                 (
@@ -125,26 +171,47 @@ class GuestyTerminalRuntime:
                 ),
                 None,
             )
-            if mapping is not None:
-                listing = self.coordinator.data.listings.get(mapping.listing_id)
-                if listing is not None:
-                    payload = DisplayPayload.idle(listing)
+            listing = (
+                self.coordinator.data.listings.get(mapping.listing_id)
+                if mapping is not None
+                else None
+            )
+            payload = DisplayPayload.idle(
+                listing or Listing("", payload.property_name or "Unterkunft")
+            )
 
-        lock = self._locks.setdefault(endpoint_entity, asyncio.Lock())
-        async with lock:
-            try:
-                await self.hass.services.async_call(
-                    "esphome", action, payload.as_service_data(), blocking=True
-                )
-            except Exception:  # Home Assistant service errors vary by ESPHome version.
-                _LOGGER.debug(
-                    "Could not update sleeping ESPHome display %s",
-                    endpoint_entity,
-                    exc_info=True,
-                )
-                return
-        _LOGGER.debug(
-            "Updated GuestyTerminal display %s in %s mode",
+        await self._async_send_payload(endpoint_entity, payload)
+
+    async def async_clear_endpoint(self, endpoint_entity: str) -> bool:
+        """Replace a potentially sensitive E-paper image with an idle screen."""
+        property_name = "Unterkunft"
+        if self.coordinator.data is not None:
+            current = self.coordinator.data.payloads.get(endpoint_entity)
+            if current is not None and current.property_name:
+                property_name = current.property_name
+        return await self._async_send_payload(
             endpoint_entity,
-            payload.mode,
+            DisplayPayload.idle(Listing("", property_name)),
+        )
+
+    async def async_clear_all(self) -> None:
+        """Best-effort clear of every display configured for this account."""
+        await asyncio.gather(
+            *(
+                self.async_clear_endpoint(mapping.endpoint_entity)
+                for mapping in self.coordinator.mapping_options()
+            ),
+            return_exceptions=True,
+        )
+
+    async def _async_send_payload(
+        self, endpoint_entity: str, payload: DisplayPayload
+    ) -> bool:
+        """Send a prepared payload when the ESPHome endpoint is reachable."""
+        lock = self._locks.setdefault(endpoint_entity, asyncio.Lock())
+        return await async_send_display_payload(
+            self.hass,
+            endpoint_entity,
+            payload,
+            lock,
         )

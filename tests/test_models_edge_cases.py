@@ -154,7 +154,9 @@ def test_templates_shortening_visibility_and_service_data() -> None:
     )
     assert payload.property_name.endswith("…")
     assert len(payload.welcome_title) == 36
-    assert len(payload.welcome_text) == 150
+    assert len(payload.welcome_text.splitlines()) == 3
+    assert all(len(line) <= 34 for line in payload.welcome_text.splitlines())
+    assert payload.welcome_text.endswith("…")
     assert len(payload.door_code) == 16
     assert len(payload.wifi_name) == 48
     assert len(payload.wifi_password) == 64
@@ -238,4 +240,4 @@ def test_reservation_selection_filters_and_prioritizes_candidates() -> None:
         datetime(2026, 8, 16, 8, tzinfo=UTC),
     )
     selected = select_reservation([upcoming, current], listing, now=now, lead_hours=4)
-    assert selected is current
+    assert selected is upcoming

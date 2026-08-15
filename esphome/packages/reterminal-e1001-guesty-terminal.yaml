@@ -1,4 +1,4 @@
-# reTerminal E1001 Guesty welcome display package
+# reTerminal E1001 GuestyTerminal display package
 # Target: ESPHome + Home Assistant GuestyTerminal custom integration
 
 psram:
@@ -10,11 +10,13 @@ esphome:
     - priority: 600
       then:
         - output.turn_on: guesty_battery_enable
-        - delay: 20ms
+        - delay: 200ms
         - component.update: guesty_battery_voltage
         - delay: 20ms
+        - component.update: guesty_battery_level
         - output.turn_off: guesty_battery_enable
         - pcf8563.read_time:
+        - component.update: guesty_environment
     - priority: -100
       then:
         - delay: 500ms
@@ -257,13 +259,14 @@ sensor:
           min_value: 0
           max_value: 100
   - platform: sht4x
+    id: guesty_environment
     temperature:
       name: Temperature
       entity_category: diagnostic
     humidity:
       name: Relative humidity
       entity_category: diagnostic
-    update_interval: 10min
+    update_interval: never
 
 text_sensor:
   # The Home Assistant integration discovers these entities. Its state is the
@@ -359,8 +362,40 @@ display:
             }
           };
           const auto clipped = [](const std::string &value, size_t maximum) {
-            if (value.size() <= maximum) return value;
-            return value.substr(0, maximum - 1) + "…";
+            size_t index = 0;
+            size_t codepoints = 0;
+            size_t prefix_end = 0;
+            while (index < value.size() && codepoints < maximum) {
+              const uint8_t first = static_cast<uint8_t>(value[index]);
+              size_t width = 1;
+              if ((first & 0xE0) == 0xC0) width = 2;
+              else if ((first & 0xF0) == 0xE0) width = 3;
+              else if ((first & 0xF8) == 0xF0) width = 4;
+              if (index + width > value.size()) break;
+              index += width;
+              prefix_end = index;
+              codepoints++;
+            }
+            if (prefix_end == value.size()) return value;
+            if (maximum <= 1) return std::string("…");
+
+            // Recalculate one code point less so the ellipsis stays inside the
+            // requested visual character budget without splitting UTF-8.
+            index = 0;
+            codepoints = 0;
+            prefix_end = 0;
+            while (index < value.size() && codepoints < maximum - 1) {
+              const uint8_t first = static_cast<uint8_t>(value[index]);
+              size_t width = 1;
+              if ((first & 0xE0) == 0xC0) width = 2;
+              else if ((first & 0xF0) == 0xE0) width = 3;
+              else if ((first & 0xF8) == 0xF0) width = 4;
+              if (index + width > value.size()) break;
+              index += width;
+              prefix_end = index;
+              codepoints++;
+            }
+            return value.substr(0, prefix_end) + "…";
           };
 
           // Header

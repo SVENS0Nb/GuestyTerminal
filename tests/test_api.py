@@ -163,8 +163,17 @@ def test_collection_endpoints_filter_and_paginate_results() -> None:
         requests=[
             FakeResponse(200, {"results": first_page}),
             FakeResponse(200, {"results": [{"_id": "last"}, "ignored"]}),
-            FakeResponse(200, {"results": first_page}),
-            FakeResponse(200, {"results": [{"_id": "reservation"}, None]}),
+            FakeResponse(
+                200,
+                {"results": first_page, "pagination": {"hasMore": True}},
+            ),
+            FakeResponse(
+                200,
+                {
+                    "results": [{"reservationId": "reservation"}, None],
+                    "pagination": {"hasMore": False},
+                },
+            ),
         ]
     )
     client = GuestyClient(session, "id", "secret", token_data=_valid_token())
@@ -176,7 +185,10 @@ def test_collection_endpoints_filter_and_paginate_results() -> None:
     assert len(reservations) == 101
     assert session.request_calls[1][2]["params"]["skip"] == 100
     reservation_params = session.request_calls[2][2]["params"]
-    assert json.loads(reservation_params["filters"])[0]["value"] == ["listing-1"]
+    assert session.request_calls[2][1] == f"{API_BASE_URL}/reservations-v3/search"
+    assert reservation_params["filter[listingId]"] == "listing-1"
+    assert reservation_params["filter[status]"] == "confirmed"
+    assert "balanceDue" not in reservation_params
 
 
 def test_single_resource_endpoints_and_empty_reservation_request() -> None:
@@ -186,6 +198,8 @@ def test_single_resource_endpoints_and_empty_reservation_request() -> None:
             FakeResponse(200, []),
             FakeResponse(200, {"customFields": []}),
             FakeResponse(200, [{"name": "keycode"}]),
+            FakeResponse(200, {"_id": "guest-1", "firstName": "Anna"}),
+            FakeResponse(200, {"id": "account-1"}),
         ]
     )
     client = GuestyClient(session, "id", "secret", token_data=_valid_token())
@@ -199,4 +213,6 @@ def test_single_resource_endpoints_and_empty_reservation_request() -> None:
     assert asyncio.run(client.async_get_account_custom_fields("account-1")) == [
         {"name": "keycode"}
     ]
+    assert asyncio.run(client.async_get_guest("guest-1"))["firstName"] == "Anna"
+    assert asyncio.run(client.async_get_current_account())["id"] == "account-1"
     assert session.request_calls[0][1] == f"{API_BASE_URL}/listings/listing-1"

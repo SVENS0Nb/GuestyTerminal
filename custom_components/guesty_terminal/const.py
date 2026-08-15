@@ -24,10 +24,12 @@ DEFAULT_WELCOME_TEXT = (
     "Schön, dass du da bist.\n"
     "Wir wünschen dir einen entspannten und angenehmen Aufenthalt."
 )
-DEFAULT_LEAD_HOURS = 4
-DEFAULT_CLEAR_AFTER_MINUTES = 0
+DEFAULT_LEAD_HOURS = 1
+DEFAULT_CLEAR_AFTER_MINUTES = 30
 DEFAULT_POLL_MINUTES = 5
+MAX_POLL_MINUTES = 10
 DEFAULT_UPDATE_INTERVAL = timedelta(minutes=DEFAULT_POLL_MINUTES)
+DISPLAY_LEASE_MINUTES = 15
 
 ENDPOINT_ORIGINAL_NAME = "GuestyTerminal Endpoint"
 ENDPOINT_ENTITY_SUFFIX = "_guesty_terminal_endpoint"
@@ -40,4 +42,4 @@ TOKEN_REFRESH_MARGIN_SECONDS = 30 * 60
 MODE_IDLE = "idle"
 MODE_WELCOME = "welcome"
 
-ACTIVE_RESERVATION_STATUSES = ("confirmed", "reserved")
+ACTIVE_RESERVATION_STATUSES = ("confirmed",)

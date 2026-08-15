@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import textwrap
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
@@ -15,6 +16,7 @@ from .const import (
     DEFAULT_LEAD_HOURS,
     DEFAULT_WELCOME_TEXT,
     DEFAULT_WELCOME_TITLE,
+    DISPLAY_LEASE_MINUTES,
     MODE_IDLE,
     MODE_WELCOME,
 )
@@ -40,6 +42,35 @@ def first_present(mapping: Mapping[str, Any], *keys: str) -> str:
         value = _string(mapping.get(key))
         if value:
             return value
+    return ""
+
+
+def reservation_listing_id(data: Mapping[str, Any]) -> str:
+    """Return a listing ID from legacy or Reservations v3 data."""
+    listing_id = first_present(data, "listingId")
+    if listing_id:
+        return listing_id
+
+    nested_listing = data.get("listing")
+    if isinstance(nested_listing, Mapping):
+        listing_id = first_present(nested_listing, "_id", "id")
+        if listing_id:
+            return listing_id
+
+    stay = data.get("stay")
+    if isinstance(stay, list):
+        for segment in stay:
+            if not isinstance(segment, Mapping):
+                continue
+            listing_id = first_present(
+                segment,
+                "listingId",
+                "unitId",
+                "unitTypeId",
+                "parentListingId",
+            )
+            if listing_id:
+                return listing_id
     return ""
 
 
@@ -73,7 +104,7 @@ def extract_keycode_direct(data: Any) -> str:
             if scalar:
                 return scalar
 
-        for key in ("customFields", "customField", "fields"):
+        for key in ("customFields", "customField", "fields", "notes"):
             if key in data:
                 found = extract_keycode_direct(data[key])
                 if found:
@@ -285,14 +316,10 @@ class Reservation:
             full_name = first_present(guest, "fullName", "fullname", "name")
             first_name = full_name.split()[0] if full_name else "Gast"
 
-        listing_id = first_present(data, "listingId")
-        if not listing_id:
-            nested_listing = data.get("listing")
-            if isinstance(nested_listing, Mapping):
-                listing_id = first_present(nested_listing, "_id", "id")
+        listing_id = reservation_listing_id(data)
 
         return cls(
-            reservation_id=first_present(data, "_id", "id"),
+            reservation_id=first_present(data, "reservationId", "_id", "id"),
             listing_id=listing_id or listing.listing_id,
             status=first_present(data, "status").lower(),
             first_name=first_name,
@@ -364,6 +391,27 @@ def _shorten(value: str, maximum: int) -> str:
     if len(value) <= maximum:
         return value
     return f"{value[: maximum - 1].rstrip()}…"
+
+
+def _wrap_display_text(value: str, width: int = 34, maximum_lines: int = 3) -> str:
+    """Wrap display copy without splitting words or Unicode code points."""
+    lines: list[str] = []
+    for paragraph in value.strip().splitlines() or [""]:
+        wrapped = textwrap.wrap(
+            paragraph,
+            width=width,
+            break_long_words=True,
+            break_on_hyphens=False,
+            replace_whitespace=True,
+        ) or [""]
+        lines.extend(wrapped)
+    if len(lines) <= maximum_lines:
+        return "\n".join(lines)
+    visible = lines[:maximum_lines]
+    visible[-1] = _shorten(visible[-1], width)
+    if not visible[-1].endswith("…"):
+        visible[-1] = _shorten(f"{visible[-1]}…", width)
+    return "\n".join(visible)
 
 
 @dataclass(frozen=True, slots=True)
@@ -464,10 +512,11 @@ def build_display_payload(
     now: datetime | None = None,
 ) -> DisplayPayload:
     """Build the guest or idle screen for a configured display."""
+    current = now or datetime.now(UTC)
     reservation = select_reservation(
         reservations,
         listing,
-        now=now,
+        now=current,
         lead_hours=options.lead_hours,
         clear_after_minutes=options.clear_after_minutes,
     )
@@ -484,15 +533,22 @@ def build_display_payload(
     title = render_template(options.welcome_title, values)
     body = render_template(options.welcome_text, values)
     checkout_local = reservation.check_out.astimezone(zone)
-    visible_until = checkout_local + timedelta(
+    stay_visible_until = checkout_local + timedelta(
         minutes=max(0, options.clear_after_minutes)
+    )
+    # A short renewable lease prevents E-paper from retaining credentials after
+    # a mapping or integration is removed while the display is asleep. Normal
+    # coordinator refreshes renew it until the configured checkout grace ends.
+    visible_until = min(
+        stay_visible_until,
+        current + timedelta(minutes=DISPLAY_LEASE_MINUTES),
     )
 
     return DisplayPayload(
         mode=MODE_WELCOME,
         property_name=_shorten(listing.display_name.upper(), 38),
         welcome_title=_shorten(title, 36),
-        welcome_text=_shorten(body, 150),
+        welcome_text=_wrap_display_text(_shorten(body, 150)),
         door_code=_shorten(reservation.keycode, 16) if options.show_door_code else "",
         wifi_name=_shorten(listing.wifi_name, 48) if options.show_wifi else "",
         wifi_password=_shorten(listing.wifi_password, 64) if options.show_wifi else "",

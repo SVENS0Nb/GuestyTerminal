@@ -18,6 +18,7 @@ from .const import (
     CONF_POLL_MINUTES,
     DEFAULT_POLL_MINUTES,
     DOMAIN,
+    MAX_POLL_MINUTES,
 )
 from .models import (
     DisplayPayload,
@@ -27,6 +28,8 @@ from .models import (
     build_display_payload,
     extract_keycode_direct,
     extract_keycode_from_custom_fields,
+    first_present,
+    reservation_listing_id,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,8 +53,9 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
         entry: ConfigEntry,
         client: GuestyClient,
     ) -> None:
-        poll_minutes = max(
-            2, int(entry.options.get(CONF_POLL_MINUTES, DEFAULT_POLL_MINUTES))
+        poll_minutes = min(
+            MAX_POLL_MINUTES,
+            max(2, int(entry.options.get(CONF_POLL_MINUTES, DEFAULT_POLL_MINUTES))),
         )
         super().__init__(
             hass,
@@ -65,6 +69,8 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
         self.client = client
         self._keycode_cache: dict[tuple[str, str], str] = {}
         self._custom_field_definitions: dict[str, Any] = {}
+        self._guest_cache: dict[str, dict[str, Any]] = {}
+        self._account_id: str | None = None
 
     def mapping_options(self) -> list[MappingOptions]:
         """Return all valid stored display mappings."""
@@ -85,10 +91,18 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
         if direct:
             return direct
 
-        reservation_id = str(raw.get("_id") or raw.get("id") or "")
+        reservation_id = first_present(raw, "reservationId", "_id", "id")
         if not reservation_id:
             return ""
-        version = str(raw.get("lastUpdatedAt") or "")
+        channel_metadata = raw.get("channelMetadata")
+        if not isinstance(channel_metadata, dict):
+            channel_metadata = {}
+        version = (
+            first_present(raw, "lastUpdatedAt")
+            or first_present(channel_metadata, "updatedAt")
+            or repr(raw.get("customFields", ""))
+            or first_present(raw, "createdAt")
+        )
         cache_key = (reservation_id, version)
         if cache_key in self._keycode_cache:
             return self._keycode_cache[cache_key]
@@ -103,7 +117,6 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                 reservation_id,
                 err,
             )
-            self._keycode_cache[cache_key] = ""
             return ""
 
         direct = extract_keycode_direct(populated)
@@ -111,7 +124,15 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
             self._keycode_cache[cache_key] = direct
             return direct
 
-        account_id = str(raw.get("accountId") or "")
+        account_id = str(raw.get("accountId") or self._account_id or "")
+        if not account_id:
+            try:
+                account = await self.client.async_get_current_account()
+            except GuestyError as err:
+                _LOGGER.debug("Could not load current Guesty account: %s", err)
+            else:
+                account_id = first_present(account, "id", "_id")
+                self._account_id = account_id or None
         definitions: Any = []
         if account_id:
             if account_id not in self._custom_field_definitions:
@@ -123,12 +144,34 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                     _LOGGER.debug(
                         "Could not load Guesty custom-field definitions: %s", err
                     )
-                    self._custom_field_definitions[account_id] = []
-            definitions = self._custom_field_definitions[account_id]
+                else:
+                    definitions = self._custom_field_definitions[account_id]
+            else:
+                definitions = self._custom_field_definitions[account_id]
 
         keycode = extract_keycode_from_custom_fields(populated, definitions)
-        self._keycode_cache[cache_key] = keycode
+        if keycode:
+            self._keycode_cache[cache_key] = keycode
         return keycode
+
+    async def _async_guest(self, raw: dict[str, Any]) -> dict[str, Any]:
+        """Return embedded or separately loaded guest name data."""
+        guest = raw.get("guest")
+        if isinstance(guest, dict) and guest:
+            return guest
+        guest_id = first_present(raw, "guestId", "bookerId")
+        if not guest_id:
+            return {}
+        if guest_id in self._guest_cache:
+            return self._guest_cache[guest_id]
+        try:
+            guest = await self.client.async_get_guest(guest_id)
+        except GuestyError as err:
+            _LOGGER.debug("Could not load Guesty guest %s: %s", guest_id, err)
+            return {}
+        if guest:
+            self._guest_cache[guest_id] = guest
+        return guest
 
     async def _async_update_data(self) -> GuestyTerminalData:
         try:
@@ -159,14 +202,13 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
             )
             reservations: list[Reservation] = []
             for raw in raw_reservations:
-                listing_id = str(raw.get("listingId") or "")
-                if not listing_id:
-                    nested = raw.get("listing")
-                    if isinstance(nested, dict):
-                        listing_id = str(nested.get("_id") or nested.get("id") or "")
+                listing_id = reservation_listing_id(raw)
                 listing = listings.get(listing_id)
                 if listing is None:
                     continue
+                guest = await self._async_guest(raw)
+                if guest and not isinstance(raw.get("guest"), dict):
+                    raw = {**raw, "guest": guest}
                 keycode = await self._async_keycode(raw)
                 reservation = Reservation.from_api(raw, listing, keycode=keycode)
                 if reservation is not None:

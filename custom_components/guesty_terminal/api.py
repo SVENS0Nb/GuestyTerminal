@@ -196,67 +196,28 @@ class GuestyClient:
     async def async_get_reservations(
         self, listing_ids: list[str]
     ) -> list[dict[str, Any]]:
-        """Return current/imminent confirmed or reserved reservations."""
+        """Return current or imminent confirmed reservations through v3 search."""
         if not listing_ids:
             return []
-        filters = [
-            {
-                "field": "listingId",
-                "operator": "$in",
-                "value": listing_ids,
-            },
-            {
-                "field": "status",
-                "operator": "$in",
-                "value": list(ACTIVE_RESERVATION_STATUSES),
-            },
-            {
-                "field": "checkOutDateLocalized",
-                "operator": "$gt",
-                # `$gt` yesterday includes reservations that check out today.
-                # Those remain valid until their local departure time (plus the
-                # configured grace period) in the payload selection logic.
-                "value": (datetime.now(UTC).date() - timedelta(days=1)).isoformat(),
-            },
-            {
-                "field": "checkInDateLocalized",
-                "operator": "$lt",
-                # Mapping options allow at most 48 hours of lead time. Four
-                # calendar days safely cover that window across time zones and
-                # avoid loading keycodes for every future booking in Guesty.
-                "value": (datetime.now(UTC).date() + timedelta(days=4)).isoformat(),
-            },
-        ]
-        fields = " ".join(
-            (
-                "_id",
-                "accountId",
-                "listingId",
-                "listing",
-                "status",
-                "guest",
-                "guest.firstName",
-                "guest.fullName",
-                "checkIn",
-                "checkOut",
-                "checkInDateLocalized",
-                "checkOutDateLocalized",
-                "plannedArrival",
-                "plannedDeparture",
-                "lastUpdatedAt",
-                "keycode",
-                "customFields",
-            )
-        )
         results: list[dict[str, Any]] = []
         skip = 0
         while True:
             data = await self._request(
                 "GET",
-                "/reservations",
+                "/reservations-v3/search",
                 params={
-                    "fields": fields,
-                    "filters": json.dumps(filters, separators=(",", ":")),
+                    "filter[listingId]": ",".join(listing_ids),
+                    "filter[status]": ",".join(ACTIVE_RESERVATION_STATUSES),
+                    # Yesterday safely covers checkouts around UTC/local-date
+                    # boundaries. Exact visibility is enforced locally.
+                    "filter[checkOut][gte]": (
+                        datetime.now(UTC).date() - timedelta(days=1)
+                    ).isoformat(),
+                    # Up to 48 hours of configurable lead time plus timezone
+                    # headroom, without loading every future reservation.
+                    "filter[checkIn][lt]": (
+                        datetime.now(UTC).date() + timedelta(days=4)
+                    ).isoformat(),
                     "sort": "_id",
                     "limit": 100,
                     "skip": skip,
@@ -264,10 +225,28 @@ class GuestyClient:
             )
             page = data.get("results", []) if isinstance(data, dict) else []
             results.extend(item for item in page if isinstance(item, dict))
-            if len(page) < 100:
+            pagination = data.get("pagination", {}) if isinstance(data, dict) else {}
+            has_more = (
+                pagination.get("hasMore") if isinstance(pagination, dict) else None
+            )
+            if has_more is not True and (has_more is not None or len(page) < 100):
                 break
             skip += 100
         return results
+
+    async def async_get_guest(self, guest_id: str) -> dict[str, Any]:
+        """Return the guest name fields needed by the welcome screen."""
+        data = await self._request(
+            "GET",
+            f"/guests-crud/{guest_id}",
+            params={"fields": "_id firstName fullName"},
+        )
+        return data if isinstance(data, dict) else {}
+
+    async def async_get_current_account(self) -> dict[str, Any]:
+        """Return the current Guesty account for custom-field resolution."""
+        data = await self._request("GET", "/accounts/me")
+        return data if isinstance(data, dict) else {}
 
     async def async_get_reservation_custom_fields(
         self, reservation_id: str
