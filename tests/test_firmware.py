@@ -87,10 +87,10 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "00=black, 01=dark gray, 10=light gray, 11=white" in driver
     assert "1U - ((first >>" not in driver
     assert "probe_otp_support_" not in driver
-    assert 'write_lut_(0x25, LUT_BORDER_GRAY' in driver
-    assert 'write_plane_(0x10, 1)' in driver
-    assert 'write_plane_(0x13, 0)' in driver
-    assert 'Display BUSY never asserted' in driver
+    assert "write_lut_(0x25, LUT_BORDER_GRAY" in driver
+    assert "write_plane_(0x10, 1)" in driver
+    assert "write_plane_(0x13, 0)" in driver
+    assert "Display BUSY never asserted" in driver
 
 
 @pytest.mark.parametrize(
