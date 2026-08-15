@@ -1,6 +1,9 @@
 substitutions:
   device_name: guestyterminal-display-1
   friendly_name: GuestyTerminal Display 1
+  power_mode: auto
+  battery_sleep_duration: 30min
+  awake_duration_seconds: "90"
 
 packages:
   guesty_terminal: !include packages/reterminal-e1001-guesty-terminal.yaml
@@ -10,7 +13,7 @@ esphome:
   friendly_name: ${friendly_name}
   project:
     name: guestyterminal.reterminal-e1001
-    version: "0.2.0"
+    version: "0.3.0"
 
 esp32:
   board: esp32-s3-devkitc-1

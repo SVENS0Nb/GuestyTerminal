@@ -15,6 +15,12 @@ from custom_components.guesty_terminal.const import (
     CONF_CLEAR_AFTER_MINUTES,
     CONF_CLIENT_ID,
     CONF_ENDPOINT_ENTITY,
+    CONF_FIRMWARE_AWAKE_SECONDS,
+    CONF_FIRMWARE_DEVICE_NAME,
+    CONF_FIRMWARE_FRIENDLY_NAME,
+    CONF_FIRMWARE_OVERWRITE,
+    CONF_FIRMWARE_POWER_MODE,
+    CONF_FIRMWARE_WAKE_MINUTES,
     CONF_LEAD_HOURS,
     CONF_LISTING_ID,
     CONF_MAPPINGS,
@@ -180,7 +186,39 @@ def test_options_mapping_can_add_remove_and_show_forms(monkeypatch) -> None:
     general = asyncio.run(flow.async_step_general({CONF_POLL_MINUTES: 10}))
     assert general["data"][CONF_POLL_MINUTES] == 10
     menu = asyncio.run(flow.async_step_init())
-    assert menu["menu_options"] == ("mapping", "general")
+    assert menu["menu_options"] == ("mapping", "firmware", "general")
+
+
+def test_options_firmware_writes_esphome_config(tmp_path) -> None:
+    entry = SimpleNamespace(options={}, runtime_data=None)
+    flow = _options_flow(entry)
+    flow.hass.config = SimpleNamespace(path=lambda name: str(tmp_path / name))
+
+    async def executor_job(function, *args):
+        return function(*args)
+
+    flow.hass.async_add_executor_job = executor_job
+    form = asyncio.run(flow.async_step_firmware())
+    assert form["type"] == "form"
+    assert form["step_id"] == "firmware"
+
+    result = asyncio.run(
+        flow.async_step_firmware(
+            {
+                CONF_FIRMWARE_DEVICE_NAME: "guestyterminal-lobby",
+                CONF_FIRMWARE_FRIENDLY_NAME: "GuestyTerminal Lobby",
+                CONF_FIRMWARE_POWER_MODE: "auto",
+                CONF_FIRMWARE_WAKE_MINUTES: 30,
+                CONF_FIRMWARE_AWAKE_SECONDS: 90,
+                CONF_FIRMWARE_OVERWRITE: False,
+            }
+        )
+    )
+    assert result["type"] == "abort"
+    assert result["reason"] == "firmware_created"
+    generated = tmp_path / "esphome" / "guestyterminal-lobby.yaml"
+    assert generated.exists()
+    assert "battery_sleep_duration: 30min" in generated.read_text(encoding="utf-8")
 
 
 def test_options_mapping_aborts_without_displays_or_listings(monkeypatch) -> None:

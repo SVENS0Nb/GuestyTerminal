@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
@@ -31,6 +32,12 @@ from .const import (
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
     CONF_ENDPOINT_ENTITY,
+    CONF_FIRMWARE_AWAKE_SECONDS,
+    CONF_FIRMWARE_DEVICE_NAME,
+    CONF_FIRMWARE_FRIENDLY_NAME,
+    CONF_FIRMWARE_OVERWRITE,
+    CONF_FIRMWARE_POWER_MODE,
+    CONF_FIRMWARE_WAKE_MINUTES,
     CONF_LEAD_HOURS,
     CONF_LISTING_ID,
     CONF_MAPPINGS,
@@ -42,6 +49,11 @@ from .const import (
     CONF_WELCOME_TITLE,
     DATA_PENDING_TOKENS,
     DEFAULT_CLEAR_AFTER_MINUTES,
+    DEFAULT_FIRMWARE_AWAKE_SECONDS,
+    DEFAULT_FIRMWARE_DEVICE_NAME,
+    DEFAULT_FIRMWARE_FRIENDLY_NAME,
+    DEFAULT_FIRMWARE_POWER_MODE,
+    DEFAULT_FIRMWARE_WAKE_MINUTES,
     DEFAULT_LEAD_HOURS,
     DEFAULT_POLL_MINUTES,
     DEFAULT_WELCOME_TEXT,
@@ -50,6 +62,13 @@ from .const import (
     ENDPOINT_ENTITY_SUFFIX,
     ENDPOINT_ORIGINAL_NAME,
     MAX_POLL_MINUTES,
+)
+from .firmware import (
+    POWER_MODES,
+    FirmwareConfigError,
+    FirmwareFileExistsError,
+    FirmwareOptions,
+    write_firmware_config,
 )
 from .models import MappingOptions
 from .runtime import GuestyTerminalRuntime
@@ -186,7 +205,9 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
     async def async_step_init(
         self, _user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        return self.async_show_menu(step_id="init", menu_options=("mapping", "general"))
+        return self.async_show_menu(
+            step_id="init", menu_options=("mapping", "firmware", "general")
+        )
 
     def _runtime(self) -> GuestyTerminalRuntime:
         return self.config_entry.runtime_data
@@ -326,4 +347,86 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                     )
                 }
             ),
+        )
+
+    async def async_step_firmware(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Create a device-specific ESPHome configuration through the UI."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            firmware_options = FirmwareOptions(
+                device_name=user_input[CONF_FIRMWARE_DEVICE_NAME],
+                friendly_name=user_input[CONF_FIRMWARE_FRIENDLY_NAME],
+                power_mode=user_input[CONF_FIRMWARE_POWER_MODE],
+                wake_interval_minutes=int(user_input[CONF_FIRMWARE_WAKE_MINUTES]),
+                awake_seconds=int(user_input[CONF_FIRMWARE_AWAKE_SECONDS]),
+            )
+            try:
+                firmware_options = firmware_options.validated()
+                destination = await self.hass.async_add_executor_job(
+                    write_firmware_config,
+                    Path(self.hass.config.path("esphome")),
+                    firmware_options,
+                    bool(user_input[CONF_FIRMWARE_OVERWRITE]),
+                )
+            except FirmwareFileExistsError:
+                errors["base"] = "firmware_file_exists"
+            except FirmwareConfigError:
+                errors["base"] = "invalid_firmware_options"
+            except OSError:
+                errors["base"] = "firmware_write_failed"
+            else:
+                return self.async_abort(
+                    reason="firmware_created",
+                    description_placeholders={
+                        "path": str(destination),
+                        "device_name": firmware_options.device_name,
+                    },
+                )
+
+        return self.async_show_form(
+            step_id="firmware",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_FIRMWARE_DEVICE_NAME,
+                        default=DEFAULT_FIRMWARE_DEVICE_NAME,
+                    ): TextSelector(TextSelectorConfig(multiline=False)),
+                    vol.Required(
+                        CONF_FIRMWARE_FRIENDLY_NAME,
+                        default=DEFAULT_FIRMWARE_FRIENDLY_NAME,
+                    ): TextSelector(TextSelectorConfig(multiline=False)),
+                    vol.Required(
+                        CONF_FIRMWARE_POWER_MODE,
+                        default=DEFAULT_FIRMWARE_POWER_MODE,
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=list(POWER_MODES),
+                            mode=SelectSelectorMode.DROPDOWN,
+                            translation_key="firmware_power_mode",
+                        )
+                    ),
+                    vol.Required(
+                        CONF_FIRMWARE_WAKE_MINUTES,
+                        default=DEFAULT_FIRMWARE_WAKE_MINUTES,
+                    ): NumberSelector(
+                        NumberSelectorConfig(
+                            min=5, max=180, step=5, mode=NumberSelectorMode.BOX
+                        )
+                    ),
+                    vol.Required(
+                        CONF_FIRMWARE_AWAKE_SECONDS,
+                        default=DEFAULT_FIRMWARE_AWAKE_SECONDS,
+                    ): NumberSelector(
+                        NumberSelectorConfig(
+                            min=30, max=300, step=15, mode=NumberSelectorMode.BOX
+                        )
+                    ),
+                    vol.Required(
+                        CONF_FIRMWARE_OVERWRITE, default=False
+                    ): BooleanSelector(),
+                }
+            ),
+            errors=errors,
         )

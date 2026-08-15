@@ -18,6 +18,12 @@ CONF_SHOW_DOOR_CODE = "show_door_code"
 CONF_SHOW_WIFI = "show_wifi"
 CONF_REMOVE_MAPPING = "remove_mapping"
 CONF_POLL_MINUTES = "poll_minutes"
+CONF_FIRMWARE_DEVICE_NAME = "firmware_device_name"
+CONF_FIRMWARE_FRIENDLY_NAME = "firmware_friendly_name"
+CONF_FIRMWARE_POWER_MODE = "firmware_power_mode"
+CONF_FIRMWARE_WAKE_MINUTES = "firmware_wake_minutes"
+CONF_FIRMWARE_AWAKE_SECONDS = "firmware_awake_seconds"
+CONF_FIRMWARE_OVERWRITE = "firmware_overwrite"
 
 DEFAULT_WELCOME_TITLE = "Willkommen, {first_name}!"
 DEFAULT_WELCOME_TEXT = (
@@ -30,6 +36,11 @@ DEFAULT_POLL_MINUTES = 5
 MAX_POLL_MINUTES = 10
 DEFAULT_UPDATE_INTERVAL = timedelta(minutes=DEFAULT_POLL_MINUTES)
 DISPLAY_LEASE_MINUTES = 15
+DEFAULT_FIRMWARE_DEVICE_NAME = "guestyterminal-display-1"
+DEFAULT_FIRMWARE_FRIENDLY_NAME = "GuestyTerminal Display 1"
+DEFAULT_FIRMWARE_POWER_MODE = "auto"
+DEFAULT_FIRMWARE_WAKE_MINUTES = 30
+DEFAULT_FIRMWARE_AWAKE_SECONDS = 90
 
 ENDPOINT_ORIGINAL_NAME = "GuestyTerminal Endpoint"
 ENDPOINT_ENTITY_SUFFIX = "_guesty_terminal_endpoint"

@@ -32,6 +32,7 @@
         "title": "GuestyTerminal konfigurieren",
         "menu_options": {
           "mapping": "Listing einem Display zuordnen",
+          "firmware": "E1001-Firmware erstellen",
           "general": "Allgemeine Einstellungen"
         }
       },
@@ -59,11 +60,43 @@
         "data": {
           "poll_minutes": "Guesty-Aktualisierung (Minuten)"
         }
+      },
+      "firmware": {
+        "title": "E1001-Firmware erstellen",
+        "description": "Erzeugt eine sichere ESPHome-Konfiguration unter /config/esphome. Im Modus Automatisch schläft das Display auf Akku und bleibt bei USB-Strom online. LED, Lade-LED, Buzzer und Mikrofon werden deaktiviert.",
+        "data": {
+          "firmware_device_name": "Gerätename",
+          "firmware_friendly_name": "Anzeigename",
+          "firmware_power_mode": "Stromsparmodus",
+          "firmware_wake_minutes": "Auf Akku alle ... Minuten aufwachen",
+          "firmware_awake_seconds": "Maximal wach bleiben (Sekunden)",
+          "firmware_overwrite": "Vorhandene GuestyTerminal-Konfiguration ersetzen"
+        },
+        "data_description": {
+          "firmware_device_name": "1-24 Kleinbuchstaben, Zahlen oder Bindestriche. Für jedes Display eindeutig.",
+          "firmware_power_mode": "Automatisch wird für den E1001 empfohlen.",
+          "firmware_awake_seconds": "Das Display schläft früher ein, sobald Home Assistant neue Daten geliefert hat."
+        }
       }
+    },
+    "error": {
+      "invalid_firmware_options": "Die Firmware-Einstellungen sind ungültig.",
+      "firmware_file_exists": "Unter diesem Gerätenamen existiert bereits eine ESPHome-Datei. Aktiviere Ersetzen nur für eine zuvor von GuestyTerminal erzeugte Datei; fremde Dateien werden nie überschrieben.",
+      "firmware_write_failed": "Die ESPHome-Konfiguration konnte nicht geschrieben werden. Prüfe, ob /config/esphome verfügbar ist."
     },
     "abort": {
       "no_displays": "Kein kompatibles ESPHome-Display gefunden. Flashe zuerst das mitgelieferte E1001-Paket und wecke das Display auf.",
-      "no_listings": "Guesty hat keine aktiven Listings zurückgegeben."
+      "no_listings": "Guesty hat keine aktiven Listings zurückgegeben.",
+      "firmware_created": "Die Konfiguration wurde unter {path} erstellt. Öffne jetzt den ESPHome Device Builder, wähle {device_name} und anschließend Installieren. Für die Erstinstallation wird USB empfohlen."
+    }
+  },
+  "selector": {
+    "firmware_power_mode": {
+      "options": {
+        "auto": "Automatisch (empfohlen)",
+        "battery": "Immer Akkubetrieb",
+        "mains": "Immer online"
+      }
     }
   }
 }

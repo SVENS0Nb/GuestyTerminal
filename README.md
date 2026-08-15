@@ -11,14 +11,15 @@ aktuellen Reservierung auf einem Seeed Studio reTerminal E1001 an:
 - lokal erzeugter, direkt verbindender WiFi-QR-Code;
 - Check-out-Zeit;
 - automatische neutrale Seite 30 Minuten nach Check-out oder bei Stornierung;
-- Zuordnung eines Guesty-Listings zu jedem Display in der Home-Assistant-UI.
+- Zuordnung eines Guesty-Listings zu jedem Display in der Home-Assistant-UI;
+- Firmware-Assistent für gerätespezifische E1001-Konfigurationen.
 
 Die Guesty-Zugangsdaten verbleiben in Home Assistant. Sie werden niemals auf
 dem ESP32 gespeichert oder an das Display übertragen.
 
-Die Geräte verwenden weiterhin ESPHome. Es ist keine separate C++-Firmware
-erforderlich; das mitgelieferte E1001-Paket ersetzt lediglich die bisherige
-Dashboard-Konfiguration und ergänzt die sichere Home-Assistant-Aktion.
+Die Geräte verwenden weiterhin ESPHome. GuestyTerminal erstellt die passende
+Konfiguration über die Home-Assistant-UI; ESPHome Device Builder kompiliert und
+installiert daraus die Firmware.
 
 ## Architektur
 
@@ -36,7 +37,8 @@ Dashboard-Konfiguration und ergänzt die sichere Home-Assistant-Aktion.
 ## Voraussetzungen
 
 - Home Assistant 2025.12 oder neuer;
-- ESPHome mit Unterstützung für `api.actions` und `qr_code`;
+- das Home-Assistant-Add-on **ESPHome Device Builder** mit Unterstützung für
+  `api.actions` und `qr_code`;
 - Guesty Open API-Zugriff mit Client-ID und Client-Secret;
 - reTerminal E1001 im 2,4-GHz-WLAN;
 - in Guesty gepflegte Listing-Felder `wifiName` und `wifiPassword`;
@@ -75,12 +77,32 @@ starten.
 Die Integration speichert und verwendet das etwa 24 Stunden gültige
 OAuth-Zugriffstoken weiter, statt bei jedem Abruf ein neues Token zu erzeugen.
 
-## E1001 flashen
+## Firmware über die GuestyTerminal-UI erstellen
+
+1. In `/config/esphome/secrets.yaml` mindestens `wifi_ssid` und
+   `wifi_password` hinterlegen. Diese beiden Werte werden von der erzeugten
+   Konfiguration nur als ESPHome-Secrets referenziert.
+2. In Home Assistant **Einstellungen → Geräte & Dienste → GuestyTerminal →
+   Konfigurieren → E1001-Firmware erstellen** öffnen.
+3. Einen eindeutigen Gerätenamen vergeben. **Automatisch** und 30 Minuten sind
+   die empfohlenen Energieeinstellungen.
+4. Nach dem Speichern ESPHome Device Builder öffnen. Das neue Gerät erscheint
+   dort unmittelbar.
+5. **Installieren** wählen. Für die erste Installation das E1001 per USB
+   anschließen; spätere Aktualisierungen sind auch OTA möglich.
+
+Der Assistent erzeugt für jedes Gerät einen eigenen API-Schlüssel, ein eigenes
+OTA-Passwort und ein eigenes Fallback-AP-Passwort. Eine vorhandene, nicht von
+GuestyTerminal verwaltete ESPHome-Datei wird niemals überschrieben. Beim
+bewussten Aktualisieren einer vom Assistenten erzeugten Datei bleiben diese
+Geräteschlüssel erhalten, damit der OTA-Zugriff nicht verloren geht.
+
+### Manuell flashen
 
 1. `esphome/secrets.example.yaml` nach `esphome/secrets.yaml` kopieren.
 2. Alle Platzhalter durch neue, zufällige Werte ersetzen.
-3. In `esphome/guestyterminal-display-1.yaml` `device_name` und `friendly_name`
-   anpassen.
+3. In `esphome/guestyterminal-display-1.yaml` Gerätenamen, Anzeigenamen und bei
+   Bedarf die Energieeinstellungen anpassen.
 4. Konfiguration installieren:
 
    ```bash
@@ -119,7 +141,22 @@ Der Standardtitel lautet `Willkommen, {first_name}!`.
 - Maßgeblich ist ausschließlich der Guesty-Reservierungsstatus `confirmed`.
   Zahlungsstatus, Zahlungseingang und Auszahlung durch Airbnb oder andere
   Buchungsportale werden bewusst nicht ausgewertet.
-- Das E1001 wacht alle fünf Minuten auf und bleibt maximal 45 Sekunden aktiv.
+- Im empfohlenen Modus **Automatisch** liest die Firmware den Power-Good-Status
+  des E1001-v1.2-Ladecontrollers aus. Auf Akku schläft das Gerät 30 Minuten und
+  bleibt nach dem Aufwachen höchstens 90 Sekunden aktiv. Sobald Home Assistant
+  die aktuellen Daten geliefert hat, schläft es früher wieder ein. Falls ein
+  älterer Hardwarestand USB-Strom nicht erkennt, kann im Assistenten **Immer
+  online** ausgewählt werden.
+- Bei angeschlossenem USB-Strom bleibt das Gerät online. Wird der Strom später
+  getrennt, wechselt es automatisch beim nächsten 15-Sekunden-Test in den
+  Akkubetrieb. Wird USB während des Deep Sleep angeschlossen, erkennt das Gerät
+  dies beim nächsten regulären Aufwachen und bleibt anschließend online.
+- Die grüne Taste kann das Gerät zusätzlich aus dem Deep Sleep wecken.
+- GPIO-Status-LED, Lade-LED-Ausgang, Buzzer und Mikrofon-Stromversorgung werden
+  von der Firmware deaktiviert. Nach einem vollständigen stromlosen Neustart
+  kann die hardwaregesteuerte Lade-LED bis zum Start der Firmware sehr kurz
+  aufleuchten; vollständig verhindern lässt sich diese Startphase nur durch
+  eine physische Abdeckung oder Hardwareänderung.
 - Weil E-Paper das letzte Bild stromlos behält, erhält jeder Gastbildschirm eine
   erneuerbare 15-Minuten-Freigabe. Home Assistant erneuert sie beim regulären
   Abruf bis 30 Minuten nach Check-out. Nach dem Entfernen einer Zuordnung oder
@@ -138,6 +175,11 @@ Der Standardtitel lautet `Willkommen, {first_name}!`.
 Die Home-Assistant-Aktion `guesty_terminal.refresh` lädt Guesty-Daten sofort neu
 und aktualisiert alle momentan erreichbaren Displays. Schlafende Displays
 erhalten die Daten bei ihrem nächsten Aufwachen.
+
+Für eine OTA-Firmwareaktualisierung im Modus **Automatisch** das E1001 an USB
+anschließen und spätestens beim nächsten Aufwachzyklus im ESPHome Device Builder
+installieren. Nach der USB-Erkennung bleibt es online, bis das Kabel entfernt
+wird.
 
 ## Datenschutz
 
