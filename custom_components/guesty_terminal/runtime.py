@@ -28,6 +28,8 @@ async def async_send_display_payload(
     endpoint_entity: str,
     payload: DisplayPayload,
     lock: asyncio.Lock | None = None,
+    *,
+    force_redraw: bool = False,
 ) -> bool:
     """Send one payload directly to a reachable ESPHome display."""
     endpoint_state = hass.states.get(endpoint_entity)
@@ -50,12 +52,18 @@ async def async_send_display_payload(
     send_lock = lock or asyncio.Lock()
     async with send_lock:
         try:
+            include_content_id = action.endswith(DISPLAY_ACTION_V2_SUFFIX)
+            service_data = payload.as_service_data(
+                include_content_id=include_content_id
+            )
+            if force_redraw and include_content_id:
+                # An empty fingerprint is the firmware's explicit one-shot
+                # recovery signal. Normal duplicate suppression remains on.
+                service_data["content_id"] = ""
             await hass.services.async_call(
                 "esphome",
                 action,
-                payload.as_service_data(
-                    include_content_id=action.endswith(DISPLAY_ACTION_V2_SUFFIX)
-                ),
+                service_data,
                 blocking=True,
             )
         except Exception:  # Home Assistant service errors vary by ESPHome version.
@@ -159,33 +167,58 @@ class GuestyTerminalRuntime:
             return_exceptions=True,
         )
 
-    async def async_push_endpoint(self, endpoint_entity: str) -> None:
+    async def async_push_endpoint(self, endpoint_entity: str) -> bool:
         """Push one display payload through its ESPHome action."""
+        payload = self._safe_payload_for_endpoint(endpoint_entity)
+        if payload is None:
+            return False
+        return await self._async_send_payload(endpoint_entity, payload)
+
+    async def async_force_redraw_all(self) -> None:
+        """Redraw configured displays once using cached payloads."""
         if self.coordinator.data is None:
             return
-        payload = self.coordinator.data.payloads.get(endpoint_entity)
+        await asyncio.gather(
+            *(
+                self.async_force_redraw_endpoint(endpoint)
+                for endpoint in self.coordinator.data.payloads
+            ),
+            return_exceptions=True,
+        )
+
+    async def async_force_redraw_endpoint(self, endpoint_entity: str) -> bool:
+        """Force one redraw without fetching or changing Guesty data."""
+        payload = self._safe_payload_for_endpoint(endpoint_entity)
         if payload is None:
-            return
+            return False
+        return await self._async_send_payload(
+            endpoint_entity, payload, force_redraw=True
+        )
 
-        if payload.is_expired(datetime.now(UTC)):
-            mapping = next(
-                (
-                    item
-                    for item in self.coordinator.mapping_options()
-                    if item.endpoint_entity == endpoint_entity
-                ),
-                None,
-            )
-            listing = (
-                self.coordinator.data.listings.get(mapping.listing_id)
-                if mapping is not None
-                else None
-            )
-            payload = DisplayPayload.idle(
-                listing or Listing("", payload.property_name or "Unterkunft")
-            )
+    def _safe_payload_for_endpoint(self, endpoint_entity: str) -> DisplayPayload | None:
+        """Return cached content, replacing an expired guest screen with idle."""
+        if self.coordinator.data is None:
+            return None
+        payload = self.coordinator.data.payloads.get(endpoint_entity)
+        if payload is None or not payload.is_expired(datetime.now(UTC)):
+            return payload
 
-        await self._async_send_payload(endpoint_entity, payload)
+        mapping = next(
+            (
+                item
+                for item in self.coordinator.mapping_options()
+                if item.endpoint_entity == endpoint_entity
+            ),
+            None,
+        )
+        listing = (
+            self.coordinator.data.listings.get(mapping.listing_id)
+            if mapping is not None
+            else None
+        )
+        return DisplayPayload.idle(
+            listing or Listing("", payload.property_name or "Unterkunft")
+        )
 
     async def async_clear_endpoint(self, endpoint_entity: str) -> bool:
         """Replace a potentially sensitive E-paper image with an idle screen."""
@@ -210,7 +243,11 @@ class GuestyTerminalRuntime:
         )
 
     async def _async_send_payload(
-        self, endpoint_entity: str, payload: DisplayPayload
+        self,
+        endpoint_entity: str,
+        payload: DisplayPayload,
+        *,
+        force_redraw: bool = False,
     ) -> bool:
         """Send a prepared payload when the ESPHome endpoint is reachable."""
         lock = self._locks.setdefault(endpoint_entity, asyncio.Lock())
@@ -219,4 +256,5 @@ class GuestyTerminalRuntime:
             endpoint_entity,
             payload,
             lock,
+            force_redraw=force_redraw,
         )

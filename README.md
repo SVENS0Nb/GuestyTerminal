@@ -180,6 +180,9 @@ Der Standardtitel lautet `Willkommen, {first_name}!`.
   Display beim Entfernen geschlafen hat.
 - Wiederholte Abgleiche und 30-Minuten-Aufwachzyklen mit identischen Daten
   lösen keine E-Paper-Aktualisierung und damit auch kein Kontrastblinken aus.
+  Nach einer schnellen Wiederverbindung signalisiert die Firmware Home
+  Assistant trotzdem zuverlässig, den zwischengespeicherten Inhalt erneut zu
+  senden; unveränderte Bilder werden dabei weiterhin nicht neu gezeichnet.
   Auf dem Gerät bleibt dafür nur eine kryptografische, mit der Reservierungs-ID
   gesalzene Inhalts-ID erhalten; die Zugangsdaten selbst werden nicht dauerhaft
   gespeichert.
@@ -196,6 +199,11 @@ Der Standardtitel lautet `Willkommen, {first_name}!`.
 Die Home-Assistant-Aktion `guesty_terminal.refresh` lädt Guesty-Daten sofort neu
 und aktualisiert alle momentan erreichbaren Displays. Schlafende Displays
 erhalten die Daten bei ihrem nächsten Aufwachen.
+
+Die Aktion `guesty_terminal.force_redraw` zeichnet den bereits geladenen Inhalt
+einmal neu. Sie fragt Guesty nicht erneut ab und ist für die Wiederherstellung
+nach einem Treiber- oder Firmwarewechsel gedacht. Im normalen Betrieb bleibt
+die automatische Unterdrückung identischer E-Paper-Aktualisierungen aktiv.
 
 Für eine OTA-Firmwareaktualisierung im Modus **Automatisch** das E1001 an USB
 anschließen und spätestens beim nächsten Aufwachzyklus im ESPHome Device Builder
