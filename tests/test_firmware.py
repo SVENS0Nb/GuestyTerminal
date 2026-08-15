@@ -78,6 +78,9 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert '"Bei Fragen sind wir für dich da."' not in package
     assert "id(guesty_logo_data).size() == logo_hex_length" in package
     assert "it.line(32, 402, 768, 402)" in package
+    assert "it.rectangle(32, 250, 345, 105)" not in package
+    assert "it.rectangle(qr_x - 10, qr_y - 10" not in package
+    assert "it.filled_rectangle(qr_x - 10, qr_y - 10" in package
     assert "on_client_connected:" in package
     assert 'state: "__guesty_reconnecting__"' in package
     driver = (

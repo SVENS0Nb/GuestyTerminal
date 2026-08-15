@@ -123,7 +123,8 @@ der offiziellen E1001-Hardwarebelegung und sind für dieses Board beabsichtigt.
 GuestyTerminal verwendet einen eigenen UC8179-Treiber für die vier nativen
 Graustufen des GDEY075T7-Panels. Schriftdateien werden zunächst mit 4 Bit pro
 Pixel gerastert und anschließend auf die vier Panelstufen quantisiert. QR-Code,
-Rahmen und Türcode bleiben dabei satt schwarz. Da das Panel im OTP nur eine
+QR-Code und Türcode bleiben dabei satt schwarz und werden ohne sichtbare
+Umrandung gezeichnet. Da das Panel im OTP nur eine
 Schwarz-Weiß-Wellenform enthält, verwendet der Treiber für vier Graustufen
 ausschließlich die erprobten Register-LUTs und die Initialisierungsfolge aus
 GxEPD2_4G. So bleibt GPIO9 durchgehend als SPI-Datenleitung konfiguriert. Die

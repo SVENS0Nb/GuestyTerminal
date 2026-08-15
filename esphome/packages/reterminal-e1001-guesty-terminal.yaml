@@ -554,7 +554,6 @@ display:
 
           // Compact door-code field
           if (!id(guesty_door_code).empty()) {
-            it.rectangle(32, 250, 345, 105);
             it.print(48, 263, id(guesty_font_label), "DEIN TÜRCODE");
             esphome::font::Font *code_font = id(guesty_door_code).size() > 8
                 ? id(guesty_font_door_code_small)
@@ -573,8 +572,6 @@ display:
             const int qr_y = 176;
             it.filled_rectangle(qr_x - 10, qr_y - 10,
                                 qr_size + 20, qr_size + 20, COLOR_OFF);
-            it.rectangle(qr_x - 10, qr_y - 10,
-                         qr_size + 20, qr_size + 20, COLOR_ON);
             it.qr_code(qr_x, qr_y, id(guesty_wifi_qr), COLOR_ON, qr_scale);
 
             const int details_y = qr_y + qr_size + 17;
