@@ -100,6 +100,7 @@ def test_reservation_parses_dates_times_names_and_invalid_values() -> None:
     )
     assert reservation is not None
     assert reservation.first_name == "Ada"
+    assert reservation.guest_name == "Ada Lovelace"
     assert reservation.listing_id == "nested-listing"
     assert reservation.check_in.hour == 15
     assert reservation.check_out.hour == 11
@@ -207,6 +208,11 @@ def test_templates_shortening_visibility_and_service_data() -> None:
     assert len(payload.wifi_name) == 48
     assert len(payload.wifi_password) == 64
     assert payload.as_service_data()["valid_until_epoch"] == payload.valid_until_epoch
+    assert "booking_summary" not in payload.as_service_data()
+    assert (
+        payload.as_service_data(include_booking_summary=True)["booking_summary"]
+        == payload.booking_summary
+    )
     content_id = payload.content_id
     assert len(content_id) == 24
     assert payload.as_service_data(include_content_id=True)["content_id"] == content_id

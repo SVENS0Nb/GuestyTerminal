@@ -63,7 +63,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.8") == 2
+    assert rendered.count("ref: v0.3.9") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
 
@@ -73,8 +73,8 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
 
     assert package.count("bpp: 4") == 10
     assert "lut_mode: ${gray_lut_mode}" in package
-    assert "id(guesty_render_revision) != 6" in package
-    assert "guesty_terminal_update_display_v3" in package
+    assert "id(guesty_render_revision) != 7" in package
+    assert "guesty_terminal_update_display_v4" in package
     assert '"Bei Fragen sind wir für dich da."' not in package
     assert "id(guesty_logo_data).size() == logo_hex_length" in package
     assert "it.line(32, 402, 768, 402)" in package
@@ -90,13 +90,18 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "id: guesty_restart" in package
     assert "name: Neustart" in package
     assert "- interval: 5min" in package
-    driver = (
+    assert "id: guesty_last_booking" in package
+    assert "name: Angezeigte Buchung" in package
+    assert "last_update_successful()" in package
+    assert 'state: "Keine aktive Buchung"' in package
+    driver_path = (
         Path(__file__).parents[1]
         / "esphome"
         / "components"
         / "guesty_epaper_gray4"
         / "guesty_epaper_gray4.cpp"
-    ).read_text(encoding="utf-8")
+    )
+    driver = driver_path.read_text(encoding="utf-8")
     assert '"Framebuffer levels:' in driver
     assert "00=black, 01=dark gray, 10=light gray, 11=white" in driver
     assert "1U - ((first >>" not in driver
@@ -105,6 +110,9 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "write_plane_(0x10, 1)" in driver
     assert "write_plane_(0x13, 0)" in driver
     assert "Display BUSY never asserted" in driver
+    assert "this->last_update_successful_ = this->display_()" in driver
+    header = driver_path.with_suffix(".h").read_text(encoding="utf-8")
+    assert "bool last_update_successful() const" in header
 
 
 @pytest.mark.parametrize(

@@ -22,6 +22,7 @@ from .const import (
     DISPLAY_ACTION_SUFFIX,
     DISPLAY_ACTION_V2_SUFFIX,
     DISPLAY_ACTION_V3_SUFFIX,
+    DISPLAY_ACTION_V4_SUFFIX,
     MODE_WELCOME,
 )
 from .coordinator import GuestyTerminalCoordinator
@@ -51,7 +52,12 @@ async def async_send_display_payload(
 
     action = endpoint_state.state.strip()
     if not _ACTION_PATTERN.fullmatch(action) or not action.endswith(
-        (DISPLAY_ACTION_SUFFIX, DISPLAY_ACTION_V2_SUFFIX, DISPLAY_ACTION_V3_SUFFIX)
+        (
+            DISPLAY_ACTION_SUFFIX,
+            DISPLAY_ACTION_V2_SUFFIX,
+            DISPLAY_ACTION_V3_SUFFIX,
+            DISPLAY_ACTION_V4_SUFFIX,
+        )
     ):
         _LOGGER.warning("Ignoring invalid ESPHome display endpoint %s", action)
         return False
@@ -63,12 +69,17 @@ async def async_send_display_payload(
     async with send_lock:
         try:
             include_content_id = action.endswith(
-                (DISPLAY_ACTION_V2_SUFFIX, DISPLAY_ACTION_V3_SUFFIX)
+                (
+                    DISPLAY_ACTION_V2_SUFFIX,
+                    DISPLAY_ACTION_V3_SUFFIX,
+                    DISPLAY_ACTION_V4_SUFFIX,
+                )
             )
             service_data = payload.as_service_data(
-                include_content_id=include_content_id
+                include_content_id=include_content_id,
+                include_booking_summary=action.endswith(DISPLAY_ACTION_V4_SUFFIX),
             )
-            if action.endswith(DISPLAY_ACTION_V3_SUFFIX):
+            if action.endswith((DISPLAY_ACTION_V3_SUFFIX, DISPLAY_ACTION_V4_SUFFIX)):
                 active_logo = (
                     valid_logo_data(logo_data) if payload.mode == MODE_WELCOME else ""
                 )

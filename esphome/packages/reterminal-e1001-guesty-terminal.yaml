@@ -76,7 +76,7 @@ api:
             - delay: 1s
             - component.update: guesty_terminal_endpoint
   actions:
-    - action: guesty_terminal_update_display_v3
+    - action: guesty_terminal_update_display_v4
       variables:
         mode: string
         property_name: string
@@ -89,12 +89,13 @@ api:
         valid_until_epoch: int
         content_id: string
         logo_data: string
+        booking_summary: string
       then:
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
             id(guesty_content_changed) = content_id.empty()
                 || content_id != id(guesty_content_id)
-                || id(guesty_render_revision) != 6;
+                || id(guesty_render_revision) != 7;
             id(guesty_mode) = mode;
             id(guesty_property_name) = property_name;
             id(guesty_welcome_title) = welcome_title;
@@ -148,11 +149,29 @@ api:
                     - display.page.show: guesty_idle_page
               - component.update: guesty_epaper
               - delay: 7s
-              - lambda: id(guesty_render_revision) = 6;
+              - if:
+                  condition:
+                    lambda: return id(guesty_epaper).last_update_successful();
+                  then:
+                    - lambda: id(guesty_render_revision) = 7;
+                    - text_sensor.template.publish:
+                        id: guesty_last_booking
+                        state: !lambda |-
+                          return booking_summary;
+                  else:
+                    - logger.log:
+                        level: WARN
+                        format: "E-paper refresh failed; booking confirmation was not published"
             else:
               # No panel refresh is needed, but restored globals (especially
               # the renewed privacy lease) need one scheduler cycle before
-              # battery mode enters deep sleep.
+              # battery mode enters deep sleep. A matching persisted content
+              # ID plus renderer revision proves this booking was drawn during
+              # an earlier successful refresh.
+              - text_sensor.template.publish:
+                  id: guesty_last_booking
+                  state: !lambda |-
+                    return booking_summary;
               - delay: 1200ms
         - if:
             condition:
@@ -398,7 +417,15 @@ sensor:
     update_interval: never
 
 text_sensor:
-  # The Home Assistant integration discovers these entities. Its state is the
+  # This diagnostic state is published only after a successful physical panel
+  # refresh, or when a matching successful content ID is restored after wake.
+  - platform: template
+    id: guesty_last_booking
+    name: Angezeigte Buchung
+    icon: mdi:calendar-account
+    entity_category: diagnostic
+    update_interval: never
+  # The Home Assistant integration discovers this entity. Its state is the
   # exact ESPHome action name to call while this device is awake.
   - platform: template
     id: guesty_terminal_endpoint
@@ -406,7 +433,7 @@ text_sensor:
     entity_category: diagnostic
     update_interval: never
     lambda: |-
-      std::string action = "${device_name}_guesty_terminal_update_display_v3";
+      std::string action = "${device_name}_guesty_terminal_update_display_v4";
       for (char &character : action) {
         if (character == '-') character = '_';
       }
@@ -720,6 +747,13 @@ interval:
                   - display.page.show: guesty_idle_page
                   - component.update: guesty_epaper
                   - delay: 7s
+                  - if:
+                      condition:
+                        lambda: return id(guesty_epaper).last_update_successful();
+                      then:
+                        - text_sensor.template.publish:
+                            id: guesty_last_booking
+                            state: "Keine aktive Buchung"
             - deep_sleep.enter: guesty_deep_sleep
       # On permanent power there is no next wake-up cycle. Enforce the payload
       # lease continuously so stale access data still disappears locally.
@@ -753,3 +787,11 @@ interval:
                 id(guesty_content_id).clear();
             - display.page.show: guesty_idle_page
             - component.update: guesty_epaper
+            - delay: 7s
+            - if:
+                condition:
+                  lambda: return id(guesty_epaper).last_update_successful();
+                then:
+                  - text_sensor.template.publish:
+                      id: guesty_last_booking
+                      state: "Keine aktive Buchung"
