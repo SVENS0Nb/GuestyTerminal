@@ -215,6 +215,11 @@ Der Standardtitel lautet `Willkommen, {first_name}!`.
   zeichnet das aktuelle Bild bewusst sofort neu. Im Deep Sleep sind die beiden
   Buttons bis zum nächsten Aufwachen nicht erreichbar. Der Batteriestand wird
   bei jedem Aufwachen und bei USB-Betrieb alle fünf Minuten neu gemessen.
+- Die Diagnose-Entität **Angezeigte Buchung** nennt Gastname und Zeitraum der
+  Buchung, deren Bild das E-Paper zuletzt erfolgreich bestätigt hat. Sie wird
+  erst nach einem abgeschlossenen BUSY-Zyklus aktualisiert. Nach einem normalen
+  Aufwachen darf die Firmware denselben bestätigten Stand anhand der
+  gespeicherten, nicht umkehrbaren Inhalts-ID erneut melden.
 - Türcode, WiFi-Name und WiFi-Passwort werden auf dem E1001 nur im RAM gehalten.
 - Der WiFi-QR-Code wird lokal erzeugt. Sonderzeichen werden nach dem WiFi-QR-
   Format maskiert; es wird kein externer QR-Dienst verwendet.
@@ -245,6 +250,12 @@ Die von der Integration angelegten Statussensoren enthalten weder Gastnamen
 noch Tür- oder WiFi-Codes. In den Attributen steht lediglich, ob der aktuelle
 Bildschirm solche Daten enthält. Fehlerprotokolle geben ebenfalls keine
 Zugangsdaten aus.
+
+Die ESPHome-Diagnose-Entität **Angezeigte Buchung** ist hiervon bewusst
+ausgenommen: Sie enthält den Gastnamen sowie Check-in und Check-out zur
+Fernkontrolle des Displays. Home Assistant kann diese Zustände im Recorder
+speichern. Wer diese personenbezogene Historie nicht benötigt, sollte die
+Entität in den Recorder-Einstellungen ausschließen.
 
 ## Tests
 

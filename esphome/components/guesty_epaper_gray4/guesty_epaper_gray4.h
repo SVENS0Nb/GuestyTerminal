@@ -38,6 +38,7 @@ class GuestyEPaperGray4
   void set_data_pin(GPIOPin *data_pin) { this->data_pin_ = data_pin; }
   void set_lut_mode(LutMode lut_mode) { this->configured_lut_mode_ = lut_mode; }
   void set_reset_duration(uint32_t duration) { this->reset_duration_ = duration; }
+  bool last_update_successful() const { return this->last_update_successful_; }
 
   float get_setup_priority() const override;
   void setup() override;
@@ -71,7 +72,7 @@ class GuestyEPaperGray4
   void write_plane_(uint8_t command, uint8_t bit_index);
   void log_frame_levels_();
   bool refresh_();
-  void display_();
+  bool display_();
   void deep_sleep_panel_();
 
   GPIOPin *dc_pin_{nullptr};
@@ -82,6 +83,7 @@ class GuestyEPaperGray4
   uint32_t reset_duration_{10};
   bool panel_asleep_{true};
   bool lut_mode_selected_{false};
+  bool last_update_successful_{false};
   LutMode configured_lut_mode_{LUT_MODE_AUTO};
 };
 

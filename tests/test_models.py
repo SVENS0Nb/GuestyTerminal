@@ -32,7 +32,7 @@ def _reservation(keycode: str = "4827") -> Reservation:
         "_id": "reservation-1",
         "listingId": "listing-1",
         "status": "confirmed",
-        "guest": {"firstName": "Anna"},
+        "guest": {"firstName": "Anna", "lastName": "Beispiel"},
         "checkInDateLocalized": "2026-08-14",
         "checkOutDateLocalized": "2026-08-17",
         "keycode": keycode,
@@ -101,6 +101,9 @@ def test_builds_welcome_payload_inside_lead_window() -> None:
     assert payload.wifi_name == "Guest-WLAN"
     assert payload.wifi_password == "Beispiel-2026"
     assert payload.checkout_label == "Check-out: 17.08. · 11:00 Uhr"
+    assert (
+        payload.booking_summary == "Anna Beispiel · 14.08.2026 15:00 – 17.08.2026 11:00"
+    )
 
 
 def test_uses_per_display_us_date_and_12_hour_time_format() -> None:
@@ -122,6 +125,10 @@ def test_uses_per_display_us_date_and_12_hour_time_format() -> None:
     assert payload.welcome_title == "Anreise: 08/14/2026 · 3:00 PM"
     assert payload.welcome_text == "Abreise: 08/17/2026 · 11:00 AM"
     assert payload.checkout_label == "Check-out: 08/17 · 11:00 AM"
+    assert (
+        payload.booking_summary
+        == "Anna Beispiel · 08/14/2026 3:00 PM – 08/17/2026 11:00 AM"
+    )
 
 
 def test_older_mapping_defaults_to_eu_date_and_time_format() -> None:
@@ -181,6 +188,7 @@ def test_idle_payload_never_contains_credentials() -> None:
     assert payload.door_code == ""
     assert payload.wifi_name == ""
     assert payload.wifi_password == ""
+    assert payload.booking_summary == "Keine aktive Buchung"
 
 
 def test_next_arrival_wins_over_previous_checkout_grace_period() -> None:

@@ -55,6 +55,7 @@ ENDPOINT_ENTITY_SUFFIX = "_guesty_terminal_endpoint"
 DISPLAY_ACTION_SUFFIX = "_guesty_terminal_update_display"
 DISPLAY_ACTION_V2_SUFFIX = "_guesty_terminal_update_display_v2"
 DISPLAY_ACTION_V3_SUFFIX = "_guesty_terminal_update_display_v3"
+DISPLAY_ACTION_V4_SUFFIX = "_guesty_terminal_update_display_v4"
 
 SERVICE_REFRESH = "refresh"
 SERVICE_FORCE_REDRAW = "force_redraw"

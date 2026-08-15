@@ -69,9 +69,10 @@ void GuestyEPaperGray4::setup() {
 }
 
 void GuestyEPaperGray4::update() {
+  this->last_update_successful_ = false;
   this->do_update_();
   if (!this->is_failed())
-    this->display_();
+    this->last_update_successful_ = this->display_();
 }
 
 void GuestyEPaperGray4::on_safe_shutdown() { this->deep_sleep_panel_(); }
@@ -285,16 +286,18 @@ bool GuestyEPaperGray4::refresh_() {
   return true;
 }
 
-void GuestyEPaperGray4::display_() {
+bool GuestyEPaperGray4::display_() {
   if (!this->select_lut_mode_() || !this->reset_panel_())
-    return;
+    return false;
   if (!this->init_gray_mode_())
-    return;
+    return false;
   this->log_frame_levels_();
   this->write_plane_(0x10, 1);  // DTM1: most-significant grayscale bit
   this->write_plane_(0x13, 0);  // DTM2: least-significant grayscale bit
-  if (this->refresh_())
-    this->deep_sleep_panel_();
+  if (!this->refresh_())
+    return false;
+  this->deep_sleep_panel_();
+  return true;
 }
 
 void GuestyEPaperGray4::deep_sleep_panel_() {

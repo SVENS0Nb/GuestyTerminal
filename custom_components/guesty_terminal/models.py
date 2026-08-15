@@ -284,6 +284,7 @@ class Reservation:
     first_name: str
     check_in: datetime
     check_out: datetime
+    guest_name: str = ""
     keycode: str = ""
     account_id: str = ""
     raw: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
@@ -340,10 +341,14 @@ class Reservation:
         guest = data.get("guest")
         if not isinstance(guest, Mapping):
             guest = {}
+        full_name = first_present(guest, "fullName", "fullname", "name")
         first_name = first_present(guest, "firstName", "firstname")
         if not first_name:
-            full_name = first_present(guest, "fullName", "fullname", "name")
             first_name = full_name.split()[0] if full_name else "Gast"
+        last_name = first_present(guest, "lastName", "lastname")
+        guest_name = full_name or " ".join(
+            part for part in (first_name, last_name) if part
+        )
 
         listing_id = reservation_listing_id(data)
 
@@ -354,6 +359,7 @@ class Reservation:
             first_name=first_name,
             check_in=check_in,
             check_out=check_out,
+            guest_name=guest_name or first_name,
             keycode=sanitize_door_code(keycode or extract_keycode_direct(data)),
             account_id=first_present(data, "accountId"),
             raw=data,
@@ -462,6 +468,7 @@ class DisplayPayload:
     wifi_password: str
     checkout_label: str
     valid_until_epoch: int
+    booking_summary: str = ""
     reservation_id: str = field(default="", compare=False, repr=False)
 
     @classmethod
@@ -477,6 +484,7 @@ class DisplayPayload:
             wifi_password="",
             checkout_label="",
             valid_until_epoch=0,
+            booking_summary="Keine aktive Buchung",
         )
 
     def is_expired(self, now: datetime | None = None) -> bool:
@@ -504,7 +512,12 @@ class DisplayPayload:
         serialized = "\0".join((self.reservation_id, *visible_fields))
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:24]
 
-    def as_service_data(self, *, include_content_id: bool = False) -> dict[str, Any]:
+    def as_service_data(
+        self,
+        *,
+        include_content_id: bool = False,
+        include_booking_summary: bool = False,
+    ) -> dict[str, Any]:
         """Return the exact ESPHome action payload."""
         data = {
             "mode": self.mode,
@@ -519,6 +532,8 @@ class DisplayPayload:
         }
         if include_content_id:
             data["content_id"] = self.content_id
+        if include_booking_summary:
+            data["booking_summary"] = self.booking_summary
         return data
 
 
@@ -592,10 +607,18 @@ def build_display_payload(
         checkout_label = checkout_local.strftime("Check-out: %m/%d · %I:%M %p").replace(
             "· 0", "· "
         )
+        booking_check_in = check_in_local.strftime("%m/%d/%Y %I:%M %p").replace(
+            " 0", " "
+        )
+        booking_check_out = checkout_local.strftime("%m/%d/%Y %I:%M %p").replace(
+            " 0", " "
+        )
     else:
         check_in_display = check_in_local.strftime("%d.%m.%Y · %H:%M Uhr")
         check_out_display = checkout_local.strftime("%d.%m.%Y · %H:%M Uhr")
         checkout_label = checkout_local.strftime("Check-out: %d.%m. · %H:%M Uhr")
+        booking_check_in = check_in_local.strftime("%d.%m.%Y %H:%M")
+        booking_check_out = checkout_local.strftime("%d.%m.%Y %H:%M")
 
     values = {
         "first_name": reservation.first_name,
@@ -630,5 +653,10 @@ def build_display_payload(
         wifi_password=_shorten(listing.wifi_password, 64) if options.show_wifi else "",
         checkout_label=checkout_label,
         valid_until_epoch=int(visible_until.timestamp()),
+        booking_summary=_shorten(
+            f"{reservation.guest_name or reservation.first_name} · "
+            f"{booking_check_in} – {booking_check_out}",
+            160,
+        ),
         reservation_id=reservation.reservation_id,
     )

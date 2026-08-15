@@ -23,6 +23,7 @@ ENDPOINT = "sensor.guestyterminal_display_1_guesty_terminal_endpoint"
 ACTION = "guestyterminal_display_1_guesty_terminal_update_display"
 ACTION_V2 = "guestyterminal_display_1_guesty_terminal_update_display_v2"
 ACTION_V3 = "guestyterminal_display_1_guesty_terminal_update_display_v3"
+ACTION_V4 = "guestyterminal_display_1_guesty_terminal_update_display_v4"
 
 
 class FakeServices:
@@ -40,6 +41,7 @@ class FakeServices:
                 ACTION,
                 ACTION_V2,
                 ACTION_V3,
+                ACTION_V4,
             )
         )
 
@@ -152,6 +154,29 @@ def test_v3_action_receives_one_global_logo_and_logo_aware_content_id() -> None:
     hass.services.calls.clear()
     asyncio.run(runtime.async_push_endpoint(ENDPOINT))
     assert hass.services.calls[0][2]["logo_data"] == ""
+
+
+def test_v4_action_receives_confirmed_booking_summary() -> None:
+    welcome = DisplayPayload(
+        mode="welcome",
+        property_name="LOFT",
+        welcome_title="Hallo Anna",
+        welcome_text="Willkommen",
+        door_code="4827",
+        wifi_name="WiFi",
+        wifi_password="secret",
+        checkout_label="morgen",
+        valid_until_epoch=int(datetime(2100, 1, 1, tzinfo=UTC).timestamp()),
+        booking_summary="Anna Beispiel · 14.08.2026 15:00 – 17.08.2026 11:00",
+    )
+    runtime, hass, _coordinator = _runtime(state=ACTION_V4, payload=welcome)
+
+    asyncio.run(runtime.async_push_endpoint(ENDPOINT))
+
+    sent = hass.services.calls[0][2]
+    assert sent["booking_summary"] == welcome.booking_summary
+    assert len(sent["content_id"]) == 24
+    assert sent["logo_data"] == ""
 
 
 def test_v3_push_all_uses_the_same_global_logo_for_every_display() -> None:
