@@ -63,8 +63,14 @@
       },
       "general": {
         "title": "General settings",
+        "description": "These settings apply to every display. Global logo: {logo_status}. Uploading a new file replaces the existing logo.",
         "data": {
-          "poll_minutes": "Guesty refresh interval (minutes)"
+          "poll_minutes": "Guesty refresh interval (minutes)",
+          "logo_upload": "Global logo for all displays",
+          "remove_logo": "Remove global logo"
+        },
+        "data_description": {
+          "logo_upload": "PNG or JPEG, up to 5 MB. The logo is automatically scaled without a border and optimized for four grayscale levels."
         }
       },
       "firmware": {
@@ -87,6 +93,7 @@
     },
     "error": {
       "invalid_firmware_options": "The firmware settings are invalid.",
+      "invalid_logo": "The logo could not be processed. Use a visible PNG or JPEG file up to 5 MB.",
       "firmware_file_exists": "An ESPHome file already uses this device name. Enable replacement only for a file previously created by GuestyTerminal; other files are never overwritten.",
       "firmware_write_failed": "The ESPHome configuration could not be written. Verify that /config/esphome is available."
     },

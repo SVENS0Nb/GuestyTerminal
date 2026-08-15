@@ -8,12 +8,15 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.components.file_upload import process_uploaded_file
 from homeassistant.config_entries import ConfigFlowResult, OptionsFlowWithReload
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     BooleanSelector,
+    FileSelector,
+    FileSelectorConfig,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
@@ -40,8 +43,11 @@ from .const import (
     CONF_FIRMWARE_WAKE_MINUTES,
     CONF_LEAD_HOURS,
     CONF_LISTING_ID,
+    CONF_LOGO_DATA,
+    CONF_LOGO_UPLOAD,
     CONF_MAPPINGS,
     CONF_POLL_MINUTES,
+    CONF_REMOVE_LOGO,
     CONF_REMOVE_MAPPING,
     CONF_SHOW_DOOR_CODE,
     CONF_SHOW_WIFI,
@@ -70,6 +76,7 @@ from .firmware import (
     FirmwareOptions,
     write_firmware_config,
 )
+from .logo import LogoError, encode_logo, valid_logo_data
 from .models import MappingOptions
 from .runtime import GuestyTerminalRuntime
 
@@ -416,11 +423,34 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
     async def async_step_general(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Configure the Guesty polling interval."""
+        """Configure global settings shared by every display."""
+        errors: dict[str, str] = {}
         if user_input is not None:
             options = dict(self.config_entry.options)
             options[CONF_POLL_MINUTES] = int(user_input[CONF_POLL_MINUTES])
-            return self.async_create_entry(data=options)
+            if user_input.get(CONF_REMOVE_LOGO):
+                options.pop(CONF_LOGO_DATA, None)
+            elif upload_id := user_input.get(CONF_LOGO_UPLOAD):
+                try:
+                    with process_uploaded_file(self.hass, upload_id) as path:
+                        logo_data = await self.hass.async_add_executor_job(
+                            encode_logo, path
+                        )
+                except (LogoError, OSError, ValueError):
+                    errors["base"] = "invalid_logo"
+                else:
+                    options[CONF_LOGO_DATA] = logo_data
+            if not errors:
+                return self.async_create_entry(data=options)
+
+        has_logo = bool(valid_logo_data(self.config_entry.options.get(CONF_LOGO_DATA)))
+        language = str(
+            getattr(getattr(self.hass, "config", None), "language", "en")
+        ).lower()
+        if language.startswith("de"):
+            logo_status = "vorhanden" if has_logo else "nicht eingerichtet"
+        else:
+            logo_status = "configured" if has_logo else "not configured"
 
         return self.async_show_form(
             step_id="general",
@@ -438,9 +468,17 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                             step=1,
                             mode=NumberSelectorMode.BOX,
                         )
-                    )
+                    ),
+                    vol.Optional(CONF_LOGO_UPLOAD): FileSelector(
+                        FileSelectorConfig(
+                            accept="image/png,image/jpeg,.png,.jpg,.jpeg"
+                        )
+                    ),
+                    vol.Optional(CONF_REMOVE_LOGO, default=False): BooleanSelector(),
                 }
             ),
+            errors=errors,
+            description_placeholders={"logo_status": logo_status},
         )
 
     async def async_step_firmware(

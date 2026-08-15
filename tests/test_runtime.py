@@ -7,7 +7,8 @@ import sys
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from custom_components.guesty_terminal.const import CONF_MAPPINGS
+from custom_components.guesty_terminal.const import CONF_LOGO_DATA, CONF_MAPPINGS
+from custom_components.guesty_terminal.logo import LOGO_DATA_BYTES
 from custom_components.guesty_terminal.models import (
     DisplayPayload,
     Listing,
@@ -21,6 +22,7 @@ from custom_components.guesty_terminal.runtime import (
 ENDPOINT = "sensor.guestyterminal_display_1_guesty_terminal_endpoint"
 ACTION = "guestyterminal_display_1_guesty_terminal_update_display"
 ACTION_V2 = "guestyterminal_display_1_guesty_terminal_update_display_v2"
+ACTION_V3 = "guestyterminal_display_1_guesty_terminal_update_display_v3"
 
 
 class FakeServices:
@@ -30,7 +32,16 @@ class FakeServices:
         self.calls = []
 
     def has_service(self, domain, action):
-        return self.available and domain == "esphome" and action in (ACTION, ACTION_V2)
+        return (
+            self.available
+            and domain == "esphome"
+            and action
+            in (
+                ACTION,
+                ACTION_V2,
+                ACTION_V3,
+            )
+        )
 
     async def async_call(self, domain, action, data, *, blocking):
         self.calls.append((domain, action, data, blocking))
@@ -75,7 +86,7 @@ def _listing() -> Listing:
     return Listing("listing-1", "Loft", wifi_name="WiFi", wifi_password="secret")
 
 
-def _runtime(*, state=ACTION, payload=None, available=True, failure=None):
+def _runtime(*, state=ACTION, payload=None, available=True, failure=None, options=None):
     listing = _listing()
     mapping = MappingOptions(ENDPOINT, listing.listing_id)
     data = SimpleNamespace(
@@ -88,7 +99,9 @@ def _runtime(*, state=ACTION, payload=None, available=True, failure=None):
         available=available,
         failure=failure,
     )
-    runtime = GuestyTerminalRuntime(hass, SimpleNamespace(), None, coordinator)
+    runtime = GuestyTerminalRuntime(
+        hass, SimpleNamespace(options=options or {}), None, coordinator
+    )
     return runtime, hass, coordinator
 
 
@@ -109,6 +122,62 @@ def test_v2_action_receives_stable_content_id() -> None:
     sent = hass.services.calls[0][2]
     assert sent["content_id"] == runtime.coordinator.data.payloads[ENDPOINT].content_id
     assert len(sent["content_id"]) == 24
+
+
+def test_v3_action_receives_one_global_logo_and_logo_aware_content_id() -> None:
+    logo_data = "ff" * LOGO_DATA_BYTES
+    welcome = DisplayPayload(
+        mode="welcome",
+        property_name="LOFT",
+        welcome_title="Hallo Anna",
+        welcome_text="Willkommen",
+        door_code="4827",
+        wifi_name="WiFi",
+        wifi_password="secret",
+        checkout_label="morgen",
+        valid_until_epoch=int(datetime(2100, 1, 1, tzinfo=UTC).timestamp()),
+    )
+    runtime, hass, _coordinator = _runtime(
+        state=ACTION_V3,
+        payload=welcome,
+        options={CONF_LOGO_DATA: logo_data},
+    )
+    asyncio.run(runtime.async_push_endpoint(ENDPOINT))
+    sent = hass.services.calls[0][2]
+    assert sent["logo_data"] == logo_data
+    assert len(sent["content_id"]) == 24
+    assert sent["content_id"] != welcome.content_id
+
+    runtime.coordinator.data.payloads[ENDPOINT] = DisplayPayload.idle(_listing())
+    hass.services.calls.clear()
+    asyncio.run(runtime.async_push_endpoint(ENDPOINT))
+    assert hass.services.calls[0][2]["logo_data"] == ""
+
+
+def test_v3_push_all_uses_the_same_global_logo_for_every_display() -> None:
+    logo_data = "aa" * LOGO_DATA_BYTES
+    welcome = DisplayPayload(
+        mode="welcome",
+        property_name="LOFT",
+        welcome_title="Hallo",
+        welcome_text="Willkommen",
+        door_code="",
+        wifi_name="",
+        wifi_password="",
+        checkout_label="morgen",
+        valid_until_epoch=int(datetime(2100, 1, 1, tzinfo=UTC).timestamp()),
+    )
+    runtime, hass, coordinator = _runtime(
+        state=ACTION_V3,
+        payload=welcome,
+        options={CONF_LOGO_DATA: logo_data},
+    )
+    coordinator.data.payloads["sensor.second_guesty_terminal_endpoint"] = welcome
+
+    asyncio.run(runtime.async_push_all())
+
+    assert len(hass.services.calls) == 2
+    assert {call[2]["logo_data"] for call in hass.services.calls} == {logo_data}
 
 
 def test_force_redraw_uses_empty_v2_content_id() -> None:

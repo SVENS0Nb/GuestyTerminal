@@ -63,8 +63,14 @@
       },
       "general": {
         "title": "Allgemeine Einstellungen",
+        "description": "Diese Einstellungen gelten für alle Displays. Globales Logo: {logo_status}. Eine neue Datei ersetzt das bisherige Logo.",
         "data": {
-          "poll_minutes": "Guesty-Aktualisierung (Minuten)"
+          "poll_minutes": "Guesty-Aktualisierung (Minuten)",
+          "logo_upload": "Globales Logo für alle Displays",
+          "remove_logo": "Globales Logo entfernen"
+        },
+        "data_description": {
+          "logo_upload": "PNG oder JPEG, maximal 5 MB. Das Logo wird automatisch ohne Umrandung skaliert und auf vier Graustufen optimiert."
         }
       },
       "firmware": {
@@ -87,6 +93,7 @@
     },
     "error": {
       "invalid_firmware_options": "Die Firmware-Einstellungen sind ungültig.",
+      "invalid_logo": "Das Logo konnte nicht verarbeitet werden. Verwende eine sichtbare PNG- oder JPEG-Datei mit maximal 5 MB.",
       "firmware_file_exists": "Unter diesem Gerätenamen existiert bereits eine ESPHome-Datei. Aktiviere Ersetzen nur für eine zuvor von GuestyTerminal erzeugte Datei; fremde Dateien werden nie überschrieben.",
       "firmware_write_failed": "Die ESPHome-Konfiguration konnte nicht geschrieben werden. Prüfe, ob /config/esphome verfügbar ist."
     },

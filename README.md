@@ -13,6 +13,7 @@ aktuellen Reservierung auf einem Seeed Studio reTerminal E1001 an:
 - WiFi-Name und Passwort;
 - lokal erzeugter, direkt verbindender WiFi-QR-Code;
 - Check-out-Zeit;
+- höhere, aufgeräumte Fußleiste mit optionalem globalem Unterkunftslogo;
 - vier echte Graustufen für geglättete, besser lesbare Schriftkanten;
 - automatische neutrale Seite 30 Minuten nach Check-out oder bei Stornierung;
 - Zuordnung eines Guesty-Listings zu jedem Display in der Home-Assistant-UI;
@@ -36,8 +37,9 @@ installiert daraus die Firmware.
    namens `GuestyTerminal Endpoint`.
 4. In den Optionen der Integration wird diese Entität einem Listing zugeordnet.
 5. Wenn das E1001 aufwacht, überträgt Home Assistant die aktuellen Daten über
-   eine ESPHome Native-API-Aktion. Das Gerät zeichnet nur dann neu, wenn sich
-   der sichtbare Inhalt tatsächlich geändert hat.
+   eine ESPHome Native-API-Aktion. Dazu gehört auch das einmal zentral gewählte
+   Logo. Das Gerät zeichnet nur dann neu, wenn sich der sichtbare Inhalt
+   tatsächlich geändert hat.
 
 ## Voraussetzungen
 
@@ -130,6 +132,20 @@ beiden UC8179-Bitebenen verwenden die direkte Pegelzuordnung
 Für weitere Displays die Beispieldatei kopieren und einen eindeutigen
 `device_name` verwenden. Alle Geräte verwenden dasselbe Layout-Paket.
 
+## Globales Logo für alle Displays
+
+1. In **Einstellungen → Geräte & Dienste → GuestyTerminal → Konfigurieren →
+   Allgemeine Einstellungen** gehen.
+2. Eine PNG- oder JPEG-Datei mit maximal 5 MB auswählen.
+3. Speichern. Die Integration entfernt transparente bzw. weiße Außenflächen,
+   skaliert das Logo proportional auf 144 × 48 Pixel und quantisiert es auf die
+   vier E-Paper-Graustufen.
+
+Das Logo wird einmal zentral gespeichert und gilt für alle Display-Zuordnungen.
+Es erscheint ohne Rahmen unten rechts in der höheren Fußleiste. Ersetzen oder
+Entfernen wird nach der einmaligen Firmwareaktualisierung dynamisch an alle
+erreichbaren Displays übertragen und erfordert keine weitere Kompilierung.
+
 ## Listing einem Display zuordnen
 
 1. Das E1001 mit der grünen Taste aufwecken und warten, bis es in Home
@@ -137,7 +153,9 @@ Für weitere Displays die Beispieldatei kopieren und einen eindeutigen
 2. In **Einstellungen → Geräte & Dienste → GuestyTerminal → Konfigurieren**
    gehen.
 3. **Listing einem Display zuordnen** wählen.
-4. reTerminal, Guesty-Listing, Begrüßung und Anzeigezeitraum auswählen.
+4. Zuerst das reTerminal auswählen. Anschließend werden dessen bereits
+   gespeichertes Listing, Begrüßung und Anzeigezeitraum geladen und können
+   bearbeitet werden.
 5. Für jedes weitere Display wiederholen.
 
 Verfügbare Platzhalter für Begrüßungen:
