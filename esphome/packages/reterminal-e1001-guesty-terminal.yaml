@@ -115,7 +115,7 @@ api:
       then:
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            const bool renderer_current = id(guesty_render_revision) == 17;
+            const bool renderer_current = id(guesty_render_revision) == 18;
             int battery_percent = -1;
             if (id(guesty_battery_level).has_state()
                 && std::isfinite(id(guesty_battery_level).state)) {
@@ -238,7 +238,7 @@ api:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
-                        id(guesty_render_revision) = 17;
+                        id(guesty_render_revision) = 18;
                         if (mode != "welcome" && mode != "checkout"
                             && id(guesty_display_battery_percent) >= 0) {
                           id(guesty_rendered_battery_percent) =
@@ -507,6 +507,27 @@ font:
     bpp: 2
     glyphsets:
       - GF_Latin_Core
+  # The empty-room battery pictogram uses the same pinned Material Design
+  # Icons release as the weather widget, but at half the icon size. Its fill
+  # level follows the displayed battery percentage in ten-percent steps.
+  - file:
+      type: web
+      url: "https://raw.githubusercontent.com/Templarian/MaterialDesign-Webfont/v7.4.47/fonts/materialdesignicons-webfont.ttf"
+    id: guesty_font_battery_icon
+    size: 24
+    bpp: 2
+    glyphs:
+      - "\U000F0079" # mdi-battery (full)
+      - "\U000F007A" # mdi-battery-10
+      - "\U000F007B" # mdi-battery-20
+      - "\U000F007C" # mdi-battery-30
+      - "\U000F007D" # mdi-battery-40
+      - "\U000F007E" # mdi-battery-50
+      - "\U000F007F" # mdi-battery-60
+      - "\U000F0080" # mdi-battery-70
+      - "\U000F0081" # mdi-battery-80
+      - "\U000F0082" # mdi-battery-90
+      - "\U000F008E" # mdi-battery-outline (empty)
   # Material Design Icons 7.4.47, the same established pictogram family used
   # throughout Home Assistant. Only the weather glyphs below are compiled into
   # the firmware; the complete webfont is never stored on the device.
@@ -518,7 +539,6 @@ font:
     bpp: 2
     glyphs:
       - "\U000F002A" # mdi-alert-outline
-      - "\U000F0079" # mdi-battery
       - "\U000F0590" # mdi-weather-cloudy
       - "\U000F0591" # mdi-weather-fog
       - "\U000F0592" # mdi-weather-hail
@@ -1118,8 +1138,21 @@ display:
           it.print(32, 24, id(guesty_font_property),
                    id(guesty_property_name).c_str());
           if (battery_percent >= 0) {
-            it.print(650, 12, id(guesty_font_weather_icon),
-                     "\U000F0079");
+            const auto battery_icon_for_percent = [](int percent) {
+              if (percent <= 0) return "\U000F008E";
+              if (percent < 20) return "\U000F007A";
+              if (percent < 30) return "\U000F007B";
+              if (percent < 40) return "\U000F007C";
+              if (percent < 50) return "\U000F007D";
+              if (percent < 60) return "\U000F007E";
+              if (percent < 70) return "\U000F007F";
+              if (percent < 80) return "\U000F0080";
+              if (percent < 90) return "\U000F0081";
+              if (percent < 100) return "\U000F0082";
+              return "\U000F0079";
+            };
+            it.print(682, 26, id(guesty_font_battery_icon),
+                     battery_icon_for_percent(battery_percent));
             it.printf(768, 27, id(guesty_font_weather_temperature),
                       TextAlign::TOP_RIGHT, "%d %%",
                       battery_percent);

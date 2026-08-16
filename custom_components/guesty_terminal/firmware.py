@@ -10,7 +10,7 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
-FIRMWARE_VERSION = "0.3.20"
+FIRMWARE_VERSION = "0.3.21"
 FIRMWARE_HEADER = "# Managed by the GuestyTerminal firmware assistant."
 POWER_MODES = ("auto", "battery", "mains")
 _DEVICE_NAME_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,22}[a-z0-9])?$")

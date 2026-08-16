@@ -243,9 +243,11 @@ Feld: Eine vorhandene Notiz nutzt die gesamte Breite, zwei Notizen werden in
 zwei gleich große Felder und drei Notizen in drei gleich große Felder verteilt.
 Ohne Notizen stehen Buchungsname und Zeitraum großzügig und vertikal
 ausgewogen. Die Seite hat keine Fußleiste und zeigt weder Türcode noch WiFi.
-Oben rechts ersetzt eine kompakte Batterieanzeige mit Symbol und Prozentwert
-das Wetter-Widget. Sie wird in stromsparenden Fünf-Prozent-Schritten über das
-kleine partielle Headerfenster aktualisiert.
+Oben rechts ersetzt eine kompakte Batterieanzeige mit einem dynamischen,
+24 Pixel großen Füllstandssymbol und Prozentwert das Wetter-Widget. Der
+Messwert wird in stromsparenden Fünf-Prozent-Schritten über das kleine
+partielle Headerfenster aktualisiert; das Symbol folgt ihm in
+Zehn-Prozent-Stufen.
 
 ## Anzeige- und Sicherheitsverhalten
 
@@ -385,6 +387,12 @@ Serviceaufrufe. Die Integration wurde zusätzlich gegen Home Assistant
 2026.8.2 geprüft. Wegen der enthaltenen E-Paper-Treiber- und
 Renderkorrekturen sollten nach dem HACS-Update auch die Displays einmalig auf
 Firmware 0.3.20 aktualisiert werden.
+
+Version **0.3.21** verkleinert das Batteriesymbol der Seite für ein leeres
+Zimmer von 48 auf 24 Pixel und passt seinen sichtbaren Füllstand dynamisch in
+Zehn-Prozent-Stufen an den angezeigten Batteriewert an. Die Prozentanzeige und
+der sichere partielle Header-Refresh bleiben erhalten. Nach dem HACS-Update
+muss die Display-Firmware einmalig auf 0.3.21 aktualisiert werden.
 
 ## Datenschutz
 
