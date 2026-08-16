@@ -535,7 +535,7 @@ def test_idle_payload_never_contains_credentials() -> None:
     assert payload.booking_summary == "Keine bevorstehende Buchung"
 
 
-def test_next_arrival_wins_over_previous_checkout_grace_period() -> None:
+def test_previous_checkout_wins_over_next_arrival_during_grace_period() -> None:
     listing = _listing()
     previous = Reservation(
         reservation_id="previous",
@@ -569,5 +569,10 @@ def test_next_arrival_wins_over_previous_checkout_grace_period() -> None:
         now=datetime(2026, 8, 14, 9, 30, tzinfo=UTC),
     )
 
-    assert payload.welcome_title == "Willkommen, Ben!"
-    assert payload.door_code == "2222"
+    assert payload.mode == "checkout"
+    assert payload.welcome_title == "Heute ist Check-out, Anna"
+    assert payload.checkout_instructions == (
+        "Bitte Fenster schließen und den Schlüssel in die Box legen."
+    )
+    assert payload.door_code == ""
+    assert payload.reservation_id == "previous"

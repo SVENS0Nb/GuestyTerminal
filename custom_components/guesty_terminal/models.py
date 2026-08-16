@@ -938,12 +938,13 @@ def select_reservation(
     def _selection_priority(reservation: Reservation) -> tuple[int, datetime]:
         if reservation.check_in <= current < reservation.check_out:
             return (0, reservation.check_in)
-        if current < reservation.check_in:
+        if current >= reservation.check_out:
             return (1, reservation.check_in)
         return (2, reservation.check_in)
 
-    # Prefer the current stay, then the next arrival, and only then a previous
-    # stay that is still inside its configured post-checkout grace period.
+    # Prefer the current stay, then keep a previous stay visible throughout its
+    # configured post-checkout grace period. An imminent next arrival must not
+    # replace the checkout page before that explicit grace period has elapsed.
     return min(candidates, key=_selection_priority)
 
 

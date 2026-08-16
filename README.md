@@ -355,7 +355,12 @@ Checkout-Texte und die Startzeit ohne erneute Firmwarekompilierung geändert
 werden. Firmware **0.3.17** ergänzt die dritte Seite für ein leeres Zimmer,
 die gezielte Suche nach der nächsten Buchung und die dynamischen Notizfelder.
 Nach der einmaligen Aktualisierung auf 0.3.17 können alle Texte dieser Seite
-über Home Assistant geändert werden, ohne erneut zu kompilieren.
+über Home Assistant geändert werden, ohne erneut zu kompilieren. Version
+**0.3.18** hält die Checkout-Seite für die vollständig konfigurierte
+Nachlaufzeit sichtbar, auch wenn die nächste Buchung bereits im
+Anreise-Vorlauf liegt. Eine laufende neue Buchung übernimmt weiterhin sofort.
+Für diese reine Integrationskorrektur müssen Geräte mit Firmware 0.3.17 nicht
+neu geflasht werden.
 
 ## Datenschutz
 
