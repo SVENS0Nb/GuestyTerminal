@@ -8,7 +8,11 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from custom_components.guesty_terminal.const import CONF_LOGO_DATA, CONF_MAPPINGS
+from custom_components.guesty_terminal.const import (
+    CONF_LOGO_DATA,
+    CONF_MAPPINGS,
+    DISPLAY_REFRESH_REQUEST_STATE,
+)
 from custom_components.guesty_terminal.logo import LOGO_DATA_BYTES
 from custom_components.guesty_terminal.models import (
     DisplayPayload,
@@ -86,6 +90,7 @@ class FakeCoordinator:
         self.data = data
         self._mappings = mappings or []
         self.listener = None
+        self.refreshes = 0
 
     def mapping_options(self):
         return self._mappings
@@ -96,6 +101,9 @@ class FakeCoordinator:
 
     def payload_with_current_weather(self, _endpoint, payload):
         return payload
+
+    async def async_request_refresh(self):
+        self.refreshes += 1
 
 
 def _listing() -> Listing:
@@ -595,6 +603,45 @@ def test_start_stop_and_callbacks(monkeypatch) -> None:
     asyncio.run(runtime.async_stop())
     assert runtime._unsubscribers == []
     assert "state" in unsubscribed
+
+
+def test_device_refresh_request_synchronizes_then_forces_one_redraw(
+    monkeypatch,
+) -> None:
+    runtime, hass, coordinator = _runtime(state=ACTION_V9)
+
+    async def no_wait(_delay):
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", no_wait)
+    runtime._sync_requests.add(ENDPOINT)
+    asyncio.run(runtime._async_sync_and_force_redraw_endpoint(ENDPOINT))
+
+    assert coordinator.refreshes == 1
+    assert len(hass.services.calls) == 1
+    assert hass.services.calls[0][2]["force_redraw"] is True
+    assert ENDPOINT not in runtime._sync_requests
+
+
+def test_device_refresh_pulse_is_deduplicated_and_suppresses_restore_event() -> None:
+    runtime, hass, _coordinator = _runtime(state=ACTION_V9)
+    request = SimpleNamespace(
+        data={
+            "new_state": SimpleNamespace(state=DISPLAY_REFRESH_REQUEST_STATE),
+            "entity_id": ENDPOINT,
+        }
+    )
+
+    runtime._handle_endpoint_state(request)
+    runtime._handle_endpoint_state(request)
+    runtime._handle_endpoint_state(
+        SimpleNamespace(
+            data={"new_state": SimpleNamespace(state=ACTION_V9), "entity_id": ENDPOINT}
+        )
+    )
+
+    assert ENDPOINT in runtime._sync_requests
+    assert len(hass.tasks) == 1
 
 
 def test_start_without_mappings_only_registers_coordinator_listener() -> None:
