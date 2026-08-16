@@ -88,8 +88,10 @@ incomplete change.
   footer, door code, WiFi data, or global logo.
 - Selection is based on Guesty status `confirmed`. Never make display
   eligibility depend on payment, balance, payout, or Airbnb settlement state.
-- Prefer a current stay, then the next arrival, then a just-ended stay still
-  inside its checkout grace period.
+- Prefer a current stay, then a just-ended stay still inside its configured
+  checkout grace period, then the next arrival. This keeps the checkout page
+  visible for the full explicitly configured grace period; a new current stay
+  takes over immediately at its check-in time.
 - Guest-facing times use `checkInDateLocalized` / `checkOutDateLocalized`
   combined with planned times or the listing defaults. This avoids treating
   channel-imported floating local timestamps as trustworthy UTC instants.
