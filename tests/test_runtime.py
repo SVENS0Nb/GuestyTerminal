@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -27,6 +28,8 @@ ACTION_V4 = "guestyterminal_display_1_guesty_terminal_update_display_v4"
 ACTION_V5 = "guestyterminal_display_1_guesty_terminal_update_display_v5"
 ACTION_V6 = "guestyterminal_display_1_guesty_terminal_update_display_v6"
 ACTION_V7 = "guestyterminal_display_1_guesty_terminal_update_display_v7"
+ACTION_V8 = "guestyterminal_display_1_guesty_terminal_update_display_v8"
+ACTION_V9 = "guestyterminal_display_1_guesty_terminal_update_display_v9"
 
 
 class FakeServices:
@@ -48,6 +51,8 @@ class FakeServices:
                 ACTION_V5,
                 ACTION_V6,
                 ACTION_V7,
+                ACTION_V8,
+                ACTION_V9,
             )
         )
 
@@ -88,6 +93,9 @@ class FakeCoordinator:
     def async_add_listener(self, listener):
         self.listener = listener
         return lambda: None
+
+    def payload_with_current_weather(self, _endpoint, payload):
+        return payload
 
 
 def _listing() -> Listing:
@@ -286,6 +294,93 @@ def test_v7_action_receives_custom_display_labels() -> None:
     assert sent["no_active_booking_label"] == "Aucune réservation active"
     assert len(sent["base_content_id"]) == 24
     assert sent["force_redraw"] is False
+    assert "checkout_instructions" not in sent
+
+
+def test_v8_action_receives_checkout_page_and_global_logo() -> None:
+    logo_data = "aa" * LOGO_DATA_BYTES
+    checkout = DisplayPayload(
+        mode="checkout",
+        property_name="LOFT",
+        welcome_title="Today is check-out, Anna",
+        welcome_text="Thank you for staying with us.",
+        door_code="",
+        wifi_name="",
+        wifi_password="",
+        checkout_label="08/17/2026 · 11:00 AM",
+        valid_until_epoch=int(datetime(2100, 1, 1, tzinfo=UTC).timestamp()),
+        checkout_instructions_title="CHECK-OUT BY 11:00 AM",
+        checkout_instructions="Close all windows and return the key.",
+        weather_condition="sunny",
+        weather_temperature="19 °C",
+    )
+    runtime, hass, _coordinator = _runtime(
+        state=ACTION_V8,
+        payload=checkout,
+        options={CONF_LOGO_DATA: logo_data},
+    )
+
+    asyncio.run(runtime.async_push_endpoint(ENDPOINT))
+
+    sent = hass.services.calls[0][2]
+    assert sent["checkout_instructions_title"] == "CHECK-OUT BY 11:00 AM"
+    assert sent["checkout_instructions"] == ("Close all windows and return the key.")
+    assert sent["logo_data"] == logo_data
+    assert len(sent["base_content_id"]) == 24
+
+
+def test_v9_action_receives_empty_room_page_without_global_logo() -> None:
+    logo_data = "aa" * LOGO_DATA_BYTES
+    empty_room = DisplayPayload(
+        mode="empty",
+        property_name="LOFT",
+        welcome_title="NEXT BOOKING",
+        welcome_text="No upcoming booking",
+        door_code="",
+        wifi_name="",
+        wifi_password="",
+        checkout_label="",
+        valid_until_epoch=int(datetime(2100, 1, 1, tzinfo=UTC).timestamp()),
+        next_booking_title="NEXT BOOKING",
+        next_booking_guest="Mia",
+        next_booking_period="09/10/2099, 4:00 PM – 09/13/2099, 10:00 AM",
+        general_notes_label="GENERAL NOTES",
+        general_notes="Arriving with a dog",
+        cleaner_notes_label="FOR CLEANING",
+        cleaner_notes="Prepare a dog bowl",
+        special_requests_label="SPECIAL REQUESTS",
+        special_requests="Allergy-friendly pillow",
+        weather_condition="cloudy",
+        weather_temperature="18 °C",
+        booking_summary="Mia · 09/10/2099 – 09/13/2099",
+    )
+    runtime, hass, _coordinator = _runtime(
+        state=ACTION_V9,
+        payload=empty_room,
+        options={CONF_LOGO_DATA: logo_data},
+    )
+
+    asyncio.run(runtime.async_push_endpoint(ENDPOINT))
+
+    sent = hass.services.calls[0][2]
+    assert sent["next_booking_title"] == "NEXT BOOKING"
+    assert sent["next_booking_guest"] == "Mia"
+    assert sent["general_notes"] == "Arriving with a dog"
+    assert sent["cleaner_notes"] == "Prepare a dog bowl"
+    assert sent["special_requests"] == "Allergy-friendly pillow"
+    assert sent["weather_condition"] == "cloudy"
+    assert sent["logo_data"] == ""
+    assert len(sent["content_id"]) == 24
+    assert len(sent["base_content_id"]) == 24
+
+
+def test_v8_action_stays_compatible_without_empty_room_fields() -> None:
+    runtime, hass, _coordinator = _runtime(state=ACTION_V8)
+
+    asyncio.run(runtime.async_push_endpoint(ENDPOINT))
+
+    assert "next_booking_title" not in hass.services.calls[0][2]
+    assert "general_notes" not in hass.services.calls[0][2]
 
 
 def test_v3_push_all_uses_the_same_global_logo_for_every_display() -> None:
@@ -400,6 +495,34 @@ def test_expired_payload_is_replaced_with_privacy_safe_idle_screen() -> None:
     assert hass.services.calls[0][2]["door_code"] == ""
 
 
+def test_expired_empty_room_page_does_not_resend_guest_notes() -> None:
+    expired = DisplayPayload(
+        mode="empty",
+        property_name="LOFT",
+        welcome_title="NEXT BOOKING",
+        welcome_text="No upcoming booking",
+        door_code="",
+        wifi_name="",
+        wifi_password="",
+        checkout_label="",
+        valid_until_epoch=int(datetime(2020, 1, 1, tzinfo=UTC).timestamp()),
+        next_booking_title="NEXT BOOKING",
+        next_booking_guest="Mia",
+        next_booking_period="09/10/2099 – 09/13/2099",
+        special_requests_label="SPECIAL REQUESTS",
+        special_requests="Private reservation note",
+    )
+    runtime, hass, _ = _runtime(state=ACTION_V9, payload=expired)
+
+    asyncio.run(runtime.async_push_endpoint(ENDPOINT))
+
+    sent = hass.services.calls[0][2]
+    assert sent["mode"] == "idle"
+    assert sent["next_booking_guest"] == ""
+    assert sent["next_booking_period"] == ""
+    assert sent["special_requests"] == ""
+
+
 def test_service_errors_are_isolated() -> None:
     runtime, hass, _ = _runtime(failure=RuntimeError("disconnected"))
     asyncio.run(runtime.async_push_endpoint(ENDPOINT))
@@ -479,3 +602,73 @@ def test_start_without_mappings_only_registers_coordinator_listener() -> None:
     coordinator._mappings = []
     asyncio.run(runtime.async_start())
     assert len(runtime._unsubscribers) == 1
+
+
+def test_weather_state_change_pushes_only_matching_displays(monkeypatch) -> None:
+    tracked = []
+
+    def track(_hass, entities, callback):
+        tracked.append((entities, callback))
+        return lambda: None
+
+    runtime_module = sys.modules[GuestyTerminalRuntime.__module__]
+    monkeypatch.setattr(runtime_module, "async_track_state_change_event", track)
+
+    runtime, hass, coordinator = _runtime(state=ACTION_V7)
+    coordinator._mappings = [
+        MappingOptions(
+            ENDPOINT,
+            "listing-1",
+            weather_entity="weather.home",
+        ),
+        MappingOptions(
+            "sensor.other_guesty_terminal_endpoint",
+            "listing-2",
+            weather_entity="weather.other",
+        ),
+    ]
+
+    asyncio.run(runtime.async_start())
+
+    weather_callback = next(
+        callback
+        for entities, callback in tracked
+        if entities == ["weather.home", "weather.other"]
+    )
+    previous_tasks = len(hass.tasks)
+    weather_callback(SimpleNamespace(data={"entity_id": "weather.home"}))
+    assert len(hass.tasks) == previous_tasks + 1
+
+    hass.states.state = SimpleNamespace(state=ACTION_V5)
+    previous_tasks = len(hass.tasks)
+    weather_callback(SimpleNamespace(data={"entity_id": "weather.home"}))
+    assert len(hass.tasks) == previous_tasks
+
+
+def test_force_redraw_uses_live_weather_overlay() -> None:
+    welcome = DisplayPayload(
+        mode="welcome",
+        property_name="LOFT",
+        welcome_title="Hallo Anna",
+        welcome_text="Willkommen",
+        door_code="4827",
+        wifi_name="WiFi",
+        wifi_password="secret",
+        checkout_label="morgen",
+        valid_until_epoch=int(datetime(2100, 1, 1, tzinfo=UTC).timestamp()),
+    )
+    runtime, hass, coordinator = _runtime(state=ACTION_V7, payload=welcome)
+
+    def overlay(_endpoint, payload):
+        return replace(
+            payload,
+            weather_condition="sunny",
+            weather_temperature="23 °C",
+        )
+
+    coordinator.payload_with_current_weather = overlay
+
+    assert asyncio.run(runtime.async_force_redraw_endpoint(ENDPOINT))
+    sent = hass.services.calls[0][2]
+    assert sent["weather_condition"] == "sunny"
+    assert sent["weather_temperature"] == "23 °C"

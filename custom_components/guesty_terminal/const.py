@@ -20,6 +20,16 @@ CONF_WIFI_LABEL = "wifi_label"
 CONF_WIFI_NAME_LABEL = "wifi_name_label"
 CONF_WIFI_KEY_LABEL = "wifi_key_label"
 CONF_CHECKOUT_LABEL = "checkout_label"
+CONF_CHECKOUT_START_TIME = "checkout_start_time"
+CONF_CHECKOUT_PAGE_TITLE = "checkout_page_title"
+CONF_CHECKOUT_PAGE_MESSAGE = "checkout_page_message"
+CONF_CHECKOUT_INSTRUCTIONS_LABEL = "checkout_instructions_label"
+CONF_CHECKOUT_INSTRUCTIONS_FALLBACK = "checkout_instructions_fallback"
+CONF_EMPTY_PAGE_TITLE = "empty_page_title"
+CONF_EMPTY_NO_BOOKING_TEXT = "empty_no_booking_text"
+CONF_GENERAL_NOTES_LABEL = "general_notes_label"
+CONF_CLEANER_NOTES_LABEL = "cleaner_notes_label"
+CONF_SPECIAL_REQUESTS_LABEL = "special_requests_label"
 CONF_DATE_TIME_FORMAT = "date_time_format"
 CONF_WEATHER_ENTITY = "weather_entity"
 CONF_LEAD_HOURS = "lead_hours"
@@ -51,6 +61,21 @@ DEFAULT_WIFI_LABEL = "WIFI"
 DEFAULT_WIFI_NAME_LABEL = "Name:"
 DEFAULT_WIFI_KEY_LABEL = "Key:"
 DEFAULT_CHECKOUT_LABEL = "Check-out:"
+DEFAULT_CHECKOUT_START_TIME = "05:00:00"
+DEFAULT_CHECKOUT_PAGE_TITLE = "Heute ist Check-out, {first_name}"
+DEFAULT_CHECKOUT_PAGE_MESSAGE = (
+    "Danke, dass du unser Gast warst.\n"
+    "Wir wünschen dir eine gute und entspannte Heimreise!"
+)
+DEFAULT_CHECKOUT_INSTRUCTIONS_LABEL = "CHECK-OUT BIS {check_out_time}"
+DEFAULT_CHECKOUT_INSTRUCTIONS_FALLBACK = (
+    "Bitte beachte die vereinbarte Check-out-Zeit. Vielen Dank!"
+)
+DEFAULT_EMPTY_PAGE_TITLE = "NÄCHSTE BUCHUNG"
+DEFAULT_EMPTY_NO_BOOKING_TEXT = "Keine bevorstehende Buchung"
+DEFAULT_GENERAL_NOTES_LABEL = "ALLGEMEINE NOTIZEN"
+DEFAULT_CLEANER_NOTES_LABEL = "FÜR DIE REINIGUNG"
+DEFAULT_SPECIAL_REQUESTS_LABEL = "SONDERWÜNSCHE"
 DEFAULT_NO_ACTIVE_BOOKING_LABEL = "Keine aktive Buchung"
 DATE_TIME_FORMAT_EU = "eu"
 DATE_TIME_FORMAT_US = "us"
@@ -77,6 +102,8 @@ DISPLAY_ACTION_V4_SUFFIX = "_guesty_terminal_update_display_v4"
 DISPLAY_ACTION_V5_SUFFIX = "_guesty_terminal_update_display_v5"
 DISPLAY_ACTION_V6_SUFFIX = "_guesty_terminal_update_display_v6"
 DISPLAY_ACTION_V7_SUFFIX = "_guesty_terminal_update_display_v7"
+DISPLAY_ACTION_V8_SUFFIX = "_guesty_terminal_update_display_v8"
+DISPLAY_ACTION_V9_SUFFIX = "_guesty_terminal_update_display_v9"
 
 SERVICE_REFRESH = "refresh"
 SERVICE_FORCE_REDRAW = "force_redraw"
@@ -84,6 +111,12 @@ TOKEN_STORE_VERSION = 1
 TOKEN_REFRESH_MARGIN_SECONDS = 30 * 60
 
 MODE_IDLE = "idle"
+MODE_EMPTY = "empty"
 MODE_WELCOME = "welcome"
+MODE_CHECKOUT = "checkout"
+
+SENSITIVE_DISPLAY_MODES = (MODE_WELCOME, MODE_CHECKOUT, MODE_EMPTY)
+WEATHER_DISPLAY_MODES = (MODE_WELCOME, MODE_CHECKOUT, MODE_EMPTY)
+LOGO_DISPLAY_MODES = (MODE_WELCOME, MODE_CHECKOUT)
 
 ACTIVE_RESERVATION_STATUSES = ("confirmed",)

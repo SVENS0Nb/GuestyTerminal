@@ -32,6 +32,8 @@
         "title": "GuestyTerminal konfigurieren",
         "menu_options": {
           "mapping": "Listing einem Display zuordnen",
+          "checkout": "Checkout-Seite konfigurieren",
+          "empty_room": "Seite für leeres Zimmer konfigurieren",
           "firmware": "E1001-Firmware erstellen",
           "general": "Allgemeine Einstellungen"
         }
@@ -57,8 +59,6 @@
           "listing_id": "Guesty-Listing",
           "welcome_title": "Begrüßungsüberschrift",
           "welcome_text": "Begrüßungstext",
-          "idle_title": "Überschrift ohne aktive Buchung",
-          "idle_text": "Text ohne aktive Buchung",
           "door_code_label": "Beschriftung Türcode",
           "wifi_label": "Beschriftung WiFi",
           "wifi_name_label": "Beschriftung WiFi-Name",
@@ -75,9 +75,57 @@
         "data_description": {
           "welcome_title": "Verfügbare Variablen: first_name, property_name, check_in, check_out",
           "welcome_text": "Zeilenumbrüche werden auf dem Display übernommen.",
-          "idle_text": "Dieser Text erscheint, wenn keine Buchung angezeigt wird.",
           "checkout_label": "Nur die Beschriftung eingeben; Datum und Uhrzeit werden automatisch ergänzt.",
           "weather_entity": "Optional. Zeigt oben rechts das aktuelle Wettersymbol und die gerundete Außentemperatur dieser Home-Assistant-Wetterentität."
+        }
+      },
+      "checkout": {
+        "title": "Checkout-Seite auswählen",
+        "description": "Wähle ein bereits konfiguriertes Display aus.",
+        "data": {
+          "endpoint_entity": "reTerminal-Display"
+        }
+      },
+      "checkout_details": {
+        "title": "Checkout-Seite bearbeiten",
+        "description": "Displaysprache: {display_language}. Datums- und Zeitformat: {date_time_format}. Beide Einstellungen werden automatisch von der Display-Zuordnung übernommen.",
+        "data": {
+          "checkout_start_time": "Checkout-Seite anzeigen ab",
+          "checkout_page_title": "Checkout-Überschrift",
+          "checkout_page_message": "Checkout-Nachricht",
+          "checkout_instructions_label": "Überschrift der Checkout-Anweisungen",
+          "checkout_instructions_fallback": "Text, falls Guesty keine Checkout-Anweisungen enthält"
+        },
+        "data_description": {
+          "checkout_page_title": "Verfügbare Variablen: first_name, property_name, check_in, check_out, check_out_date, check_out_time",
+          "checkout_page_message": "Zeilenumbrüche werden auf dem Display übernommen.",
+          "checkout_instructions_label": "Die Guesty-Checkout-Anweisungen werden automatisch darunter angezeigt.",
+          "checkout_instructions_fallback": "Dieser Text erscheint nur, wenn im Guesty-Listing keine Checkout-Anweisungen hinterlegt sind."
+        }
+      },
+      "empty_room": {
+        "title": "Seite für leeres Zimmer auswählen",
+        "description": "Wähle ein bereits konfiguriertes Display aus.",
+        "data": {
+          "endpoint_entity": "reTerminal-Display"
+        }
+      },
+      "empty_room_details": {
+        "title": "Seite für leeres Zimmer bearbeiten",
+        "description": "Displaysprache: {display_language}. Datums- und Zeitformat: {date_time_format}. Beide Einstellungen werden automatisch von der Display-Zuordnung übernommen.",
+        "data": {
+          "empty_page_title": "Überschrift für die nächste Buchung",
+          "empty_no_booking_text": "Text ohne kommende Buchung",
+          "general_notes_label": "Überschrift Allgemeine Notizen",
+          "cleaner_notes_label": "Überschrift Notizen für Reinigung",
+          "special_requests_label": "Überschrift Sonderwünsche"
+        },
+        "data_description": {
+          "empty_page_title": "Vorname und Buchungszeitraum werden automatisch darunter angezeigt.",
+          "empty_no_booking_text": "Dieser Text erscheint nur, wenn keine kommende Buchung gefunden wurde.",
+          "general_notes_label": "Das Feld erscheint nur, wenn General notes in Guesty vorhanden sind.",
+          "cleaner_notes_label": "Das Feld erscheint nur, wenn Notes for cleaner in Guesty vorhanden sind.",
+          "special_requests_label": "Das Feld erscheint nur, wenn Special requests in Guesty vorhanden sind. Vorhandene Felder verteilen sich automatisch über die gesamte Breite."
         }
       },
       "general": {
@@ -119,6 +167,7 @@
     "abort": {
       "no_displays": "Kein kompatibles ESPHome-Display gefunden. Flashe zuerst das mitgelieferte E1001-Paket und wecke das Display auf.",
       "no_listings": "Guesty hat keine aktiven Listings zurückgegeben.",
+      "no_mappings": "Richte zuerst mindestens eine Display-Zuordnung ein.",
       "firmware_created": "Die Konfiguration wurde unter {path} erstellt. Öffne jetzt den ESPHome Device Builder, wähle {device_name} und anschließend Installieren. Für die Erstinstallation wird USB empfohlen."
     }
   },

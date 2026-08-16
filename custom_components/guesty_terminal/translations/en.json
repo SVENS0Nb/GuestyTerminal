@@ -32,6 +32,8 @@
         "title": "Configure GuestyTerminal",
         "menu_options": {
           "mapping": "Assign a listing to a display",
+          "checkout": "Configure checkout page",
+          "empty_room": "Configure empty-room page",
           "firmware": "Create E1001 firmware",
           "general": "General settings"
         }
@@ -57,8 +59,6 @@
           "listing_id": "Guesty listing",
           "welcome_title": "Welcome heading",
           "welcome_text": "Welcome text",
-          "idle_title": "Heading without an active booking",
-          "idle_text": "Text without an active booking",
           "door_code_label": "Door-code label",
           "wifi_label": "WiFi label",
           "wifi_name_label": "WiFi-name label",
@@ -75,9 +75,57 @@
         "data_description": {
           "welcome_title": "Available variables: first_name, property_name, check_in, check_out",
           "welcome_text": "Line breaks are preserved on the display.",
-          "idle_text": "This text is shown when no booking is displayed.",
           "checkout_label": "Enter only the label; date and time are added automatically.",
           "weather_entity": "Optional. Shows the current weather symbol and rounded outdoor temperature from this Home Assistant weather entity in the top-right corner."
+        }
+      },
+      "checkout": {
+        "title": "Select checkout page",
+        "description": "Select an already configured display.",
+        "data": {
+          "endpoint_entity": "reTerminal display"
+        }
+      },
+      "checkout_details": {
+        "title": "Edit checkout page",
+        "description": "Display language: {display_language}. Date and time format: {date_time_format}. Both settings are inherited automatically from the display mapping.",
+        "data": {
+          "checkout_start_time": "Show checkout page from",
+          "checkout_page_title": "Checkout heading",
+          "checkout_page_message": "Checkout message",
+          "checkout_instructions_label": "Checkout instructions heading",
+          "checkout_instructions_fallback": "Text used when Guesty has no checkout instructions"
+        },
+        "data_description": {
+          "checkout_page_title": "Available variables: first_name, property_name, check_in, check_out, check_out_date, check_out_time",
+          "checkout_page_message": "Line breaks are preserved on the display.",
+          "checkout_instructions_label": "Guesty's checkout instructions are shown automatically underneath.",
+          "checkout_instructions_fallback": "This text appears only when the Guesty listing contains no checkout instructions."
+        }
+      },
+      "empty_room": {
+        "title": "Select empty-room page",
+        "description": "Select an already configured display.",
+        "data": {
+          "endpoint_entity": "reTerminal display"
+        }
+      },
+      "empty_room_details": {
+        "title": "Edit empty-room page",
+        "description": "Display language: {display_language}. Date and time format: {date_time_format}. Both settings are inherited automatically from the display mapping.",
+        "data": {
+          "empty_page_title": "Next-booking heading",
+          "empty_no_booking_text": "Text without an upcoming booking",
+          "general_notes_label": "General notes heading",
+          "cleaner_notes_label": "Notes for cleaner heading",
+          "special_requests_label": "Special requests heading"
+        },
+        "data_description": {
+          "empty_page_title": "The guest's first name and booking period are added automatically underneath.",
+          "empty_no_booking_text": "This text appears only when no upcoming booking can be found.",
+          "general_notes_label": "This card appears only when Guesty contains General notes.",
+          "cleaner_notes_label": "This card appears only when Guesty contains Notes for cleaner.",
+          "special_requests_label": "This card appears only when Guesty contains Special requests. Visible cards automatically share the full width."
         }
       },
       "general": {
@@ -119,6 +167,7 @@
     "abort": {
       "no_displays": "No compatible ESPHome display was found. Flash the supplied E1001 package and wake the display first.",
       "no_listings": "Guesty returned no active listings.",
+      "no_mappings": "Configure at least one display mapping first.",
       "firmware_created": "The configuration was created at {path}. Open ESPHome Device Builder, select {device_name}, then choose Install. USB is recommended for the first installation."
     }
   },

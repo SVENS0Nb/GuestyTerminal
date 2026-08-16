@@ -22,6 +22,15 @@ class DisplayTextDefaults:
     wifi_name_label: str
     wifi_key_label: str
     checkout_label: str
+    checkout_page_title: str
+    checkout_page_message: str
+    checkout_instructions_label: str
+    checkout_instructions_fallback: str
+    empty_page_title: str
+    empty_no_booking_text: str
+    general_notes_label: str
+    cleaner_notes_label: str
+    special_requests_label: str
     no_active_booking: str
 
 
@@ -39,6 +48,20 @@ _DEFAULTS = {
         wifi_name_label="Name:",
         wifi_key_label="Key:",
         checkout_label="Check-out:",
+        checkout_page_title="Heute ist Check-out, {first_name}",
+        checkout_page_message=(
+            "Danke, dass du unser Gast warst.\n"
+            "Wir wünschen dir eine gute und entspannte Heimreise!"
+        ),
+        checkout_instructions_label="CHECK-OUT BIS {check_out_time}",
+        checkout_instructions_fallback=(
+            "Bitte beachte die vereinbarte Check-out-Zeit. Vielen Dank!"
+        ),
+        empty_page_title="NÄCHSTE BUCHUNG",
+        empty_no_booking_text="Keine bevorstehende Buchung",
+        general_notes_label="ALLGEMEINE NOTIZEN",
+        cleaner_notes_label="FÜR DIE REINIGUNG",
+        special_requests_label="SONDERWÜNSCHE",
         no_active_booking="Keine aktive Buchung",
     ),
     "en": DisplayTextDefaults(
@@ -53,6 +76,20 @@ _DEFAULTS = {
         wifi_name_label="Name:",
         wifi_key_label="Key:",
         checkout_label="Check-out:",
+        checkout_page_title="Today is check-out, {first_name}",
+        checkout_page_message=(
+            "Thank you for staying with us.\n"
+            "We wish you a safe and pleasant journey home!"
+        ),
+        checkout_instructions_label="CHECK-OUT BY {check_out_time}",
+        checkout_instructions_fallback=(
+            "Please observe the agreed check-out time. Thank you!"
+        ),
+        empty_page_title="NEXT BOOKING",
+        empty_no_booking_text="No upcoming booking",
+        general_notes_label="GENERAL NOTES",
+        cleaner_notes_label="FOR CLEANING",
+        special_requests_label="SPECIAL REQUESTS",
         no_active_booking="No active booking",
     ),
     "fr": DisplayTextDefaults(
@@ -68,6 +105,20 @@ _DEFAULTS = {
         wifi_name_label="Nom :",
         wifi_key_label="Clé :",
         checkout_label="Départ :",
+        checkout_page_title="C’est le jour du départ, {first_name}",
+        checkout_page_message=(
+            "Merci d’avoir séjourné chez nous.\n"
+            "Nous vous souhaitons un agréable voyage de retour !"
+        ),
+        checkout_instructions_label="DÉPART AVANT {check_out_time}",
+        checkout_instructions_fallback=(
+            "Veuillez respecter l’heure de départ convenue. Merci !"
+        ),
+        empty_page_title="PROCHAINE RÉSERVATION",
+        empty_no_booking_text="Aucune réservation à venir",
+        general_notes_label="NOTES GÉNÉRALES",
+        cleaner_notes_label="POUR LE MÉNAGE",
+        special_requests_label="DEMANDES SPÉCIALES",
         no_active_booking="Aucune réservation active",
     ),
     "es": DisplayTextDefaults(
@@ -82,6 +133,19 @@ _DEFAULTS = {
         wifi_name_label="Nombre:",
         wifi_key_label="Clave:",
         checkout_label="Salida:",
+        checkout_page_title="Hoy es el día de salida, {first_name}",
+        checkout_page_message=(
+            "Gracias por alojarte con nosotros.\n¡Te deseamos un buen viaje de regreso!"
+        ),
+        checkout_instructions_label="SALIDA ANTES DE LAS {check_out_time}",
+        checkout_instructions_fallback=(
+            "Respeta la hora de salida acordada. ¡Muchas gracias!"
+        ),
+        empty_page_title="PRÓXIMA RESERVA",
+        empty_no_booking_text="No hay próximas reservas",
+        general_notes_label="NOTAS GENERALES",
+        cleaner_notes_label="PARA LIMPIEZA",
+        special_requests_label="PETICIONES ESPECIALES",
         no_active_booking="No hay ninguna reserva activa",
     ),
 }

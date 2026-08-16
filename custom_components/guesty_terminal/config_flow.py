@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -29,17 +30,26 @@ from homeassistant.helpers.selector import (
     TextSelector,
     TextSelectorConfig,
     TextSelectorType,
+    TimeSelector,
 )
 
 from .api import GuestyAuthenticationError, GuestyClient, GuestyError
 from .const import (
+    CONF_CHECKOUT_INSTRUCTIONS_FALLBACK,
+    CONF_CHECKOUT_INSTRUCTIONS_LABEL,
     CONF_CHECKOUT_LABEL,
+    CONF_CHECKOUT_PAGE_MESSAGE,
+    CONF_CHECKOUT_PAGE_TITLE,
+    CONF_CHECKOUT_START_TIME,
+    CONF_CLEANER_NOTES_LABEL,
     CONF_CLEAR_AFTER_MINUTES,
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
     CONF_DATE_TIME_FORMAT,
     CONF_DISPLAY_LANGUAGE,
     CONF_DOOR_CODE_LABEL,
+    CONF_EMPTY_NO_BOOKING_TEXT,
+    CONF_EMPTY_PAGE_TITLE,
     CONF_ENDPOINT_ENTITY,
     CONF_FIRMWARE_AWAKE_SECONDS,
     CONF_FIRMWARE_DEVICE_NAME,
@@ -47,8 +57,7 @@ from .const import (
     CONF_FIRMWARE_OVERWRITE,
     CONF_FIRMWARE_POWER_MODE,
     CONF_FIRMWARE_WAKE_MINUTES,
-    CONF_IDLE_TEXT,
-    CONF_IDLE_TITLE,
+    CONF_GENERAL_NOTES_LABEL,
     CONF_LEAD_HOURS,
     CONF_LISTING_ID,
     CONF_LOGO_DATA,
@@ -59,6 +68,7 @@ from .const import (
     CONF_REMOVE_MAPPING,
     CONF_SHOW_DOOR_CODE,
     CONF_SHOW_WIFI,
+    CONF_SPECIAL_REQUESTS_LABEL,
     CONF_WEATHER_ENTITY,
     CONF_WELCOME_TEXT,
     CONF_WELCOME_TITLE,
@@ -68,6 +78,7 @@ from .const import (
     DATA_PENDING_TOKENS,
     DATE_TIME_FORMAT_EU,
     DATE_TIME_FORMAT_US,
+    DEFAULT_CHECKOUT_START_TIME,
     DEFAULT_CLEAR_AFTER_MINUTES,
     DEFAULT_DATE_TIME_FORMAT,
     DEFAULT_FIRMWARE_AWAKE_SECONDS,
@@ -226,6 +237,8 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
     _mapping_endpoint: str | None = None
     _mapping_language: str | None = None
     _mapping_language_changed: bool = False
+    _checkout_endpoint: str | None = None
+    _empty_endpoint: str | None = None
 
     async def async_step_init(
         self, _user_input: dict[str, Any] | None = None
@@ -236,24 +249,32 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
         if language.startswith("de"):
             menu_options = {
                 "mapping": "Listing einem Display zuordnen",
+                "checkout": "Checkout-Seite konfigurieren",
+                "empty_room": "Seite für leeres Zimmer konfigurieren",
                 "firmware": "E1001-Firmware erstellen",
                 "general": "Allgemeine Einstellungen",
             }
         elif language.startswith("fr"):
             menu_options = {
                 "mapping": "Associer une annonce à un écran",
+                "checkout": "Configurer la page de départ",
+                "empty_room": "Configurer la page du logement libre",
                 "firmware": "Créer le firmware E1001",
                 "general": "Paramètres généraux",
             }
         elif language.startswith("es"):
             menu_options = {
                 "mapping": "Asignar un alojamiento a una pantalla",
+                "checkout": "Configurar la página de salida",
+                "empty_room": "Configurar la página del alojamiento libre",
                 "firmware": "Crear firmware E1001",
                 "general": "Ajustes generales",
             }
         else:
             menu_options = {
                 "mapping": "Assign a listing to a display",
+                "checkout": "Configure checkout page",
+                "empty_room": "Configure empty-room page",
                 "firmware": "Create E1001 firmware",
                 "general": "General settings",
             }
@@ -411,6 +432,7 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
         options = deepcopy(dict(self.config_entry.options))
         raw_mappings = options.get(CONF_MAPPINGS, {})
         mappings = deepcopy(raw_mappings) if isinstance(raw_mappings, dict) else {}
+        stored_mapping = self._stored_mapping(endpoint)
 
         if user_input is not None:
             if user_input.get(CONF_REMOVE_MAPPING):
@@ -419,6 +441,17 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                 await self._runtime().async_clear_endpoint(endpoint)
                 mappings.pop(endpoint, None)
             else:
+                language = self._mapping_language or self._system_display_language()
+                checkout_defaults = display_text_defaults(language)
+                keep_checkout_text = (
+                    stored_mapping is not None and not self._mapping_language_changed
+                )
+
+                def checkout_value(attribute: str) -> str:
+                    if keep_checkout_text:
+                        return str(getattr(stored_mapping, attribute))
+                    return str(getattr(checkout_defaults, attribute))
+
                 mapping = MappingOptions(
                     endpoint_entity=endpoint,
                     listing_id=user_input[CONF_LISTING_ID],
@@ -427,13 +460,39 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                     ),
                     welcome_title=user_input[CONF_WELCOME_TITLE],
                     welcome_text=user_input[CONF_WELCOME_TEXT],
-                    idle_title=user_input[CONF_IDLE_TITLE],
-                    idle_text=user_input[CONF_IDLE_TEXT],
+                    idle_title=(
+                        stored_mapping.idle_title
+                        if keep_checkout_text
+                        else checkout_defaults.idle_title
+                    ),
+                    idle_text=(
+                        stored_mapping.idle_text
+                        if keep_checkout_text
+                        else checkout_defaults.idle_text
+                    ),
                     door_code_label=user_input[CONF_DOOR_CODE_LABEL],
                     wifi_label=user_input[CONF_WIFI_LABEL],
                     wifi_name_label=user_input[CONF_WIFI_NAME_LABEL],
                     wifi_key_label=user_input[CONF_WIFI_KEY_LABEL],
                     checkout_label=user_input[CONF_CHECKOUT_LABEL],
+                    checkout_start_time=(
+                        stored_mapping.checkout_start_time
+                        if stored_mapping is not None
+                        else DEFAULT_CHECKOUT_START_TIME
+                    ),
+                    checkout_page_title=checkout_value("checkout_page_title"),
+                    checkout_page_message=checkout_value("checkout_page_message"),
+                    checkout_instructions_label=checkout_value(
+                        "checkout_instructions_label"
+                    ),
+                    checkout_instructions_fallback=checkout_value(
+                        "checkout_instructions_fallback"
+                    ),
+                    empty_page_title=checkout_value("empty_page_title"),
+                    empty_no_booking_text=checkout_value("empty_no_booking_text"),
+                    general_notes_label=checkout_value("general_notes_label"),
+                    cleaner_notes_label=checkout_value("cleaner_notes_label"),
+                    special_requests_label=checkout_value("special_requests_label"),
                     date_time_format=user_input[CONF_DATE_TIME_FORMAT],
                     lead_hours=int(user_input[CONF_LEAD_HOURS]),
                     clear_after_minutes=int(user_input[CONF_CLEAR_AFTER_MINUTES]),
@@ -492,12 +551,6 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                     vol.Required(
                         CONF_WELCOME_TEXT,
                         default=text_default("welcome_text"),
-                    ): TextSelector(TextSelectorConfig(multiline=True)),
-                    vol.Required(
-                        CONF_IDLE_TITLE, default=text_default("idle_title")
-                    ): TextSelector(TextSelectorConfig(multiline=False)),
-                    vol.Required(
-                        CONF_IDLE_TEXT, default=text_default("idle_text")
                     ): TextSelector(TextSelectorConfig(multiline=True)),
                     vol.Required(
                         CONF_DOOR_CODE_LABEL,
@@ -580,6 +633,198 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                     vol.Optional(CONF_REMOVE_MAPPING, default=False): BooleanSelector(),
                 }
             ),
+        )
+
+    def _configured_display_choices(self) -> list[SelectOptionDict]:
+        """Return only displays that already have a persisted listing mapping."""
+        labels = {
+            str(choice["value"]): str(choice["label"])
+            for choice in self._endpoint_choices()
+        }
+        raw_mappings = self.config_entry.options.get(CONF_MAPPINGS, {})
+        if not isinstance(raw_mappings, dict):
+            return []
+        choices = [
+            SelectOptionDict(value=endpoint, label=labels.get(endpoint, endpoint))
+            for endpoint, raw in raw_mappings.items()
+            if isinstance(endpoint, str)
+            and isinstance(raw, dict)
+            and MappingOptions.from_dict(endpoint, raw).listing_id
+        ]
+        return sorted(choices, key=lambda item: str(item["label"]).lower())
+
+    async def async_step_checkout(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose the configured display whose checkout page should be edited."""
+        displays = self._configured_display_choices()
+        if not displays:
+            return self.async_abort(reason="no_mappings")
+        if user_input is not None:
+            self._checkout_endpoint = user_input[CONF_ENDPOINT_ENTITY]
+            return await self.async_step_checkout_details()
+
+        return self.async_show_form(
+            step_id="checkout",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_ENDPOINT_ENTITY, default=str(displays[0]["value"])
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=displays, mode=SelectSelectorMode.DROPDOWN
+                        )
+                    )
+                }
+            ),
+        )
+
+    async def async_step_checkout_details(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Edit the localized checkout-day page for one configured display."""
+        endpoint = self._checkout_endpoint
+        if endpoint is None:
+            return await self.async_step_checkout()
+        current = self._stored_mapping(endpoint)
+        if current is None or not current.listing_id:
+            return self.async_abort(reason="no_mappings")
+
+        if user_input is not None:
+            updated = replace(
+                current,
+                checkout_start_time=str(user_input[CONF_CHECKOUT_START_TIME]),
+                checkout_page_title=str(user_input[CONF_CHECKOUT_PAGE_TITLE]),
+                checkout_page_message=str(user_input[CONF_CHECKOUT_PAGE_MESSAGE]),
+                checkout_instructions_label=str(
+                    user_input[CONF_CHECKOUT_INSTRUCTIONS_LABEL]
+                ),
+                checkout_instructions_fallback=str(
+                    user_input[CONF_CHECKOUT_INSTRUCTIONS_FALLBACK]
+                ),
+            )
+            options = deepcopy(dict(self.config_entry.options))
+            raw_mappings = options.get(CONF_MAPPINGS, {})
+            mappings = deepcopy(raw_mappings) if isinstance(raw_mappings, dict) else {}
+            mappings[endpoint] = updated.as_dict()
+            options[CONF_MAPPINGS] = mappings
+            return self.async_create_entry(data=options)
+
+        return self.async_show_form(
+            step_id="checkout_details",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_CHECKOUT_START_TIME,
+                        default=current.checkout_start_time,
+                    ): TimeSelector(),
+                    vol.Required(
+                        CONF_CHECKOUT_PAGE_TITLE,
+                        default=current.checkout_page_title,
+                    ): TextSelector(TextSelectorConfig(multiline=False)),
+                    vol.Required(
+                        CONF_CHECKOUT_PAGE_MESSAGE,
+                        default=current.checkout_page_message,
+                    ): TextSelector(TextSelectorConfig(multiline=True)),
+                    vol.Required(
+                        CONF_CHECKOUT_INSTRUCTIONS_LABEL,
+                        default=current.checkout_instructions_label,
+                    ): TextSelector(TextSelectorConfig(multiline=False)),
+                    vol.Required(
+                        CONF_CHECKOUT_INSTRUCTIONS_FALLBACK,
+                        default=current.checkout_instructions_fallback,
+                    ): TextSelector(TextSelectorConfig(multiline=True)),
+                }
+            ),
+            description_placeholders={
+                "display_language": current.display_language.upper(),
+                "date_time_format": current.date_time_format.upper(),
+            },
+        )
+
+    async def async_step_empty_room(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose the configured display whose empty-room page is edited."""
+        displays = self._configured_display_choices()
+        if not displays:
+            return self.async_abort(reason="no_mappings")
+        if user_input is not None:
+            self._empty_endpoint = user_input[CONF_ENDPOINT_ENTITY]
+            return await self.async_step_empty_room_details()
+
+        return self.async_show_form(
+            step_id="empty_room",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_ENDPOINT_ENTITY, default=str(displays[0]["value"])
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=displays, mode=SelectSelectorMode.DROPDOWN
+                        )
+                    )
+                }
+            ),
+        )
+
+    async def async_step_empty_room_details(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Edit localized copy for one display's empty-room page."""
+        endpoint = self._empty_endpoint
+        if endpoint is None:
+            return await self.async_step_empty_room()
+        current = self._stored_mapping(endpoint)
+        if current is None or not current.listing_id:
+            return self.async_abort(reason="no_mappings")
+
+        if user_input is not None:
+            updated = replace(
+                current,
+                empty_page_title=str(user_input[CONF_EMPTY_PAGE_TITLE]),
+                empty_no_booking_text=str(user_input[CONF_EMPTY_NO_BOOKING_TEXT]),
+                general_notes_label=str(user_input[CONF_GENERAL_NOTES_LABEL]),
+                cleaner_notes_label=str(user_input[CONF_CLEANER_NOTES_LABEL]),
+                special_requests_label=str(user_input[CONF_SPECIAL_REQUESTS_LABEL]),
+            )
+            options = deepcopy(dict(self.config_entry.options))
+            raw_mappings = options.get(CONF_MAPPINGS, {})
+            mappings = deepcopy(raw_mappings) if isinstance(raw_mappings, dict) else {}
+            mappings[endpoint] = updated.as_dict()
+            options[CONF_MAPPINGS] = mappings
+            return self.async_create_entry(data=options)
+
+        return self.async_show_form(
+            step_id="empty_room_details",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_EMPTY_PAGE_TITLE,
+                        default=current.empty_page_title,
+                    ): TextSelector(TextSelectorConfig(multiline=False)),
+                    vol.Required(
+                        CONF_EMPTY_NO_BOOKING_TEXT,
+                        default=current.empty_no_booking_text,
+                    ): TextSelector(TextSelectorConfig(multiline=True)),
+                    vol.Required(
+                        CONF_GENERAL_NOTES_LABEL,
+                        default=current.general_notes_label,
+                    ): TextSelector(TextSelectorConfig(multiline=False)),
+                    vol.Required(
+                        CONF_CLEANER_NOTES_LABEL,
+                        default=current.cleaner_notes_label,
+                    ): TextSelector(TextSelectorConfig(multiline=False)),
+                    vol.Required(
+                        CONF_SPECIAL_REQUESTS_LABEL,
+                        default=current.special_requests_label,
+                    ): TextSelector(TextSelectorConfig(multiline=False)),
+                }
+            ),
+            description_placeholders={
+                "display_language": current.display_language.upper(),
+                "date_time_format": current.date_time_format.upper(),
+            },
         )
 
     async def async_step_general(

@@ -13,12 +13,20 @@ from custom_components.guesty_terminal.config_flow import (
     _validate_credentials,
 )
 from custom_components.guesty_terminal.const import (
+    CONF_CHECKOUT_INSTRUCTIONS_FALLBACK,
+    CONF_CHECKOUT_INSTRUCTIONS_LABEL,
     CONF_CHECKOUT_LABEL,
+    CONF_CHECKOUT_PAGE_MESSAGE,
+    CONF_CHECKOUT_PAGE_TITLE,
+    CONF_CHECKOUT_START_TIME,
+    CONF_CLEANER_NOTES_LABEL,
     CONF_CLEAR_AFTER_MINUTES,
     CONF_CLIENT_ID,
     CONF_DATE_TIME_FORMAT,
     CONF_DISPLAY_LANGUAGE,
     CONF_DOOR_CODE_LABEL,
+    CONF_EMPTY_NO_BOOKING_TEXT,
+    CONF_EMPTY_PAGE_TITLE,
     CONF_ENDPOINT_ENTITY,
     CONF_FIRMWARE_AWAKE_SECONDS,
     CONF_FIRMWARE_DEVICE_NAME,
@@ -26,6 +34,7 @@ from custom_components.guesty_terminal.const import (
     CONF_FIRMWARE_OVERWRITE,
     CONF_FIRMWARE_POWER_MODE,
     CONF_FIRMWARE_WAKE_MINUTES,
+    CONF_GENERAL_NOTES_LABEL,
     CONF_IDLE_TEXT,
     CONF_IDLE_TITLE,
     CONF_LEAD_HOURS,
@@ -38,6 +47,7 @@ from custom_components.guesty_terminal.const import (
     CONF_REMOVE_MAPPING,
     CONF_SHOW_DOOR_CODE,
     CONF_SHOW_WIFI,
+    CONF_SPECIAL_REQUESTS_LABEL,
     CONF_WEATHER_ENTITY,
     CONF_WELCOME_TEXT,
     CONF_WELCOME_TITLE,
@@ -184,8 +194,6 @@ def test_options_mapping_can_add_remove_and_show_forms(monkeypatch) -> None:
                 CONF_LISTING_ID: "listing-1",
                 CONF_WELCOME_TITLE: "Hallo {first_name}",
                 CONF_WELCOME_TEXT: "Willkommen",
-                CONF_IDLE_TITLE: "Ready",
-                CONF_IDLE_TEXT: "Ready for the next stay.",
                 CONF_DOOR_CODE_LABEL: "DOOR CODE",
                 CONF_WIFI_LABEL: "WIFI",
                 CONF_WIFI_NAME_LABEL: "Name:",
@@ -208,6 +216,72 @@ def test_options_mapping_can_add_remove_and_show_forms(monkeypatch) -> None:
     )
 
     entry.options = created["data"]
+    checkout_selection = asyncio.run(flow.async_step_checkout())
+    assert checkout_selection["step_id"] == "checkout"
+    checkout_form = asyncio.run(
+        flow.async_step_checkout({CONF_ENDPOINT_ENTITY: endpoint})
+    )
+    checkout_defaults = checkout_form["data_schema"]({})
+    assert checkout_form["step_id"] == "checkout_details"
+    assert checkout_form["description_placeholders"] == {
+        "display_language": "EN",
+        "date_time_format": "EU",
+    }
+    assert checkout_defaults[CONF_CHECKOUT_START_TIME] == "05:00:00"
+    assert checkout_defaults[CONF_CHECKOUT_PAGE_TITLE] == (
+        "Today is check-out, {first_name}"
+    )
+    checkout_saved = asyncio.run(
+        flow.async_step_checkout_details(
+            {
+                CONF_CHECKOUT_START_TIME: "06:30:00",
+                CONF_CHECKOUT_PAGE_TITLE: "Time to leave, {first_name}",
+                CONF_CHECKOUT_PAGE_MESSAGE: "Thanks for staying.",
+                CONF_CHECKOUT_INSTRUCTIONS_LABEL: "LEAVE BY {check_out_time}",
+                CONF_CHECKOUT_INSTRUCTIONS_FALLBACK: "Close all windows.",
+            }
+        )
+    )
+    saved_mapping = checkout_saved["data"][CONF_MAPPINGS][endpoint]
+    assert saved_mapping[CONF_LISTING_ID] == "listing-1"
+    assert saved_mapping[CONF_CHECKOUT_START_TIME] == "06:30:00"
+    assert saved_mapping[CONF_CHECKOUT_PAGE_TITLE] == ("Time to leave, {first_name}")
+
+    entry.options = checkout_saved["data"]
+    empty_selection = asyncio.run(flow.async_step_empty_room())
+    assert empty_selection["step_id"] == "empty_room"
+    empty_form = asyncio.run(
+        flow.async_step_empty_room({CONF_ENDPOINT_ENTITY: endpoint})
+    )
+    empty_defaults = empty_form["data_schema"]({})
+    assert empty_form["step_id"] == "empty_room_details"
+    assert empty_form["description_placeholders"] == {
+        "display_language": "EN",
+        "date_time_format": "EU",
+    }
+    assert empty_defaults[CONF_EMPTY_PAGE_TITLE] == "NEXT BOOKING"
+    empty_saved = asyncio.run(
+        flow.async_step_empty_room_details(
+            {
+                CONF_EMPTY_PAGE_TITLE: "UPCOMING STAY",
+                CONF_EMPTY_NO_BOOKING_TEXT: "No stay planned",
+                CONF_GENERAL_NOTES_LABEL: "GENERAL",
+                CONF_CLEANER_NOTES_LABEL: "CLEANING",
+                CONF_SPECIAL_REQUESTS_LABEL: "REQUESTS",
+            }
+        )
+    )
+    saved_mapping = empty_saved["data"][CONF_MAPPINGS][endpoint]
+    assert saved_mapping[CONF_EMPTY_PAGE_TITLE] == "UPCOMING STAY"
+    assert saved_mapping[CONF_CLEANER_NOTES_LABEL] == "CLEANING"
+
+    entry.options = empty_saved["data"]
+    reopened_empty = asyncio.run(flow.async_step_empty_room_details())
+    reopened_defaults = reopened_empty["data_schema"]({})
+    assert reopened_defaults[CONF_EMPTY_PAGE_TITLE] == "UPCOMING STAY"
+    assert reopened_defaults[CONF_EMPTY_NO_BOOKING_TEXT] == "No stay planned"
+    assert reopened_defaults[CONF_SPECIAL_REQUESTS_LABEL] == "REQUESTS"
+
     removed = asyncio.run(
         flow.async_step_mapping_details(
             {
@@ -225,6 +299,8 @@ def test_options_mapping_can_add_remove_and_show_forms(monkeypatch) -> None:
     menu = asyncio.run(flow.async_step_init())
     assert menu["menu_options"] == {
         "mapping": "Assign a listing to a display",
+        "checkout": "Configure checkout page",
+        "empty_room": "Configure empty-room page",
         "firmware": "Create E1001 firmware",
         "general": "General settings",
     }
@@ -232,6 +308,10 @@ def test_options_mapping_can_add_remove_and_show_forms(monkeypatch) -> None:
     flow.hass.config = SimpleNamespace(language="de-DE")
     menu = asyncio.run(flow.async_step_init())
     assert menu["menu_options"]["firmware"] == "E1001-Firmware erstellen"
+    assert menu["menu_options"]["checkout"] == "Checkout-Seite konfigurieren"
+    assert menu["menu_options"]["empty_room"] == (
+        "Seite für leeres Zimmer konfigurieren"
+    )
 
 
 def test_options_mapping_remembers_each_configured_display(monkeypatch) -> None:
@@ -485,6 +565,15 @@ def test_options_mapping_aborts_without_displays_or_listings(monkeypatch) -> Non
         flow, "_endpoint_choices", lambda: [{"value": "x", "label": "x"}]
     )
     assert asyncio.run(flow.async_step_mapping())["reason"] == "no_listings"
+
+    flow._checkout_endpoint = "missing"
+    assert asyncio.run(flow.async_step_checkout())["reason"] == "no_mappings"
+    assert asyncio.run(flow.async_step_checkout_details())["reason"] == "no_mappings"
+    flow._empty_endpoint = "missing"
+    assert asyncio.run(flow.async_step_empty_room())["reason"] == "no_mappings"
+    assert asyncio.run(flow.async_step_empty_room_details())["reason"] == (
+        "no_mappings"
+    )
 
 
 def test_user_flow_shows_form_and_aborts_duplicate(monkeypatch) -> None:

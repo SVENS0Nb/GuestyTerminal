@@ -164,6 +164,10 @@ class GuestyClient:
                 "defaultCheckOutTime",
                 "wifiName",
                 "wifiPassword",
+                "checkoutInstructions",
+                "checkOutInstructions",
+                "departureInstructions",
+                "terms",
             )
         )
         results: list[dict[str, Any]] = []
@@ -242,6 +246,29 @@ class GuestyClient:
             params={"fields": "_id firstName fullName"},
         )
         return data if isinstance(data, dict) else {}
+
+    async def async_get_next_reservation(self, listing_id: str) -> dict[str, Any]:
+        """Return the first confirmed reservation beyond the short poll window."""
+        data = await self._request(
+            "GET",
+            "/reservations-v3/search",
+            params={
+                "filter[listingId]": listing_id,
+                "filter[status]": ",".join(ACTIVE_RESERVATION_STATUSES),
+                # The normal collection already covers the next four UTC
+                # dates. Starting here avoids returning a current stay while
+                # still finding the actual next reservation arbitrarily far
+                # in the future.
+                "filter[checkIn][gte]": (
+                    datetime.now(UTC).date() + timedelta(days=4)
+                ).isoformat(),
+                "sort": "checkIn",
+                "limit": 1,
+                "skip": 0,
+            },
+        )
+        results = data.get("results", []) if isinstance(data, dict) else []
+        return results[0] if results and isinstance(results[0], dict) else {}
 
     async def async_get_current_account(self) -> dict[str, Any]:
         """Return the current Guesty account for custom-field resolution."""

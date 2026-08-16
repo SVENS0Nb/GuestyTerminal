@@ -32,6 +32,8 @@
         "title": "Configurar GuestyTerminal",
         "menu_options": {
           "mapping": "Asignar un alojamiento a una pantalla",
+          "checkout": "Configurar la página de salida",
+          "empty_room": "Configurar la página del alojamiento libre",
           "firmware": "Crear firmware E1001",
           "general": "Ajustes generales"
         }
@@ -57,8 +59,6 @@
           "listing_id": "Alojamiento de Guesty",
           "welcome_title": "Título de bienvenida",
           "welcome_text": "Texto de bienvenida",
-          "idle_title": "Título sin reserva activa",
-          "idle_text": "Texto sin reserva activa",
           "door_code_label": "Etiqueta del código de puerta",
           "wifi_label": "Etiqueta WiFi",
           "wifi_name_label": "Etiqueta del nombre WiFi",
@@ -75,9 +75,57 @@
         "data_description": {
           "welcome_title": "Variables disponibles: first_name, property_name, check_in, check_out",
           "welcome_text": "Los saltos de línea se conservan en la pantalla.",
-          "idle_text": "Este texto aparece cuando no se muestra ninguna reserva.",
           "checkout_label": "Introduce solo la etiqueta; la fecha y la hora se añaden automáticamente.",
           "weather_entity": "Opcional. Muestra arriba a la derecha el icono meteorológico actual y la temperatura exterior redondeada."
+        }
+      },
+      "checkout": {
+        "title": "Elegir página de salida",
+        "description": "Elige una pantalla ya configurada.",
+        "data": {
+          "endpoint_entity": "Pantalla reTerminal"
+        }
+      },
+      "checkout_details": {
+        "title": "Editar página de salida",
+        "description": "Idioma de la pantalla: {display_language}. Formato de fecha y hora: {date_time_format}. Ambos ajustes se heredan automáticamente de la asignación de pantalla.",
+        "data": {
+          "checkout_start_time": "Mostrar la página de salida desde",
+          "checkout_page_title": "Título de salida",
+          "checkout_page_message": "Mensaje de salida",
+          "checkout_instructions_label": "Título de las instrucciones de salida",
+          "checkout_instructions_fallback": "Texto si Guesty no contiene instrucciones de salida"
+        },
+        "data_description": {
+          "checkout_page_title": "Variables disponibles: first_name, property_name, check_in, check_out, check_out_date, check_out_time",
+          "checkout_page_message": "Los saltos de línea se conservan en la pantalla.",
+          "checkout_instructions_label": "Las instrucciones de salida de Guesty se muestran automáticamente debajo.",
+          "checkout_instructions_fallback": "Este texto aparece solo si el alojamiento de Guesty no contiene instrucciones de salida."
+        }
+      },
+      "empty_room": {
+        "title": "Elegir página del alojamiento libre",
+        "description": "Elige una pantalla ya configurada.",
+        "data": {
+          "endpoint_entity": "Pantalla reTerminal"
+        }
+      },
+      "empty_room_details": {
+        "title": "Editar página del alojamiento libre",
+        "description": "Idioma de la pantalla: {display_language}. Formato de fecha y hora: {date_time_format}. Ambos ajustes se heredan automáticamente de la asignación de pantalla.",
+        "data": {
+          "empty_page_title": "Título de la próxima reserva",
+          "empty_no_booking_text": "Texto sin próxima reserva",
+          "general_notes_label": "Título de notas generales",
+          "cleaner_notes_label": "Título de notas para limpieza",
+          "special_requests_label": "Título de peticiones especiales"
+        },
+        "data_description": {
+          "empty_page_title": "El nombre y el periodo de la reserva se añaden automáticamente debajo.",
+          "empty_no_booking_text": "Este texto aparece solo si no se encuentra ninguna próxima reserva.",
+          "general_notes_label": "Este campo aparece solo si Guesty contiene notas generales.",
+          "cleaner_notes_label": "Este campo aparece solo si Guesty contiene notas para limpieza.",
+          "special_requests_label": "Este campo aparece solo si Guesty contiene peticiones especiales. Los campos visibles comparten automáticamente todo el ancho."
         }
       },
       "general": {
@@ -119,6 +167,7 @@
     "abort": {
       "no_displays": "No se encontró ninguna pantalla ESPHome compatible. Flashea primero el paquete E1001 incluido y despierta la pantalla.",
       "no_listings": "Guesty no devolvió ningún alojamiento activo.",
+      "no_mappings": "Configura primero al menos una asignación de pantalla.",
       "firmware_created": "La configuración se creó en {path}. Abre ESPHome Device Builder, elige {device_name} y luego Instalar. Se recomienda USB para la primera instalación."
     }
   },

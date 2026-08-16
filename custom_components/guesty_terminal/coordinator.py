@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 from collections.abc import Mapping
-from dataclasses import dataclass
-from datetime import timedelta
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -22,6 +23,7 @@ from .const import (
     DEFAULT_POLL_MINUTES,
     DOMAIN,
     MAX_POLL_MINUTES,
+    WEATHER_DISPLAY_MODES,
 )
 from .models import (
     DisplayPayload,
@@ -36,6 +38,7 @@ from .models import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+_LISTING_DETAIL_CACHE_SECONDS = 30 * 60
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +76,10 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
         self._keycode_cache: dict[tuple[str, str], str] = {}
         self._custom_field_definitions: dict[str, Any] = {}
         self._guest_cache: dict[str, dict[str, Any]] = {}
+        self._listing_detail_cache: dict[str, tuple[float, Listing]] = {}
+        self._next_reservation_cache: dict[
+            str, tuple[float, dict[str, Any] | None]
+        ] = {}
         self._account_id: str | None = None
 
     def mapping_options(self) -> list[MappingOptions]:
@@ -117,6 +124,44 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
         if unit:
             temperature_label = f"{temperature_label} {unit}"
         return condition, temperature_label
+
+    def payload_with_current_weather(
+        self, endpoint_entity: str, payload: DisplayPayload
+    ) -> DisplayPayload:
+        """Overlay a cached welcome payload with the live weather state.
+
+        Guesty polling and Home Assistant weather startup are independent. A
+        coordinator refresh can therefore capture ``unknown`` shortly before
+        the weather entity becomes available. Read the local entity again at
+        send time, while retaining the last valid snapshot during a temporary
+        outage so a redraw never removes an otherwise valid weather widget.
+        """
+        if payload.mode not in WEATHER_DISPLAY_MODES:
+            return payload
+        mapping = next(
+            (
+                item
+                for item in self.mapping_options()
+                if item.endpoint_entity == endpoint_entity
+            ),
+            None,
+        )
+        if mapping is None or not mapping.weather_entity:
+            return payload
+
+        condition, temperature = self._weather_values(mapping)
+        if not condition and not temperature:
+            return payload
+        if (
+            condition == payload.weather_condition
+            and temperature == payload.weather_temperature
+        ):
+            return payload
+        return replace(
+            payload,
+            weather_condition=condition,
+            weather_temperature=temperature,
+        )
 
     async def _async_keycode(self, raw: dict[str, Any]) -> str:
         direct = extract_keycode_direct(raw)
@@ -219,15 +264,33 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                 {mapping.listing_id for mapping in mappings if mapping.listing_id}
             )
 
-            # The listing collection may omit location-detail fields on some Guesty
-            # accounts. Fetch mapped listings individually when Wi-Fi data is absent.
+            # The listing collection may omit guest-facing detail fields. Cache
+            # full mapped listings for one battery wake cycle so missing optional
+            # instructions do not create an extra API request on every poll.
+            detail_cache = getattr(self, "_listing_detail_cache", None)
+            if detail_cache is None:
+                detail_cache = self._listing_detail_cache = {}
             for listing_id in mapped_listing_ids:
                 listing = listings.get(listing_id)
-                if listing is not None and listing.wifi_name and listing.wifi_password:
+                if (
+                    listing is not None
+                    and listing.wifi_name
+                    and listing.wifi_password
+                    and listing.checkout_instructions
+                ):
+                    continue
+                cached = detail_cache.get(listing_id)
+                if cached is not None and time.monotonic() - cached[0] < (
+                    _LISTING_DETAIL_CACHE_SECONDS
+                ):
+                    listings[listing_id] = cached[1]
                     continue
                 full = await self.client.async_get_listing(listing_id)
-                if full:
-                    listings[listing_id] = Listing.from_api(full)
+                if full and (full_listing := Listing.from_api(full)).listing_id:
+                    listings[listing_id] = full_listing
+                    detail_cache[listing_id] = (time.monotonic(), full_listing)
+                elif listing is not None:
+                    detail_cache[listing_id] = (time.monotonic(), listing)
 
             raw_reservations = await self.client.async_get_reservations(
                 mapped_listing_ids
@@ -245,6 +308,56 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                 reservation = Reservation.from_api(raw, listing, keycode=keycode)
                 if reservation is not None:
                     reservations.append(reservation)
+
+            # The regular poll deliberately remains narrow for battery and API
+            # efficiency. Fetch only one farther-future reservation per listing
+            # when that window contains no upcoming stay, and cache the result
+            # for one normal battery wake cycle.
+            current = datetime.now(UTC)
+            next_cache = getattr(self, "_next_reservation_cache", None)
+            if next_cache is None:
+                next_cache = self._next_reservation_cache = {}
+            known_ids = {reservation.reservation_id for reservation in reservations}
+            for listing_id in mapped_listing_ids:
+                if any(
+                    reservation.listing_id == listing_id
+                    and reservation.check_in > current
+                    for reservation in reservations
+                ):
+                    continue
+                cached = next_cache.get(listing_id)
+                if cached is not None and time.monotonic() - cached[0] < (
+                    _LISTING_DETAIL_CACHE_SECONDS
+                ):
+                    raw_next = cached[1]
+                else:
+                    try:
+                        raw_next = await self.client.async_get_next_reservation(
+                            listing_id
+                        )
+                    except GuestyError as err:
+                        _LOGGER.debug(
+                            "Could not load next reservation for listing %s: %s",
+                            listing_id,
+                            err,
+                        )
+                        raw_next = None
+                    next_cache[listing_id] = (time.monotonic(), raw_next or None)
+                if not raw_next:
+                    continue
+                reservation_id = first_present(raw_next, "reservationId", "_id", "id")
+                if reservation_id in known_ids:
+                    continue
+                listing = listings.get(listing_id)
+                if listing is None:
+                    continue
+                guest = await self._async_guest(raw_next)
+                if guest and not isinstance(raw_next.get("guest"), dict):
+                    raw_next = {**raw_next, "guest": guest}
+                next_reservation = Reservation.from_api(raw_next, listing)
+                if next_reservation is not None and next_reservation.check_in > current:
+                    reservations.append(next_reservation)
+                    known_ids.add(next_reservation.reservation_id)
 
             payloads: dict[str, DisplayPayload] = {}
             for mapping in mappings:
