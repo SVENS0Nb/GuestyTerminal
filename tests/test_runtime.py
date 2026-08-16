@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from custom_components.guesty_terminal.const import (
     CONF_LOGO_DATA,
     CONF_MAPPINGS,
+    DISPLAY_RECONNECT_STATE,
     DISPLAY_REFRESH_REQUEST_STATE,
 )
 from custom_components.guesty_terminal.logo import LOGO_DATA_BYTES
@@ -91,6 +92,8 @@ class FakeCoordinator:
         self._mappings = mappings or []
         self.listener = None
         self.refreshes = 0
+        self.cache_invalidations = 0
+        self.last_update_success = True
 
     def mapping_options(self):
         return self._mappings
@@ -104,6 +107,9 @@ class FakeCoordinator:
 
     async def async_request_refresh(self):
         self.refreshes += 1
+
+    def invalidate_guest_data_caches(self):
+        self.cache_invalidations += 1
 
 
 def _listing() -> Listing:
@@ -617,10 +623,73 @@ def test_device_refresh_request_synchronizes_then_forces_one_redraw(
     runtime._sync_requests.add(ENDPOINT)
     asyncio.run(runtime._async_sync_and_force_redraw_endpoint(ENDPOINT))
 
+    assert coordinator.cache_invalidations == 1
     assert coordinator.refreshes == 1
     assert len(hass.services.calls) == 1
     assert hass.services.calls[0][2]["force_redraw"] is True
     assert ENDPOINT not in runtime._sync_requests
+
+
+def test_device_refresh_does_not_redraw_stale_data_after_failed_sync(
+    monkeypatch,
+) -> None:
+    runtime, hass, coordinator = _runtime(state=ACTION_V9)
+    coordinator.last_update_success = False
+
+    async def no_wait(_delay):
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", no_wait)
+    runtime._sync_requests.add(ENDPOINT)
+    asyncio.run(runtime._async_sync_and_force_redraw_endpoint(ENDPOINT))
+
+    assert hass.services.calls == []
+    assert ENDPOINT not in runtime._sync_requests
+
+
+def test_device_refresh_clears_when_authoritative_payload_disappeared(
+    monkeypatch,
+) -> None:
+    runtime, hass, coordinator = _runtime(state=ACTION_V9)
+    coordinator.data.payloads = {}
+
+    async def no_wait(_delay):
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", no_wait)
+    runtime._sync_requests.add(ENDPOINT)
+    asyncio.run(runtime._async_sync_and_force_redraw_endpoint(ENDPOINT))
+
+    assert hass.services.calls[0][2]["mode"] == "idle"
+    assert hass.services.calls[0][2]["force_redraw"] is False
+
+
+def test_stop_cancels_runtime_owned_tasks() -> None:
+    runtime, hass, _coordinator = _runtime()
+    created = []
+
+    def create_task(coroutine):
+        task = asyncio.create_task(coroutine)
+        created.append(task)
+        return task
+
+    hass.async_create_task = create_task
+
+    async def exercise():
+        started = asyncio.Event()
+
+        async def wait_forever():
+            started.set()
+            await asyncio.Event().wait()
+
+        runtime._create_task(wait_forever())
+        await started.wait()
+        await runtime.async_stop()
+
+    asyncio.run(exercise())
+
+    assert created[0].cancelled()
+    assert runtime._tasks == set()
 
 
 def test_device_refresh_pulse_is_deduplicated_and_suppresses_restore_event() -> None:
@@ -642,6 +711,22 @@ def test_device_refresh_pulse_is_deduplicated_and_suppresses_restore_event() -> 
 
     assert ENDPOINT in runtime._sync_requests
     assert len(hass.tasks) == 1
+
+
+def test_reconnect_discovery_pulse_does_not_schedule_an_invalid_push() -> None:
+    runtime, hass, _coordinator = _runtime(state=ACTION_V9)
+
+    runtime._handle_endpoint_state(
+        SimpleNamespace(
+            data={
+                "new_state": SimpleNamespace(state=DISPLAY_RECONNECT_STATE),
+                "entity_id": ENDPOINT,
+            }
+        )
+    )
+
+    assert hass.tasks == []
+    assert runtime._unsubscribers == []
 
 
 def test_start_without_mappings_only_registers_coordinator_listener() -> None:

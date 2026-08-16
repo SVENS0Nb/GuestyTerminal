@@ -10,6 +10,7 @@ import pytest
 from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.guesty_terminal import firmware_update
+from custom_components.guesty_terminal.const import DATA_FIRMWARE_UPDATE_LOCK, DOMAIN
 from custom_components.guesty_terminal.firmware import (
     FirmwareOptions,
     render_firmware_config,
@@ -50,6 +51,7 @@ class FakeSession:
 class FakeHass:
     def __init__(self, config_root) -> None:
         self.config = SimpleNamespace(path=lambda name: str(config_root / name))
+        self.data = {}
 
     async def async_add_executor_job(self, target, *args):
         return target(*args)
@@ -167,7 +169,7 @@ def test_update_all_managed_firmware_prepares_files_and_queues_jobs(
     esphome_dir = tmp_path / "esphome"
     esphome_dir.mkdir()
     (esphome_dir / "one.yaml").write_text(
-        _config("display-one").replace("0.3.19", "0.3.12"), encoding="utf-8"
+        _config("display-one").replace("0.3.20", "0.3.12"), encoding="utf-8"
     )
     (esphome_dir / "two.yaml").write_text(_config("display-two"), encoding="utf-8")
     hass = FakeHass(tmp_path)
@@ -193,9 +195,9 @@ def test_update_all_managed_firmware_prepares_files_and_queues_jobs(
     assert result.managed_configurations == 2
     assert result.updated_configurations == 1
     assert result.queued_jobs == 2
-    assert result.firmware_version == "0.3.19"
+    assert result.firmware_version == "0.3.20"
     assert queued == [("session", "http://builder:6052", ["one.yaml", "two.yaml"])]
-    assert "0.3.19" in (esphome_dir / "one.yaml").read_text(encoding="utf-8")
+    assert "0.3.20" in (esphome_dir / "one.yaml").read_text(encoding="utf-8")
 
 
 def test_update_all_managed_firmware_reports_missing_config_or_builder(
@@ -213,3 +215,17 @@ def test_update_all_managed_firmware_reports_missing_config_or_builder(
     with pytest.raises(HomeAssistantError) as error:
         asyncio.run(firmware_update.async_update_all_managed_firmware(hass))
     assert _translation_key(error) == "firmware_builder_unavailable"
+
+
+def test_update_all_managed_firmware_rejects_cross_entry_concurrency(tmp_path) -> None:
+    hass = FakeHass(tmp_path)
+
+    async def exercise():
+        lock = asyncio.Lock()
+        await lock.acquire()
+        hass.data[DOMAIN] = {DATA_FIRMWARE_UPDATE_LOCK: lock}
+        with pytest.raises(HomeAssistantError) as error:
+            await firmware_update.async_update_all_managed_firmware(hass)
+        assert _translation_key(error) == "firmware_update_in_progress"
+
+    asyncio.run(exercise())

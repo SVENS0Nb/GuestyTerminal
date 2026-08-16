@@ -131,8 +131,8 @@ Beim Build erscheinen Hinweise zu GPIO 3, 19 und 20. Diese Pins stammen aus
 der offiziellen E1001-Hardwarebelegung und sind für dieses Board beabsichtigt.
 
 GuestyTerminal verwendet einen eigenen UC8179-Treiber für die vier nativen
-Graustufen des GDEY075T7-Panels. Schriftdateien werden zunächst mit 4 Bit pro
-Pixel gerastert und anschließend auf die vier Panelstufen quantisiert. QR-Code
+Graustufen des GDEY075T7-Panels. Schriftdateien werden direkt mit 2 Bit pro
+Pixel auf die vier Panelstufen gerastert. QR-Code
 und Türcode bleiben dabei satt schwarz und werden ohne sichtbare
 Umrandung gezeichnet. Da das Panel im OTP nur eine
 Schwarz-Weiß-Wellenform enthält, verwendet der Treiber für vier Graustufen
@@ -373,6 +373,18 @@ Batterieanzeige das Wetter und nutzt für reine Prozentänderungen denselben
 sicheren Teilrefresh des Headerfensters. Für diese Änderungen müssen die
 Integration und anschließend die Display-Firmware auf 0.3.19 aktualisiert
 werden.
+
+Version **0.3.20** verbessert die Ausfallsicherheit der Guesty-Abfragen, der
+Konfigurations- und Firmware-Aktualisierung sowie der laufenden Display-
+Synchronisierung. Beim Entladen oder Neustarten der Integration werden eigene
+Hintergrundaufgaben nun sauber beendet. Der interne ESPHome-Reconnect-Marker
+wird nicht mehr als Display-Aktion behandelt; dadurch entstehen beim
+Wiederverbinden keine irreführenden Warnungen oder verzögerten ungültigen
+Serviceaufrufe. Die Integration wurde zusätzlich gegen Home Assistant
+2025.12.0, 2026.2.3 und in einer laufenden Installation mit Home Assistant
+2026.8.2 geprüft. Wegen der enthaltenen E-Paper-Treiber- und
+Renderkorrekturen sollten nach dem HACS-Update auch die Displays einmalig auf
+Firmware 0.3.20 aktualisiert werden.
 
 ## Datenschutz
 

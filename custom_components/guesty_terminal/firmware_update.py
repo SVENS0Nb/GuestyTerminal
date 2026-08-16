@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import DOMAIN
+from .const import DATA_FIRMWARE_UPDATE_LOCK, DOMAIN
 from .firmware import (
     FIRMWARE_VERSION,
     FirmwareConfigError,
@@ -98,26 +98,31 @@ async def async_update_all_managed_firmware(
     hass: HomeAssistant,
 ) -> BulkFirmwareUpdateResult:
     """Upgrade managed YAML files and queue every display for OTA installation."""
-    directory = Path(hass.config.path("esphome"))
-    try:
-        managed: list[ManagedFirmwareConfig] = await hass.async_add_executor_job(
-            update_managed_firmware_configs, directory
-        )
-    except (FirmwareConfigError, OSError) as err:
-        raise _translated_error("firmware_config_update_failed") from err
-    if not managed:
-        raise _translated_error("firmware_no_managed_configs")
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    lock = domain_data.setdefault(DATA_FIRMWARE_UPDATE_LOCK, asyncio.Lock())
+    if lock.locked():
+        raise _translated_error("firmware_update_in_progress")
+    async with lock:
+        directory = Path(hass.config.path("esphome"))
+        try:
+            managed: list[ManagedFirmwareConfig] = await hass.async_add_executor_job(
+                update_managed_firmware_configs, directory
+            )
+        except (FirmwareConfigError, OSError) as err:
+            raise _translated_error("firmware_config_update_failed") from err
+        if not managed:
+            raise _translated_error("firmware_no_managed_configs")
 
-    dashboard = _get_esphome_dashboard(hass)
-    if dashboard is None:
-        raise _translated_error("firmware_builder_unavailable")
-    queued_jobs = await async_queue_device_builder_updates(
-        async_get_clientsession(hass),
-        dashboard.url,
-        [item.path.name for item in managed],
-    )
-    return BulkFirmwareUpdateResult(
-        managed_configurations=len(managed),
-        updated_configurations=sum(item.changed for item in managed),
-        queued_jobs=queued_jobs,
-    )
+        dashboard = _get_esphome_dashboard(hass)
+        if dashboard is None:
+            raise _translated_error("firmware_builder_unavailable")
+        queued_jobs = await async_queue_device_builder_updates(
+            async_get_clientsession(hass),
+            dashboard.url,
+            [item.path.name for item in managed],
+        )
+        return BulkFirmwareUpdateResult(
+            managed_configurations=len(managed),
+            updated_configurations=sum(item.changed for item in managed),
+            queued_jobs=queued_jobs,
+        )

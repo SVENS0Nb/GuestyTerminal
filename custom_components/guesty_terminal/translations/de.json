@@ -168,6 +168,7 @@
       "no_displays": "Kein kompatibles ESPHome-Display gefunden. Flashe zuerst das mitgelieferte E1001-Paket und wecke das Display auf.",
       "no_listings": "Guesty hat keine aktiven Listings zurückgegeben.",
       "no_mappings": "Richte zuerst mindestens eine Display-Zuordnung ein.",
+      "display_already_configured": "Dieses Display ist bereits einer anderen GuestyTerminal-Konfiguration zugeordnet.",
       "firmware_created": "Die Konfiguration wurde unter {path} erstellt. Öffne jetzt den ESPHome Device Builder, wähle {device_name} und anschließend Installieren. Für die Erstinstallation wird USB empfohlen."
     }
   },

@@ -457,10 +457,16 @@ bool GuestyEPaperGray4::refresh_partial_() {
 
 bool GuestyEPaperGray4::display_partial_(const uint8_t *previous,
                                          const uint8_t *current) {
-  if (!this->partial_refresh_configured_ || !this->reset_panel_())
+  if (!this->partial_refresh_configured_)
     return false;
-  if (!this->init_partial_mode_())
+  if (!this->reset_panel_()) {
+    this->deep_sleep_panel_();
     return false;
+  }
+  if (!this->init_partial_mode_()) {
+    this->deep_sleep_panel_();
+    return false;
+  }
   // A controller reset invalidates both RAM planes even though the physical
   // E-paper image remains. Rebuild the complete 0x10/0x13 planes so pixels
   // outside the weather window are always defined and compare equal. Only
@@ -470,10 +476,9 @@ bool GuestyEPaperGray4::display_partial_(const uint8_t *previous,
            static_cast<unsigned long>(MONOCHROME_FRAME_LENGTH));
   this->write_monochrome_frame_(0x10, previous);
   this->write_monochrome_frame_(0x13, current);
-  if (!this->refresh_partial_())
-    return false;
+  const bool refreshed = this->refresh_partial_();
   this->deep_sleep_panel_();
-  return true;
+  return refreshed;
 }
 
 size_t GuestyEPaperGray4::partial_buffer_length_() const {
@@ -561,28 +566,36 @@ bool GuestyEPaperGray4::refresh_() {
 }
 
 bool GuestyEPaperGray4::display_() {
-  if (!this->select_lut_mode_() || !this->reset_panel_())
+  if (!this->select_lut_mode_())
     return false;
-  if (!this->init_gray_mode_())
+  if (!this->reset_panel_()) {
+    this->deep_sleep_panel_();
     return false;
+  }
+  if (!this->init_gray_mode_()) {
+    this->deep_sleep_panel_();
+    return false;
+  }
   this->log_frame_levels_();
   this->write_plane_(0x10, 1);  // DTM1: most-significant grayscale bit
   this->write_plane_(0x13, 0);  // DTM2: least-significant grayscale bit
-  if (!this->refresh_())
-    return false;
+  const bool refreshed = this->refresh_();
   this->deep_sleep_panel_();
-  return true;
+  return refreshed;
 }
 
 void GuestyEPaperGray4::deep_sleep_panel_() {
   if (this->panel_asleep_)
     return;
   this->command_(0x02);  // POWER OFF
-  if (!this->wait_until_idle_("after power off"))
-    return;
+  const bool powered_off = this->wait_until_idle_("after power off");
+  if (!powered_off)
+    ESP_LOGW(TAG, "Power-off timeout; attempting panel deep sleep anyway");
   this->command_(0x07);  // DEEP SLEEP
   this->data_(0xA5);
-  this->panel_asleep_ = true;
+  // When BUSY timed out, keep this false so a later safe-shutdown hook can
+  // make one more best-effort attempt instead of assuming the command landed.
+  this->panel_asleep_ = powered_off;
 }
 
 void GuestyEPaperGray4::dump_config() {

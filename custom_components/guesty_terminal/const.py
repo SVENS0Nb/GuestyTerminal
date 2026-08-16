@@ -4,6 +4,7 @@ from datetime import timedelta
 
 DOMAIN = "guesty_terminal"
 DATA_PENDING_TOKENS = "pending_tokens"
+DATA_FIRMWARE_UPDATE_LOCK = "firmware_update_lock"
 
 CONF_CLIENT_ID = "client_id"
 CONF_CLIENT_SECRET = "client_secret"
@@ -13,8 +14,6 @@ CONF_LISTING_ID = "listing_id"
 CONF_WELCOME_TITLE = "welcome_title"
 CONF_WELCOME_TEXT = "welcome_text"
 CONF_DISPLAY_LANGUAGE = "display_language"
-CONF_IDLE_TITLE = "idle_title"
-CONF_IDLE_TEXT = "idle_text"
 CONF_DOOR_CODE_LABEL = "door_code_label"
 CONF_WIFI_LABEL = "wifi_label"
 CONF_WIFI_NAME_LABEL = "wifi_name_label"
@@ -54,8 +53,6 @@ DEFAULT_WELCOME_TEXT = (
     "Wir wünschen dir einen entspannten und angenehmen Aufenthalt."
 )
 DEFAULT_DISPLAY_LANGUAGE = "de"
-DEFAULT_IDLE_TITLE = "Willkommen"
-DEFAULT_IDLE_TEXT = "Die Unterkunft ist für den nächsten Aufenthalt bereit."
 DEFAULT_DOOR_CODE_LABEL = "TÜRCODE"
 DEFAULT_WIFI_LABEL = "WIFI"
 DEFAULT_WIFI_NAME_LABEL = "Name:"
@@ -104,6 +101,7 @@ DISPLAY_ACTION_V6_SUFFIX = "_guesty_terminal_update_display_v6"
 DISPLAY_ACTION_V7_SUFFIX = "_guesty_terminal_update_display_v7"
 DISPLAY_ACTION_V8_SUFFIX = "_guesty_terminal_update_display_v8"
 DISPLAY_ACTION_V9_SUFFIX = "_guesty_terminal_update_display_v9"
+DISPLAY_RECONNECT_STATE = "__guesty_reconnecting__"
 DISPLAY_REFRESH_REQUEST_STATE = "__guesty_refresh_requested__"
 
 SERVICE_REFRESH = "refresh"

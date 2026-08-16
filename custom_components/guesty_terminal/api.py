@@ -6,6 +6,8 @@ import asyncio
 import json
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from email.utils import parsedate_to_datetime
+from math import ceil, isfinite
 from typing import Any
 
 from aiohttp import ClientError, ClientResponse, ClientSession
@@ -14,6 +16,9 @@ from .const import ACTIVE_RESERVATION_STATUSES, TOKEN_REFRESH_MARGIN_SECONDS
 
 API_BASE_URL = "https://open-api.guesty.com/v1"
 TOKEN_URL = "https://open-api.guesty.com/oauth2/token"
+MAX_PAGINATION_PAGES = 100
+DEFAULT_RETRY_AFTER_SECONDS = 60
+MAX_RETRY_AFTER_SECONDS = 24 * 60 * 60
 
 
 class GuestyError(Exception):
@@ -33,6 +38,48 @@ class GuestyRateLimitError(GuestyError):
 
 
 TokenSaver = Callable[[dict[str, Any]], Awaitable[None]]
+
+
+def _positive_seconds(value: Any, default: int) -> int:
+    """Return a bounded positive duration from an untrusted API value."""
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not isfinite(seconds) or seconds <= 0:
+        return default
+    return max(1, ceil(seconds))
+
+
+def _retry_after_seconds(value: Any) -> int:
+    """Parse either Retry-After seconds or its HTTP-date representation."""
+    parsed = _positive_seconds(value, 0)
+    if parsed:
+        return min(parsed, MAX_RETRY_AFTER_SECONDS)
+    try:
+        retry_at = parsedate_to_datetime(str(value))
+    except (TypeError, ValueError, OverflowError):
+        return DEFAULT_RETRY_AFTER_SECONDS
+    if retry_at.tzinfo is None:
+        retry_at = retry_at.replace(tzinfo=UTC)
+    seconds = ceil((retry_at.astimezone(UTC) - datetime.now(UTC)).total_seconds())
+    if seconds <= 0:
+        return DEFAULT_RETRY_AFTER_SECONDS
+    return min(seconds, MAX_RETRY_AFTER_SECONDS)
+
+
+def _page_signature(page: list[Any]) -> tuple[str, ...]:
+    """Return a non-sensitive marker used to detect repeated API pages."""
+    return tuple(
+        str(
+            item.get("reservationId")
+            or item.get("_id")
+            or item.get("id")
+            or f"missing-id-{index}"
+        )
+        for index, item in enumerate(page)
+        if isinstance(item, dict)
+    )
 
 
 class GuestyClient:
@@ -56,7 +103,10 @@ class GuestyClient:
 
     def _token_is_valid(self) -> bool:
         token = self._token_data.get("access_token")
-        expires_at = float(self._token_data.get("expires_at", 0))
+        try:
+            expires_at = float(self._token_data.get("expires_at", 0))
+        except (TypeError, ValueError):
+            return False
         return (
             bool(token)
             and expires_at - TOKEN_REFRESH_MARGIN_SECONDS
@@ -95,7 +145,7 @@ class GuestyClient:
             if not token:
                 raise GuestyAuthenticationError("Guesty returned no access token")
 
-            expires_in = int(data.get("expires_in", 86400))
+            expires_in = _positive_seconds(data.get("expires_in"), 86400)
             self._token_data = {
                 "access_token": token,
                 "expires_at": datetime.now(UTC).timestamp() + expires_in,
@@ -139,7 +189,9 @@ class GuestyClient:
                 if response.status in (401, 403):
                     raise GuestyAuthenticationError("Guesty authorization failed")
                 if response.status == 429:
-                    retry_after = int(response.headers.get("Retry-After", "60"))
+                    retry_after = _retry_after_seconds(
+                        response.headers.get("Retry-After")
+                    )
                     raise GuestyRateLimitError(retry_after)
                 if response.status >= 400:
                     message = data.get("message") if isinstance(data, dict) else None
@@ -172,7 +224,8 @@ class GuestyClient:
         )
         results: list[dict[str, Any]] = []
         skip = 0
-        while True:
+        seen_pages: set[tuple[str, ...]] = set()
+        for _page_number in range(MAX_PAGINATION_PAGES):
             data = await self._request(
                 "GET",
                 "/listings",
@@ -186,10 +239,20 @@ class GuestyClient:
                 },
             )
             page = data.get("results", []) if isinstance(data, dict) else []
+            if not isinstance(page, list):
+                raise GuestyError("Guesty returned invalid listing pagination data")
+            if not page:
+                break
+            signature = _page_signature(page)
+            if signature in seen_pages:
+                raise GuestyError("Guesty repeated a listing pagination page")
+            seen_pages.add(signature)
             results.extend(item for item in page if isinstance(item, dict))
             if len(page) < 100:
                 break
             skip += 100
+        else:
+            raise GuestyError("Guesty listing pagination exceeded the safety limit")
         return results
 
     async def async_get_listing(self, listing_id: str) -> dict[str, Any]:
@@ -205,7 +268,8 @@ class GuestyClient:
             return []
         results: list[dict[str, Any]] = []
         skip = 0
-        while True:
+        seen_pages: set[tuple[str, ...]] = set()
+        for _page_number in range(MAX_PAGINATION_PAGES):
             data = await self._request(
                 "GET",
                 "/reservations-v3/search",
@@ -228,6 +292,14 @@ class GuestyClient:
                 },
             )
             page = data.get("results", []) if isinstance(data, dict) else []
+            if not isinstance(page, list):
+                raise GuestyError("Guesty returned invalid reservation pagination data")
+            if not page:
+                break
+            signature = _page_signature(page)
+            if signature in seen_pages:
+                raise GuestyError("Guesty repeated a reservation pagination page")
+            seen_pages.add(signature)
             results.extend(item for item in page if isinstance(item, dict))
             pagination = data.get("pagination", {}) if isinstance(data, dict) else {}
             has_more = (
@@ -236,6 +308,8 @@ class GuestyClient:
             if has_more is not True and (has_more is not None or len(page) < 100):
                 break
             skip += 100
+        else:
+            raise GuestyError("Guesty reservation pagination exceeded the safety limit")
         return results
 
     async def async_get_guest(self, guest_id: str) -> dict[str, Any]:

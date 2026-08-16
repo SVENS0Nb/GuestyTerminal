@@ -232,8 +232,9 @@ incomplete change.
 - The central integration button updates every GuestyTerminal-managed YAML to
   `FIRMWARE_VERSION` and queues OTA jobs through ESPHome Device Builder. It must
   ignore user-owned YAML and report only non-sensitive counts/status.
-- `hacs.json` declares Home Assistant 2025.12 as the minimum; the test suite is
-  pinned to Home Assistant 2026.2.3. Do not lower compatibility accidentally.
+- `hacs.json` declares Home Assistant 2025.12 as the minimum; CI tests both the
+  minimum 2025.12.0 release and the 2026.2.3 baseline. Do not lower
+  compatibility accidentally.
 
 ## Change-impact checklist
 

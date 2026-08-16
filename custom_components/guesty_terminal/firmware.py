@@ -10,7 +10,7 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
-FIRMWARE_VERSION = "0.3.19"
+FIRMWARE_VERSION = "0.3.20"
 FIRMWARE_HEADER = "# Managed by the GuestyTerminal firmware assistant."
 POWER_MODES = ("auto", "battery", "mains")
 _DEVICE_NAME_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,22}[a-z0-9])?$")
@@ -201,7 +201,9 @@ def write_firmware_config(
             raise FirmwareFileExistsError(str(destination))
 
     content = render_firmware_config(options, credentials)
-    temporary = destination.with_suffix(".yaml.guestyterminal.tmp")
+    temporary = destination.with_name(
+        f".{destination.name}.{secrets.token_hex(8)}.guestyterminal.tmp"
+    )
     try:
         temporary.write_text(content, encoding="utf-8")
         temporary.chmod(0o600)
@@ -261,7 +263,9 @@ def update_managed_firmware_configs(directory: Path) -> list[ManagedFirmwareConf
     results: list[ManagedFirmwareConfig] = []
     for path, content, changed in prepared:
         if changed:
-            temporary = path.with_suffix(".yaml.guestyterminal.tmp")
+            temporary = path.with_name(
+                f".{path.name}.{secrets.token_hex(8)}.guestyterminal.tmp"
+            )
             try:
                 temporary.write_text(content, encoding="utf-8")
                 temporary.chmod(path.stat().st_mode & 0o777)

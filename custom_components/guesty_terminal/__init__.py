@@ -22,6 +22,7 @@ from .const import (
     DATA_PENDING_TOKENS,
     DEFAULT_CLEAR_AFTER_MINUTES,
     DEFAULT_LEAD_HOURS,
+    DEFAULT_POLL_MINUTES,
     DOMAIN,
     MAX_POLL_MINUTES,
     SERVICE_FORCE_REDRAW,
@@ -88,6 +89,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         token_saver=_save_token,
     )
     coordinator = GuestyTerminalCoordinator(hass, entry, client)
+    endpoint_owners: dict[str, str] = {}
+    for configured_entry in hass.config_entries.async_entries(DOMAIN):
+        mappings = configured_entry.options.get(CONF_MAPPINGS, {})
+        if not isinstance(mappings, dict):
+            continue
+        for endpoint, mapping in mappings.items():
+            if isinstance(endpoint, str) and isinstance(mapping, dict):
+                endpoint_owners.setdefault(endpoint, configured_entry.entry_id)
+    current_mappings = entry.options.get(CONF_MAPPINGS, {})
+    if not isinstance(current_mappings, dict):
+        current_mappings = {}
+    blocked_endpoints = {
+        endpoint
+        for endpoint in current_mappings
+        if isinstance(endpoint, str)
+        if endpoint_owners.get(endpoint, entry.entry_id) != entry.entry_id
+    }
+    if blocked_endpoints:
+        _LOGGER.error(
+            "Ignoring %d GuestyTerminal display mapping(s) already owned by "
+            "another Guesty config entry",
+            len(blocked_endpoints),
+        )
+        coordinator.block_endpoints(blocked_endpoints)
     await coordinator.async_config_entry_first_refresh()
 
     runtime = GuestyTerminalRuntime(hass, entry, client, coordinator)
@@ -113,10 +138,11 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             raw_mapping[CONF_LEAD_HOURS] = DEFAULT_LEAD_HOURS
             raw_mapping[CONF_CLEAR_AFTER_MINUTES] = DEFAULT_CLEAR_AFTER_MINUTES
     if CONF_POLL_MINUTES in options:
-        options[CONF_POLL_MINUTES] = min(
-            MAX_POLL_MINUTES,
-            max(2, int(options[CONF_POLL_MINUTES])),
-        )
+        try:
+            poll_minutes = int(options[CONF_POLL_MINUTES])
+        except (TypeError, ValueError):
+            poll_minutes = DEFAULT_POLL_MINUTES
+        options[CONF_POLL_MINUTES] = min(MAX_POLL_MINUTES, max(2, poll_minutes))
     hass.config_entries.async_update_entry(
         entry,
         options=options,
@@ -128,9 +154,9 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a Guesty account."""
     runtime: GuestyTerminalRuntime = entry.runtime_data
-    await runtime.async_stop()
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
+        await runtime.async_stop()
         hass.data[DOMAIN].pop(entry.entry_id, None)
     return unloaded
 

@@ -12,3 +12,17 @@ webfont published by Pictogrammers/Templarian:
 
 Only the selected weather glyphs are converted into firmware bitmap data by
 ESPHome. The full webfont is not distributed in the firmware image.
+
+## GxEPD2_4G 1.0.9 reference implementation
+
+The GuestyTerminal UC8179 four-grayscale initialization sequence and waveform
+tables were derived from the GxEPD2_4G reference implementation by Jean-Marc
+Zingg:
+
+- Source: <https://github.com/ZinggJM/GxEPD2_4G/tree/1.0.9>
+- Project README and attribution: <https://github.com/ZinggJM/GxEPD2_4G/blob/1.0.9/README.md>
+
+The referenced upstream repository does not contain a standalone license file
+at this version. This notice records provenance and does not itself grant
+redistribution rights. Review the upstream terms before redistributing derived
+driver code.

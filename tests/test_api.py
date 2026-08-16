@@ -103,6 +103,26 @@ def test_token_is_reused_and_new_token_is_saved() -> None:
     assert saved[0]["expires_at"] > datetime.now(UTC).timestamp()
 
 
+def test_corrupt_token_timing_and_expiry_values_fall_back_safely() -> None:
+    saved = []
+
+    async def save_token(data):
+        saved.append(data)
+
+    client = GuestyClient(
+        FakeSession(
+            posts=[FakeResponse(200, {"access_token": "fresh", "expires_in": "bad"})]
+        ),
+        "id",
+        "secret",
+        token_data={"access_token": "stale", "expires_at": "bad"},
+        token_saver=save_token,
+    )
+
+    assert asyncio.run(client._access_token()) == "fresh"
+    assert saved[0]["expires_at"] > datetime.now(UTC).timestamp() + 86000
+
+
 @pytest.mark.parametrize(
     ("response", "error"),
     [
@@ -157,6 +177,23 @@ def test_request_retries_auth_once_and_handles_http_errors() -> None:
             assert caught.value.retry_after == 17
 
 
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [("invalid", 60), ("1.2", 2), ("-5", 60)],
+)
+def test_rate_limit_retry_after_is_parsed_defensively(header, expected) -> None:
+    client = GuestyClient(
+        FakeSession(requests=[FakeResponse(429, {}, headers={"Retry-After": header})]),
+        "id",
+        "secret",
+        token_data=_valid_token(),
+    )
+
+    with pytest.raises(GuestyRateLimitError) as error:
+        asyncio.run(client._request("GET", "/limited"))
+    assert error.value.retry_after == expected
+
+
 def test_collection_endpoints_filter_and_paginate_results() -> None:
     first_page = [{"_id": str(index)} for index in range(100)]
     session = FakeSession(
@@ -189,6 +226,32 @@ def test_collection_endpoints_filter_and_paginate_results() -> None:
     assert reservation_params["filter[listingId]"] == "listing-1"
     assert reservation_params["filter[status]"] == "confirmed"
     assert "balanceDue" not in reservation_params
+
+
+def test_collection_pagination_rejects_repeated_and_invalid_pages() -> None:
+    repeated = [{"_id": str(index)} for index in range(100)]
+    client = GuestyClient(
+        FakeSession(
+            requests=[
+                FakeResponse(200, {"results": repeated}),
+                FakeResponse(200, {"results": repeated}),
+            ]
+        ),
+        "id",
+        "secret",
+        token_data=_valid_token(),
+    )
+    with pytest.raises(GuestyError, match="repeated"):
+        asyncio.run(client.async_get_listings())
+
+    invalid = GuestyClient(
+        FakeSession(requests=[FakeResponse(200, {"results": {"bad": "shape"}})]),
+        "id",
+        "secret",
+        token_data=_valid_token(),
+    )
+    with pytest.raises(GuestyError, match="invalid reservation"):
+        asyncio.run(invalid.async_get_reservations(["listing-1"]))
 
 
 def test_single_resource_endpoints_and_empty_reservation_request() -> None:

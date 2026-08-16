@@ -35,8 +35,6 @@ from custom_components.guesty_terminal.const import (
     CONF_FIRMWARE_POWER_MODE,
     CONF_FIRMWARE_WAKE_MINUTES,
     CONF_GENERAL_NOTES_LABEL,
-    CONF_IDLE_TEXT,
-    CONF_IDLE_TITLE,
     CONF_LEAD_HOURS,
     CONF_LISTING_ID,
     CONF_LOGO_DATA,
@@ -64,11 +62,15 @@ MODULE = sys.modules[GuestyTerminalConfigFlow.__module__]
 
 
 class FakeConfigEntries:
-    def __init__(self, entry=None) -> None:
+    def __init__(self, entry=None, entries=None) -> None:
         self.entry = entry
+        self.entries = entries or []
 
     def async_get_known_entry(self, _entry_id):
         return self.entry
+
+    def async_entries(self, _domain):
+        return self.entries
 
 
 def _options_flow(entry):
@@ -146,6 +148,72 @@ def test_options_choice_helpers_use_friendly_names(monkeypatch) -> None:
 
     coordinator.data = None
     assert flow._listing_choices() == []
+
+
+def test_endpoint_choices_exclude_displays_owned_by_another_account(
+    monkeypatch,
+) -> None:
+    endpoint = "sensor.shared_guesty_terminal_endpoint"
+    entity_registry = SimpleNamespace(
+        entities={
+            "shared": SimpleNamespace(
+                entity_id=endpoint,
+                original_name="GuestyTerminal Endpoint",
+                device_id=None,
+            )
+        }
+    )
+    monkeypatch.setattr(MODULE.er, "async_get", lambda _hass: entity_registry)
+    monkeypatch.setattr(
+        MODULE.dr,
+        "async_get",
+        lambda _hass: SimpleNamespace(async_get=lambda _device_id: None),
+    )
+    current = SimpleNamespace(entry_id="entry-1", options={}, runtime_data=None)
+    other = SimpleNamespace(
+        entry_id="entry-2",
+        options={CONF_MAPPINGS: {endpoint: {CONF_LISTING_ID: "other-listing"}}},
+    )
+    flow = GuestyTerminalOptionsFlow()
+    flow.hass = SimpleNamespace(
+        config_entries=FakeConfigEntries(current, [current, other])
+    )
+    flow.handler = current.entry_id
+    flow.context = {"source": "user"}
+
+    assert flow._endpoint_choices() == []
+
+
+def test_endpoint_choices_reject_legacy_duplicate_from_later_account(
+    monkeypatch,
+) -> None:
+    endpoint = "sensor.shared_guesty_terminal_endpoint"
+    entity_registry = SimpleNamespace(
+        entities={
+            "shared": SimpleNamespace(
+                entity_id=endpoint,
+                original_name="GuestyTerminal Endpoint",
+                device_id=None,
+            )
+        }
+    )
+    monkeypatch.setattr(MODULE.er, "async_get", lambda _hass: entity_registry)
+    monkeypatch.setattr(
+        MODULE.dr,
+        "async_get",
+        lambda _hass: SimpleNamespace(async_get=lambda _device_id: None),
+    )
+    mapping = {CONF_MAPPINGS: {endpoint: {CONF_LISTING_ID: "listing"}}}
+    owner = SimpleNamespace(entry_id="entry-1", options=mapping)
+    duplicate = SimpleNamespace(entry_id="entry-2", options=mapping, runtime_data=None)
+    flow = GuestyTerminalOptionsFlow()
+    flow.hass = SimpleNamespace(
+        config_entries=FakeConfigEntries(duplicate, [owner, duplicate])
+    )
+    flow.handler = duplicate.entry_id
+    flow.context = {"source": "user"}
+
+    assert flow._endpoint_choices() == []
 
 
 def test_options_mapping_can_add_remove_and_show_forms(monkeypatch) -> None:
@@ -421,8 +489,6 @@ def test_display_language_uses_system_default_and_refills_copy_on_change(
                     CONF_DISPLAY_LANGUAGE: "en",
                     CONF_WELCOME_TITLE: "Our custom welcome",
                     CONF_WELCOME_TEXT: "Our saved copy",
-                    CONF_IDLE_TITLE: "Custom idle",
-                    CONF_IDLE_TEXT: "Custom idle copy",
                     CONF_DOOR_CODE_LABEL: "ACCESS",
                     CONF_WIFI_LABEL: "NETWORK",
                     CONF_WIFI_NAME_LABEL: "SSID:",
@@ -598,3 +664,51 @@ def test_user_flow_shows_form_and_aborts_duplicate(monkeypatch) -> None:
     assert isinstance(
         GuestyTerminalConfigFlow.async_get_options_flow(None), GuestyTerminalOptionsFlow
     )
+
+
+def test_reauth_updates_unique_id_and_rejects_another_existing_account(
+    monkeypatch,
+) -> None:
+    flow = GuestyTerminalConfigFlow()
+    flow.hass = SimpleNamespace()
+    flow.context = {"source": "reauth"}
+    flow._reauth_entry = SimpleNamespace(
+        entry_id="entry-1",
+        unique_id="old-client",
+        data={CONF_CLIENT_ID: "old-client"},
+    )
+
+    async def validate(_hass, _client_id, _client_secret):
+        return []
+
+    monkeypatch.setattr(MODULE, "_validate_credentials", validate)
+    monkeypatch.setattr(
+        flow,
+        "_async_current_entries",
+        lambda: [SimpleNamespace(entry_id="entry-2", unique_id="other-client")],
+    )
+    duplicate = asyncio.run(
+        flow.async_step_reauth_confirm(
+            {CONF_CLIENT_ID: " other-client ", "client_secret": " secret "}
+        )
+    )
+    assert duplicate["reason"] == "already_configured"
+
+    captured = {}
+
+    def update(entry, **kwargs):
+        captured.update(kwargs)
+        return {"type": "abort", "reason": "reauth_successful"}
+
+    monkeypatch.setattr(flow, "async_update_reload_and_abort", update)
+    result = asyncio.run(
+        flow.async_step_reauth_confirm(
+            {CONF_CLIENT_ID: " new-client ", "client_secret": " new-secret "}
+        )
+    )
+    assert result["reason"] == "reauth_successful"
+    assert captured["unique_id"] == "new-client"
+    assert captured["data_updates"] == {
+        CONF_CLIENT_ID: "new-client",
+        "client_secret": "new-secret",
+    }

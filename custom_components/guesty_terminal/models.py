@@ -31,8 +31,6 @@ from .const import (
     DEFAULT_EMPTY_NO_BOOKING_TEXT,
     DEFAULT_EMPTY_PAGE_TITLE,
     DEFAULT_GENERAL_NOTES_LABEL,
-    DEFAULT_IDLE_TEXT,
-    DEFAULT_IDLE_TITLE,
     DEFAULT_LEAD_HOURS,
     DEFAULT_NO_ACTIVE_BOOKING_LABEL,
     DEFAULT_SPECIAL_REQUESTS_LABEL,
@@ -66,6 +64,30 @@ def _string(value: Any) -> str:
     if value is None or isinstance(value, (dict, list, tuple, set)):
         return ""
     return str(value).strip()
+
+
+def _bounded_integer(value: Any, default: int, minimum: int, maximum: int) -> int:
+    """Read a bounded integer from potentially corrupt persisted options."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        number = default
+    return min(maximum, max(minimum, number))
+
+
+def _boolean(value: Any, default: bool) -> bool:
+    """Read booleans without treating a stored string ``false`` as true."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+    return default
 
 
 def normalize_field_name(value: Any) -> str:
@@ -103,6 +125,17 @@ def _instruction_value(value: Any) -> str:
     return "\n".join(line.strip() for line in text.splitlines() if line.strip())
 
 
+def _first_defined_instruction(
+    *sources: tuple[Mapping[str, Any], tuple[str, ...]],
+) -> str:
+    """Return the first explicitly supplied instruction, including a clear."""
+    for source, keys in sources:
+        for key in keys:
+            if key in source:
+                return _instruction_value(source[key])
+    return ""
+
+
 def extract_checkout_instructions(data: Any) -> str:
     """Find Guesty's listing checkout instructions across known API shapes."""
     if isinstance(data, Mapping):
@@ -133,23 +166,18 @@ def extract_reservation_notes(data: Mapping[str, Any]) -> tuple[str, str, str]:
     if not isinstance(channel_metadata, Mapping):
         channel_metadata = {}
 
-    general = _instruction_value(
-        notes.get("other")
-        or notes.get("general")
-        or data.get("generalNotes")
-        or data.get("otherNotes")
+    general = _first_defined_instruction(
+        (notes, ("other", "general")),
+        (data, ("generalNotes", "otherNotes")),
     )
-    cleaner = _instruction_value(
-        notes.get("cleaning")
-        or notes.get("cleaner")
-        or data.get("cleaningNotes")
-        or data.get("notesForCleaner")
+    cleaner = _first_defined_instruction(
+        (notes, ("cleaning", "cleaner")),
+        (data, ("cleaningNotes", "notesForCleaner")),
     )
-    special_requests = _instruction_value(
-        notes.get("specialRequests")
-        or notes.get("special_requests")
-        or data.get("specialRequests")
-        or channel_metadata.get("specialRequests")
+    special_requests = _first_defined_instruction(
+        (notes, ("specialRequests", "special_requests")),
+        (data, ("specialRequests",)),
+        (channel_metadata, ("specialRequests",)),
     )
     return general, cleaner, special_requests
 
@@ -526,8 +554,6 @@ class MappingOptions:
     display_language: str = DEFAULT_DISPLAY_LANGUAGE
     welcome_title: str = DEFAULT_WELCOME_TITLE
     welcome_text: str = DEFAULT_WELCOME_TEXT
-    idle_title: str = DEFAULT_IDLE_TITLE
-    idle_text: str = DEFAULT_IDLE_TEXT
     door_code_label: str = DEFAULT_DOOR_CODE_LABEL
     wifi_label: str = DEFAULT_WIFI_LABEL
     wifi_name_label: str = DEFAULT_WIFI_NAME_LABEL
@@ -575,8 +601,6 @@ class MappingOptions:
                 _string(data.get("welcome_title")) or defaults.welcome_title
             ),
             welcome_text=_string(data.get("welcome_text")) or defaults.welcome_text,
-            idle_title=_string(data.get("idle_title")) or defaults.idle_title,
-            idle_text=_string(data.get("idle_text")) or defaults.idle_text,
             door_code_label=(
                 _string(data.get("door_code_label")) or defaults.door_code_label
             ),
@@ -624,12 +648,17 @@ class MappingOptions:
                 or defaults.special_requests_label
             ),
             date_time_format=date_time_format,
-            lead_hours=int(data.get("lead_hours", DEFAULT_LEAD_HOURS)),
-            clear_after_minutes=int(
-                data.get("clear_after_minutes", DEFAULT_CLEAR_AFTER_MINUTES)
+            lead_hours=_bounded_integer(
+                data.get("lead_hours"), DEFAULT_LEAD_HOURS, 0, 48
             ),
-            show_door_code=bool(data.get("show_door_code", True)),
-            show_wifi=bool(data.get("show_wifi", True)),
+            clear_after_minutes=_bounded_integer(
+                data.get("clear_after_minutes"),
+                DEFAULT_CLEAR_AFTER_MINUTES,
+                0,
+                120,
+            ),
+            show_door_code=_boolean(data.get("show_door_code"), True),
+            show_wifi=_boolean(data.get("show_wifi"), True),
             weather_entity=_string(data.get("weather_entity")),
         )
 
@@ -640,8 +669,6 @@ class MappingOptions:
             "display_language": self.display_language,
             "welcome_title": self.welcome_title,
             "welcome_text": self.welcome_text,
-            "idle_title": self.idle_title,
-            "idle_text": self.idle_text,
             "door_code_label": self.door_code_label,
             "wifi_label": self.wifi_label,
             "wifi_name_label": self.wifi_name_label,
@@ -724,8 +751,10 @@ class DisplayPayload:
     wifi_label: str = DEFAULT_WIFI_LABEL
     wifi_name_label: str = DEFAULT_WIFI_NAME_LABEL
     wifi_key_label: str = DEFAULT_WIFI_KEY_LABEL
-    idle_title: str = DEFAULT_IDLE_TITLE
-    idle_text: str = DEFAULT_IDLE_TEXT
+    # Protocol compatibility names retained for v7+ firmware. Their values are
+    # always the configured empty-room copy; no separate legacy idle page exists.
+    idle_title: str = DEFAULT_EMPTY_PAGE_TITLE
+    idle_text: str = DEFAULT_EMPTY_NO_BOOKING_TEXT
     no_active_booking_label: str = DEFAULT_NO_ACTIVE_BOOKING_LABEL
     checkout_instructions_title: str = ""
     checkout_instructions: str = ""
