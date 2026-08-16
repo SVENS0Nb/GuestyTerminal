@@ -115,7 +115,7 @@ api:
       then:
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            const bool renderer_current = id(guesty_render_revision) == 19;
+            const bool renderer_current = id(guesty_render_revision) == 20;
             int battery_percent = -1;
             if (id(guesty_battery_level).has_state()
                 && std::isfinite(id(guesty_battery_level).state)) {
@@ -238,7 +238,7 @@ api:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
-                        id(guesty_render_revision) = 19;
+                        id(guesty_render_revision) = 20;
                         if (mode != "welcome" && mode != "checkout"
                             && id(guesty_display_battery_percent) >= 0) {
                           id(guesty_rendered_battery_percent) =
@@ -508,13 +508,15 @@ font:
     glyphsets:
       - GF_Latin_Core
   # The empty-room battery pictogram uses the same pinned Material Design
-  # Icons release as the weather widget, but at half the icon size. Its fill
-  # level follows the displayed battery percentage in ten-percent steps.
+  # Icons release as the weather widget. The nominal font size compensates for
+  # the narrow source glyph so its visible height matches the percentage text
+  # after rotation. Its fill level follows the displayed battery percentage in
+  # ten-percent steps.
   - file:
       type: web
       url: "https://raw.githubusercontent.com/Templarian/MaterialDesign-Webfont/v7.4.47/fonts/materialdesignicons-webfont.ttf"
     id: guesty_font_battery_icon
-    size: 24
+    size: 36
     bpp: 2
     glyphs:
       - "\U000F0079" # mdi-battery (full)
@@ -1151,7 +1153,7 @@ display:
               if (percent < 100) return 0xF0082UL;
               return 0xF0079UL;
             };
-            const auto draw_rotated_battery_icon = [&](int right, int top,
+            const auto draw_rotated_battery_icon = [&](int right, int center_y,
                                                         uint32_t codepoint) {
               const auto *glyph =
                   id(guesty_font_battery_icon).find_glyph(codepoint);
@@ -1176,10 +1178,13 @@ display:
                       (static_cast<uint16_t>(coverage) * 255U
                        + maximum_coverage / 2U) / maximum_coverage);
                   // Clockwise rotation puts the original top terminal on the
-                  // right. Keep the icon right-aligned inside the partial
-                  // header window and preserve the font's antialias coverage.
+                  // right. Align the visible (cropped) glyph bitmap by its
+                  // center rather than by the font line box: MDI's nominal
+                  // size includes substantial side bearings that otherwise
+                  // make the rotated icon look too small and too high.
                   const int destination_x = right - 1 - source_y;
-                  const int destination_y = top + source_x;
+                  const int destination_y =
+                      center_y - glyph->width / 2 + source_x;
                   it.draw_pixel_at(destination_x, destination_y,
                                    Color(ink, ink, ink));
                 }
@@ -1188,7 +1193,7 @@ display:
             it.printf(660, 24, id(guesty_font_weather_temperature),
                       TextAlign::TOP_LEFT, "%d %%", battery_percent);
             draw_rotated_battery_icon(
-                768, 26, battery_codepoint_for_percent(battery_percent));
+                768, 38, battery_codepoint_for_percent(battery_percent));
           }
           const std::string &empty_title = id(guesty_next_booking_title).empty()
               ? id(guesty_idle_title) : id(guesty_next_booking_title);

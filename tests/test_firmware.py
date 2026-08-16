@@ -65,7 +65,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.22") == 2
+    assert rendered.count("ref: v0.3.23") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
@@ -76,7 +76,7 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
 
     assert package.count("bpp: 2") == 12
     assert "lut_mode: ${gray_lut_mode}" in package
-    assert "id(guesty_render_revision) == 19" in package
+    assert "id(guesty_render_revision) == 20" in package
     assert "guesty_terminal_update_display_v9" in package
     assert '"Bei Fragen sind wir für dich da."' not in package
     assert "id(guesty_logo_data).size() == logo_hex_length" in package
@@ -131,11 +131,12 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "id(guesty_font_battery_icon).get_bpp()" in idle_page
     assert "esphome::progmem_read_byte(" in idle_page
     assert "const int destination_x = right - 1 - source_y" in idle_page
-    assert "const int destination_y = top + source_x" in idle_page
+    assert "center_y - glyph->width / 2 + source_x" in idle_page
     assert "Color(ink, ink, ink)" in idle_page
     assert "it.printf(660, 24, id(guesty_font_weather_temperature)" in idle_page
     assert 'TextAlign::TOP_LEFT, "%d %%", battery_percent' in idle_page
-    assert "768, 26, battery_codepoint_for_percent(battery_percent)" in idle_page
+    assert "768, 38, battery_codepoint_for_percent(battery_percent)" in idle_page
+    assert "id: guesty_font_battery_icon\n    size: 36" in package
     assert "it.print(682, 26, id(guesty_font_battery_icon)" not in idle_page
     assert "id(guesty_display_battery_percent)" in idle_page
     assert "id(guesty_battery_only_changed)" in package
@@ -168,7 +169,7 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     battery_font_start = package.index("    id: guesty_font_battery_icon\n")
     weather_font_start = package.index("    id: guesty_font_weather_icon\n")
     battery_font = package[battery_font_start:weather_font_start]
-    assert "    size: 24\n" in battery_font
+    assert "    size: 36\n" in battery_font
     for glyph in range(0xF0079, 0xF0083):
         assert f'"\\U{glyph:08X}"' in battery_font
     assert '"\\U000F008E"' in battery_font
@@ -328,7 +329,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.22", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.23", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -340,8 +341,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.22") == 2
-    assert 'version: "0.3.22"' in updated
+    assert updated.count("ref: v0.3.23") == 2
+    assert 'version: "0.3.23"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -358,13 +359,13 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.22", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.23", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.22", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.23", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")

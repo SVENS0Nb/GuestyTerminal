@@ -404,6 +404,14 @@ Aktualisierung; spätere reine Batterieänderungen verwenden weiterhin den
 sicheren partiellen Header-Refresh. Nach dem HACS-Update muss die
 Display-Firmware einmalig auf 0.3.22 aktualisiert werden.
 
+Version **0.3.23** korrigiert die sichtbare Größe und vertikale Ausrichtung des
+gedrehten Batteriesymbols. Die Darstellung richtet sich nun an der tatsächlich
+gerasterten MDI-Glyphenfläche aus: Symbol und Prozentwert sind auf derselben
+Mittellinie zentriert und besitzen eine vergleichbare sichtbare Höhe. Der
+dynamische Füllstand und der sichere partielle Header-Refresh bleiben erhalten.
+Nach dem HACS-Update muss die Display-Firmware einmalig auf 0.3.23 aktualisiert
+werden.
+
 ## Datenschutz
 
 Die von der Integration angelegten Statussensoren enthalten weder Gastnamen
