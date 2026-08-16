@@ -115,7 +115,7 @@ api:
       then:
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            const bool renderer_current = id(guesty_render_revision) == 18;
+            const bool renderer_current = id(guesty_render_revision) == 19;
             int battery_percent = -1;
             if (id(guesty_battery_level).has_state()
                 && std::isfinite(id(guesty_battery_level).state)) {
@@ -238,7 +238,7 @@ api:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
-                        id(guesty_render_revision) = 18;
+                        id(guesty_render_revision) = 19;
                         if (mode != "welcome" && mode != "checkout"
                             && id(guesty_display_battery_percent) >= 0) {
                           id(guesty_rendered_battery_percent) =
@@ -1138,24 +1138,57 @@ display:
           it.print(32, 24, id(guesty_font_property),
                    id(guesty_property_name).c_str());
           if (battery_percent >= 0) {
-            const auto battery_icon_for_percent = [](int percent) {
-              if (percent <= 0) return "\U000F008E";
-              if (percent < 20) return "\U000F007A";
-              if (percent < 30) return "\U000F007B";
-              if (percent < 40) return "\U000F007C";
-              if (percent < 50) return "\U000F007D";
-              if (percent < 60) return "\U000F007E";
-              if (percent < 70) return "\U000F007F";
-              if (percent < 80) return "\U000F0080";
-              if (percent < 90) return "\U000F0081";
-              if (percent < 100) return "\U000F0082";
-              return "\U000F0079";
+            const auto battery_codepoint_for_percent = [](int percent) -> uint32_t {
+              if (percent <= 0) return 0xF008EUL;
+              if (percent < 20) return 0xF007AUL;
+              if (percent < 30) return 0xF007BUL;
+              if (percent < 40) return 0xF007CUL;
+              if (percent < 50) return 0xF007DUL;
+              if (percent < 60) return 0xF007EUL;
+              if (percent < 70) return 0xF007FUL;
+              if (percent < 80) return 0xF0080UL;
+              if (percent < 90) return 0xF0081UL;
+              if (percent < 100) return 0xF0082UL;
+              return 0xF0079UL;
             };
-            it.print(682, 26, id(guesty_font_battery_icon),
-                     battery_icon_for_percent(battery_percent));
-            it.printf(768, 27, id(guesty_font_weather_temperature),
-                      TextAlign::TOP_RIGHT, "%d %%",
-                      battery_percent);
+            const auto draw_rotated_battery_icon = [&](int right, int top,
+                                                        uint32_t codepoint) {
+              const auto *glyph =
+                  id(guesty_font_battery_icon).find_glyph(codepoint);
+              if (glyph == nullptr) return;
+              const uint8_t bits_per_pixel =
+                  id(guesty_font_battery_icon).get_bpp();
+              const uint8_t maximum_coverage =
+                  (1U << bits_per_pixel) - 1U;
+              for (int source_y = 0; source_y < glyph->height; source_y++) {
+                for (int source_x = 0; source_x < glyph->width; source_x++) {
+                  const size_t pixel_index =
+                      static_cast<size_t>(source_y) * glyph->width + source_x;
+                  const size_t bit_index = pixel_index * bits_per_pixel;
+                  const uint8_t packed = esphome::progmem_read_byte(
+                      glyph->data + bit_index / 8U);
+                  const uint8_t shift =
+                      8U - bits_per_pixel - (bit_index & 0x07U);
+                  const uint8_t coverage =
+                      (packed >> shift) & maximum_coverage;
+                  if (coverage == 0) continue;
+                  const uint8_t ink = static_cast<uint8_t>(
+                      (static_cast<uint16_t>(coverage) * 255U
+                       + maximum_coverage / 2U) / maximum_coverage);
+                  // Clockwise rotation puts the original top terminal on the
+                  // right. Keep the icon right-aligned inside the partial
+                  // header window and preserve the font's antialias coverage.
+                  const int destination_x = right - 1 - source_y;
+                  const int destination_y = top + source_x;
+                  it.draw_pixel_at(destination_x, destination_y,
+                                   Color(ink, ink, ink));
+                }
+              }
+            };
+            it.printf(660, 24, id(guesty_font_weather_temperature),
+                      TextAlign::TOP_LEFT, "%d %%", battery_percent);
+            draw_rotated_battery_icon(
+                768, 26, battery_codepoint_for_percent(battery_percent));
           }
           const std::string &empty_title = id(guesty_next_booking_title).empty()
               ? id(guesty_idle_title) : id(guesty_next_booking_title);

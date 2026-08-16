@@ -243,11 +243,12 @@ Feld: Eine vorhandene Notiz nutzt die gesamte Breite, zwei Notizen werden in
 zwei gleich große Felder und drei Notizen in drei gleich große Felder verteilt.
 Ohne Notizen stehen Buchungsname und Zeitraum großzügig und vertikal
 ausgewogen. Die Seite hat keine Fußleiste und zeigt weder Türcode noch WiFi.
-Oben rechts ersetzt eine kompakte Batterieanzeige mit einem dynamischen,
-24 Pixel großen Füllstandssymbol und Prozentwert das Wetter-Widget. Der
-Messwert wird in stromsparenden Fünf-Prozent-Schritten über das kleine
-partielle Headerfenster aktualisiert; das Symbol folgt ihm in
-Zehn-Prozent-Stufen.
+Oben rechts ersetzt eine kompakte Batterieanzeige das Wetter-Widget. Der
+Prozentwert steht links neben einem waagerechten, 24 Pixel großen
+Füllstandssymbol aus der eingebundenen Material-Design-Piktogrammfamilie; beide
+sind an der Kopfzeile ausgerichtet. Der Messwert wird in stromsparenden
+Fünf-Prozent-Schritten über das kleine partielle Headerfenster aktualisiert; das
+Symbol folgt ihm in Zehn-Prozent-Stufen.
 
 ## Anzeige- und Sicherheitsverhalten
 
@@ -393,6 +394,15 @@ Zimmer von 48 auf 24 Pixel und passt seinen sichtbaren Füllstand dynamisch in
 Zehn-Prozent-Stufen an den angezeigten Batteriewert an. Die Prozentanzeige und
 der sichere partielle Header-Refresh bleiben erhalten. Nach dem HACS-Update
 muss die Display-Firmware einmalig auf 0.3.21 aktualisiert werden.
+
+Version **0.3.22** ordnet die Batterieanzeige der Seite für ein leeres Zimmer
+neu an: Der Prozentwert steht links, das dynamische MDI-Batteriesymbol rechts.
+Das Symbol wird um 90 Grad im Uhrzeigersinn gedreht, an der ursprünglichen
+Kopfzeile ausgerichtet und behält seine abgestuften Füllstände. Die erhöhte
+Renderrevision erzwingt nach dem Firmware-Update genau eine vollständige
+Aktualisierung; spätere reine Batterieänderungen verwenden weiterhin den
+sicheren partiellen Header-Refresh. Nach dem HACS-Update muss die
+Display-Firmware einmalig auf 0.3.22 aktualisiert werden.
 
 ## Datenschutz
 
