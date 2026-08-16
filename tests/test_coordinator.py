@@ -216,6 +216,14 @@ def test_live_weather_repairs_empty_cache_and_survives_temporary_outage() -> Non
     idle = DisplayPayload.idle(Listing("listing-1", "Loft"))
     assert coordinator.payload_with_current_weather(endpoint, idle) is idle
 
+    empty = replace(
+        repaired,
+        mode="empty",
+        weather_condition="",
+        weather_temperature="",
+    )
+    assert coordinator.payload_with_current_weather(endpoint, empty) is empty
+
     checkout = replace(repaired, mode="checkout")
     coordinator.hass.states.states["weather.home"] = SimpleNamespace(
         state="rainy",

@@ -115,17 +115,36 @@ api:
       then:
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            const bool renderer_current = id(guesty_render_revision) == 14;
+            const bool renderer_current = id(guesty_render_revision) == 16;
+            int battery_percent = -1;
+            if (id(guesty_battery_level).has_state()
+                && std::isfinite(id(guesty_battery_level).state)) {
+              const int rounded = static_cast<int>(
+                  std::lround(id(guesty_battery_level).state));
+              battery_percent = std::max(0, std::min(100,
+                  ((rounded + 2) / 5) * 5));
+            }
+            const bool empty_page = mode != "welcome" && mode != "checkout";
+            const bool battery_changed = empty_page
+                && battery_percent >= 0
+                && battery_percent != id(guesty_rendered_battery_percent);
             id(guesty_content_changed) = force_redraw || content_id.empty()
                 || content_id != id(guesty_content_id)
-                || !renderer_current;
+                || !renderer_current
+                || battery_changed;
             id(guesty_weather_only_changed) = id(guesty_content_changed)
                 && !force_redraw
                 && renderer_current
                 && !content_id.empty()
                 && !base_content_id.empty()
                 && base_content_id == id(guesty_base_content_id)
-                && mode != "idle";
+                && !empty_page;
+            id(guesty_battery_only_changed) = battery_changed
+                && !force_redraw
+                && renderer_current
+                && !content_id.empty()
+                && content_id == id(guesty_content_id);
+            id(guesty_display_battery_percent) = battery_percent;
             id(guesty_mode) = mode;
             id(guesty_property_name) = property_name;
             id(guesty_welcome_title) = welcome_title;
@@ -159,7 +178,8 @@ api:
             id(guesty_screen_sensitive) = mode != "idle";
             id(guesty_has_wifi) =
                 mode == "welcome" && !wifi_name.empty();
-            id(guesty_has_weather) = mode != "idle"
+            id(guesty_has_weather) =
+                (mode == "welcome" || mode == "checkout")
                 && (!weather_condition.empty() || !weather_temperature.empty());
 
             if (id(guesty_content_changed) && id(guesty_has_wifi)) {
@@ -184,25 +204,29 @@ api:
               id(guesty_wifi_qr).set_value(qr_value);
               id(guesty_wifi_qr).generate_qr_code();
             }
+        # Page selection is runtime state and does not survive a reboot. Restore
+        # it on every payload, even when the retained content fingerprint proves
+        # that no physical E-paper refresh is needed.
+        - if:
+            condition:
+              lambda: return mode == "checkout";
+            then:
+              - display.page.show: guesty_checkout_page
+            else:
+              - if:
+                  condition:
+                    lambda: return mode == "welcome";
+                  then:
+                    - display.page.show: guesty_welcome_page
+                  else:
+                    - display.page.show: guesty_idle_page
         - if:
             condition:
               lambda: return id(guesty_content_changed);
             then:
-              - if:
-                  condition:
-                    lambda: return mode == "checkout";
-                  then:
-                    - display.page.show: guesty_checkout_page
-                  else:
-                    - if:
-                        condition:
-                          lambda: return mode == "welcome";
-                        then:
-                          - display.page.show: guesty_welcome_page
-                        else:
-                          - display.page.show: guesty_idle_page
               - lambda: |-
-                  if (id(guesty_weather_only_changed)) {
+                  if (id(guesty_weather_only_changed)
+                      || id(guesty_battery_only_changed)) {
                     id(guesty_epaper).request_partial_update();
                   }
               - component.update: guesty_epaper
@@ -214,7 +238,12 @@ api:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
-                        id(guesty_render_revision) = 14;
+                        id(guesty_render_revision) = 16;
+                        if (mode != "welcome" && mode != "checkout"
+                            && id(guesty_display_battery_percent) >= 0) {
+                          id(guesty_rendered_battery_percent) =
+                              id(guesty_display_battery_percent);
+                        }
                     - text_sensor.template.publish:
                         id: guesty_last_booking
                         state: !lambda |-
@@ -254,10 +283,10 @@ globals:
     initial_value: '"UNTERKUNFT"'
   - id: guesty_welcome_title
     type: std::string
-    initial_value: '"Willkommen"'
+    initial_value: '"NÄCHSTE BUCHUNG"'
   - id: guesty_welcome_text
     type: std::string
-    initial_value: '"Die Unterkunft ist bereit."'
+    initial_value: '"Keine bevorstehende Buchung"'
   - id: guesty_door_code
     type: std::string
     initial_value: '""'
@@ -353,6 +382,12 @@ globals:
   - id: guesty_weather_only_changed
     type: bool
     initial_value: "false"
+  - id: guesty_battery_only_changed
+    type: bool
+    initial_value: "false"
+  - id: guesty_display_battery_percent
+    type: int
+    initial_value: "-1"
   # Persist only an opaque, reservation-salted display fingerprint. This lets
   # the device skip identical E-paper refreshes without storing credentials.
   - id: guesty_content_id
@@ -374,7 +409,14 @@ globals:
     type: uint32_t
     restore_value: true
     initial_value: "0"
-  # Only privacy state, opaque fingerprints and the monochrome weather window
+  # The empty-room battery widget is quantized to five-percent steps. Persist
+  # only the last successfully drawn value so regular wake cycles can suppress
+  # redundant panel activity while still updating the small header window.
+  - id: guesty_rendered_battery_percent
+    type: int
+    restore_value: true
+    initial_value: "-1"
+  # Only privacy state, opaque fingerprints and non-sensitive header status
   # survive deep sleep. Door and WiFi credentials are never written to flash.
   - id: guesty_valid_until_epoch
     type: uint32_t
@@ -476,6 +518,7 @@ font:
     bpp: 4
     glyphs:
       - "\U000F002A" # mdi-alert-outline
+      - "\U000F0079" # mdi-battery
       - "\U000F0590" # mdi-weather-cloudy
       - "\U000F0591" # mdi-weather-fog
       - "\U000F0592" # mdi-weather-hail
@@ -656,7 +699,14 @@ button:
     name: Display aktualisieren
     icon: mdi:refresh
     on_press:
-      - component.update: guesty_epaper
+      # The endpoint pulse asks GuestyTerminal to refresh Guesty first. The
+      # integration answers with one authoritative forced redraw, so this
+      # button can never repaint stale local RAM or the wrong active page.
+      - text_sensor.template.publish:
+          id: guesty_terminal_endpoint
+          state: "__guesty_refresh_requested__"
+      - delay: 250ms
+      - component.update: guesty_terminal_endpoint
   - platform: restart
     id: guesty_restart
     name: Neustart
@@ -1056,32 +1106,23 @@ display:
                              y + height - radius - 1, radius, light_gray);
           };
 
-          const auto weather_icon = [](const std::string &condition) {
-            if (condition == "sunny") return "\U000F0599";
-            if (condition == "clear-night") return "\U000F0594";
-            if (condition == "fog") return "\U000F0591";
-            if (condition == "hail") return "\U000F0592";
-            if (condition == "lightning") return "\U000F0593";
-            if (condition == "lightning-rainy") return "\U000F067E";
-            if (condition == "partlycloudy") return "\U000F0595";
-            if (condition == "pouring") return "\U000F0596";
-            if (condition == "rainy") return "\U000F0597";
-            if (condition == "snowy") return "\U000F0598";
-            if (condition == "snowy-rainy") return "\U000F067F";
-            if (condition == "windy") return "\U000F059D";
-            if (condition == "windy-variant") return "\U000F059E";
-            if (condition == "exceptional") return "\U000F002A";
-            return "\U000F0590";
-          };
-
+          int battery_percent = id(guesty_display_battery_percent);
+          if (battery_percent < 0
+              && id(guesty_battery_level).has_state()
+              && std::isfinite(id(guesty_battery_level).state)) {
+            const int rounded = static_cast<int>(
+                std::lround(id(guesty_battery_level).state));
+            battery_percent = std::max(0, std::min(100,
+                ((rounded + 2) / 5) * 5));
+          }
           it.print(32, 24, id(guesty_font_property),
                    id(guesty_property_name).c_str());
-          if (id(guesty_has_weather)) {
+          if (battery_percent >= 0) {
             it.print(650, 12, id(guesty_font_weather_icon),
-                     weather_icon(id(guesty_weather_condition)));
-            it.print(768, 27, id(guesty_font_weather_temperature),
-                     TextAlign::TOP_RIGHT,
-                     id(guesty_weather_temperature).c_str());
+                     "\U000F0079");
+            it.printf(768, 27, id(guesty_font_weather_temperature),
+                      TextAlign::TOP_RIGHT, "%d %%",
+                      battery_percent);
           }
           const std::string &empty_title = id(guesty_next_booking_title).empty()
               ? id(guesty_idle_title) : id(guesty_next_booking_title);

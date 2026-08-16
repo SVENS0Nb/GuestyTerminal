@@ -136,11 +136,14 @@ incomplete change.
   `content_id` includes every visible field and a high-entropy reservation ID;
   `base_content_id` intentionally excludes weather.
 - A full redraw is required for booking, access data, copy, logo, layout, or
-  renderer changes. A weather-only change may request a partial refresh.
-- The supported partial window is the monochrome weather region at
+  renderer changes. A weather-only change may request a partial refresh. On the
+  empty-room page, the same header window contains the local battery icon and a
+  percentage quantized to five-percent steps; a battery-only change may also
+  use the partial-refresh path.
+- The supported partial window is the monochrome header-status region at
   `x=640, y=8, width=136, height=64`, with at most five consecutive partial
   updates before a full grayscale refresh.
-- The driver must retain the previous weather bitmap across deep sleep and
+- The driver must retain the previous header bitmap across deep sleep and
   rebuild both complete UC8179 controller RAM planes after reset before a
   differential refresh. Updating only the small RAM window causes panel-wide
   noise and is not acceptable.
@@ -154,6 +157,9 @@ incomplete change.
 - Publish the displayed-booking confirmation only after a successful physical
   refresh, or when a restored matching fingerprint proves the same content was
   previously drawn.
+- Page selection is volatile ESP32 runtime state. Restore the payload's page on
+  every received action, even when the retained fingerprint suppresses the
+  physical refresh; otherwise a later local update can repaint the first page.
 - Treat panel timing, BUSY polarity, LUTs, plane order, reset sequence, and
   partial-refresh commands as hardware-sensitive. Do not simplify them without
   an ESPHome compile and real-device verification.
@@ -218,6 +224,11 @@ incomplete change.
 - The endpoint pulse in `api.on_client_connected` works around the race where
   ESPHome publishes the sensor before registering the user-defined action. Keep
   the delayed resend behavior when changing discovery.
+- The per-device **Display aktualisieren** button publishes a one-shot endpoint
+  request. The integration must refresh Guesty first and then send one forced,
+  authoritative redraw to that display. Suppress the endpoint's immediate
+  action-state restore and the coordinator's ordinary push while this request
+  is pending, so stale RAM cannot win the race.
 - The central integration button updates every GuestyTerminal-managed YAML to
   `FIRMWARE_VERSION` and queues OTA jobs through ESPHome Device Builder. It must
   ignore user-owned YAML and report only non-sensitive counts/status.

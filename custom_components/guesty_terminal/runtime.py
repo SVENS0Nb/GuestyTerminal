@@ -28,6 +28,7 @@ from .const import (
     DISPLAY_ACTION_V7_SUFFIX,
     DISPLAY_ACTION_V8_SUFFIX,
     DISPLAY_ACTION_V9_SUFFIX,
+    DISPLAY_REFRESH_REQUEST_STATE,
     LOGO_DISPLAY_MODES,
 )
 from .coordinator import GuestyTerminalCoordinator
@@ -223,6 +224,7 @@ class GuestyTerminalRuntime:
     coordinator: GuestyTerminalCoordinator
     _unsubscribers: list[Callable[[], None]] = field(default_factory=list)
     _locks: dict[str, asyncio.Lock] = field(default_factory=dict)
+    _sync_requests: set[str] = field(default_factory=set)
 
     async def async_start(self) -> None:
         """Start endpoint and coordinator listeners."""
@@ -261,6 +263,21 @@ class GuestyTerminalRuntime:
         if new_state is None or new_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
             return
         endpoint = str(event.data.get("entity_id") or "")
+        if not endpoint:
+            return
+        if new_state.state == DISPLAY_REFRESH_REQUEST_STATE:
+            if endpoint in self._sync_requests:
+                return
+            self._sync_requests.add(endpoint)
+            self.hass.async_create_task(
+                self._async_sync_and_force_redraw_endpoint(endpoint)
+            )
+            return
+        if endpoint in self._sync_requests:
+            # The firmware restores the real action state immediately after
+            # publishing its one-shot sync request. The request task performs
+            # the authoritative push after Guesty has been refreshed.
+            return
 
         @callback
         def _delayed_push(_now: datetime) -> None:
@@ -275,7 +292,9 @@ class GuestyTerminalRuntime:
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        self.hass.async_create_task(self.async_push_all())
+        self.hass.async_create_task(
+            self.async_push_all(exclude=frozenset(self._sync_requests))
+        )
 
     @callback
     def _handle_weather_state(self, event: Event) -> None:
@@ -304,7 +323,7 @@ class GuestyTerminalRuntime:
                 continue
             self.hass.async_create_task(self.async_push_endpoint(endpoint))
 
-    async def async_push_all(self) -> None:
+    async def async_push_all(self, *, exclude: frozenset[str] = frozenset()) -> None:
         """Push current payloads to every display that is online."""
         if self.coordinator.data is None:
             return
@@ -312,9 +331,21 @@ class GuestyTerminalRuntime:
             *(
                 self.async_push_endpoint(endpoint)
                 for endpoint in self.coordinator.data.payloads
+                if endpoint not in exclude
             ),
             return_exceptions=True,
         )
+
+    async def _async_sync_and_force_redraw_endpoint(self, endpoint: str) -> None:
+        """Refresh Guesty, then redraw the requesting display once."""
+        try:
+            # Let the firmware restore the endpoint sensor's real ESPHome
+            # action before the refreshed payload is sent back.
+            await asyncio.sleep(0.5)
+            await self.coordinator.async_request_refresh()
+            await self.async_force_redraw_endpoint(endpoint)
+        finally:
+            self._sync_requests.discard(endpoint)
 
     async def async_push_endpoint(self, endpoint_entity: str) -> bool:
         """Push one display payload through its ESPHome action."""

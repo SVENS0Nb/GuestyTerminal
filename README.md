@@ -243,6 +243,9 @@ Feld: Eine vorhandene Notiz nutzt die gesamte Breite, zwei Notizen werden in
 zwei gleich große Felder und drei Notizen in drei gleich große Felder verteilt.
 Ohne Notizen stehen Buchungsname und Zeitraum großzügig und vertikal
 ausgewogen. Die Seite hat keine Fußleiste und zeigt weder Türcode noch WiFi.
+Oben rechts ersetzt eine kompakte Batterieanzeige mit Symbol und Prozentwert
+das Wetter-Widget. Sie wird in stromsparenden Fünf-Prozent-Schritten über das
+kleine partielle Headerfenster aktualisiert.
 
 ## Anzeige- und Sicherheitsverhalten
 
@@ -298,9 +301,11 @@ ausgewogen. Die Seite hat keine Fußleiste und zeigt weder Türcode noch WiFi.
   überhaupt keine E-Paper-Aktualisierung aus.
 - Jedes Display stellt in Home Assistant seinen Batteriestand sowie die Buttons
   **Display aktualisieren** und **Neustart** bereit. Der Aktualisieren-Button
-  zeichnet das aktuelle Bild bewusst sofort neu. Im Deep Sleep sind die beiden
-  Buttons bis zum nächsten Aufwachen nicht erreichbar. Der Batteriestand wird
-  bei jedem Aufwachen und bei USB-Betrieb alle fünf Minuten neu gemessen.
+  stößt zuerst einen sofortigen Guesty-Abgleich an, übernimmt den danach
+  ermittelten Seitenmodus und zeichnet anschließend genau dieses aktuelle Bild
+  neu. Im Deep Sleep sind die beiden Buttons bis zum nächsten Aufwachen nicht
+  erreichbar. Der Batteriestand wird bei jedem Aufwachen und bei USB-Betrieb
+  alle fünf Minuten neu gemessen.
 - Die Diagnose-Entität **Angezeigte Buchung** nennt Gastname und Zeitraum der
   Buchung, deren Bild das E-Paper zuletzt erfolgreich bestätigt hat. Sie wird
   erst nach einem abgeschlossenen BUSY-Zyklus aktualisiert. Nach einem normalen
@@ -360,7 +365,14 @@ Nach der einmaligen Aktualisierung auf 0.3.17 können alle Texte dieser Seite
 Nachlaufzeit sichtbar, auch wenn die nächste Buchung bereits im
 Anreise-Vorlauf liegt. Eine laufende neue Buchung übernimmt weiterhin sofort.
 Für diese reine Integrationskorrektur müssen Geräte mit Firmware 0.3.17 nicht
-neu geflasht werden.
+neu geflasht werden. Version **0.3.19** macht den geräteeigenen
+Aktualisieren-Button zu einem vollständigen Guesty-Abgleich mit anschließendem
+erzwungenem Neuzeichnen und stellt den richtigen Seitenmodus nach jedem
+Neustart wieder her. Auf der Seite für ein leeres Zimmer ersetzt außerdem eine
+Batterieanzeige das Wetter und nutzt für reine Prozentänderungen denselben
+sicheren Teilrefresh des Headerfensters. Für diese Änderungen müssen die
+Integration und anschließend die Display-Firmware auf 0.3.19 aktualisiert
+werden.
 
 ## Datenschutz
 

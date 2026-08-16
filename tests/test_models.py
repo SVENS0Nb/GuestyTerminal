@@ -450,7 +450,8 @@ def test_empty_room_page_uses_one_full_width_note_slot_and_us_format() -> None:
         "Bitte ein allergikerfreundliches Kissen vorbereiten."
     )
     assert payload.special_requests_label == "SPECIAL REQUESTS"
-    assert payload.weather_condition == "cloudy"
+    assert payload.weather_condition == ""
+    assert payload.weather_temperature == ""
     assert payload.valid_until_epoch > 0
 
 

@@ -991,8 +991,6 @@ def _empty_room_payload(
     options: MappingOptions,
     *,
     now: datetime,
-    weather_condition: str,
-    weather_temperature: str,
 ) -> DisplayPayload:
     """Build the room-empty page with a dynamic set of note cards."""
     period = _empty_booking_period(reservation, listing, options)
@@ -1043,8 +1041,8 @@ def _empty_room_payload(
         cleaner_notes=visible_note(reservation.cleaner_notes),
         special_requests_label=_shorten(options.special_requests_label, 22),
         special_requests=visible_note(reservation.special_requests),
-        weather_condition=_shorten(_string(weather_condition).lower(), 32),
-        weather_temperature=_shorten(_string(weather_temperature), 16),
+        weather_condition="",
+        weather_temperature="",
         booking_summary=_shorten(
             f"{reservation.guest_name or reservation.first_name} · {period}", 160
         ),
@@ -1079,8 +1077,6 @@ def build_display_payload(
             next_reservation,
             options,
             now=current,
-            weather_condition=weather_condition,
-            weather_temperature=weather_temperature,
         )
 
     zone = _timezone(listing.timezone)

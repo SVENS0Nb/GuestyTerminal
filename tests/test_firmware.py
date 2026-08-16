@@ -65,7 +65,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.18") == 2
+    assert rendered.count("ref: v0.3.19") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
@@ -76,7 +76,7 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
 
     assert package.count("bpp: 4") == 11
     assert "lut_mode: ${gray_lut_mode}" in package
-    assert "id(guesty_render_revision) == 14" in package
+    assert "id(guesty_render_revision) == 16" in package
     assert "guesty_terminal_update_display_v9" in package
     assert '"Bei Fragen sind wir für dich da."' not in package
     assert "id(guesty_logo_data).size() == logo_hex_length" in package
@@ -114,6 +114,19 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "id(guesty_checkout_instructions_title).c_str()" in package
     assert "id(guesty_checkout_instructions)" in package
     assert "id: guesty_idle_page" in package
+    idle_start = package.index("      - id: guesty_idle_page\n")
+    idle_end = package.index("\ndeep_sleep:\n", idle_start)
+    idle_page = package[idle_start:idle_end]
+    assert "id(guesty_has_weather)" not in idle_page
+    assert "id(guesty_weather_condition)" not in idle_page
+    assert '"\\U000F0079"' in idle_page
+    assert "id(guesty_display_battery_percent)" in idle_page
+    assert 'TextAlign::TOP_RIGHT, "%d %%"' in idle_page
+    assert "id(guesty_battery_only_changed)" in package
+    assert "id(guesty_rendered_battery_percent)" in package
+    assert 'const bool empty_page = mode != "welcome" && mode != "checkout"' in package
+    assert "&& !empty_page;" in package
+    assert "((rounded + 2) / 5) * 5" in package
     assert "const int note_count" in package
     assert "constexpr int cards_width = 736" in package
     assert "(cards_width - gap * (note_count - 1)) / note_count" in package
@@ -152,6 +165,18 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "accuracy_decimals: 0" in package
     assert "id: guesty_refresh_display" in package
     assert "name: Display aktualisieren" in package
+    refresh_start = package.index("    id: guesty_refresh_display\n")
+    refresh_end = package.index("  - platform: restart\n", refresh_start)
+    refresh_block = package[refresh_start:refresh_end]
+    assert 'state: "__guesty_refresh_requested__"' in refresh_block
+    assert "component.update: guesty_terminal_endpoint" in refresh_block
+    assert "component.update: guesty_epaper" not in refresh_block
+    assert "Page selection is runtime state and does not survive a reboot" in package
+    assert package.index("Page selection is runtime state") < package.index(
+        "lambda: return id(guesty_content_changed);"
+    )
+    assert "initial_value: '\"Willkommen\"'" not in package
+    assert "initial_value: '\"Die Unterkunft ist bereit.\"'" not in package
     assert "id: guesty_restart" in package
     assert "name: Neustart" in package
     assert "- interval: 5min" in package
@@ -273,7 +298,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.18", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.19", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -285,8 +310,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.18") == 2
-    assert 'version: "0.3.18"' in updated
+    assert updated.count("ref: v0.3.19") == 2
+    assert 'version: "0.3.19"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -303,13 +328,13 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.18", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.19", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.18", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.19", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")
