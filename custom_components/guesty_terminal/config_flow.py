@@ -33,10 +33,13 @@ from homeassistant.helpers.selector import (
 
 from .api import GuestyAuthenticationError, GuestyClient, GuestyError
 from .const import (
+    CONF_CHECKOUT_LABEL,
     CONF_CLEAR_AFTER_MINUTES,
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
     CONF_DATE_TIME_FORMAT,
+    CONF_DISPLAY_LANGUAGE,
+    CONF_DOOR_CODE_LABEL,
     CONF_ENDPOINT_ENTITY,
     CONF_FIRMWARE_AWAKE_SECONDS,
     CONF_FIRMWARE_DEVICE_NAME,
@@ -44,6 +47,8 @@ from .const import (
     CONF_FIRMWARE_OVERWRITE,
     CONF_FIRMWARE_POWER_MODE,
     CONF_FIRMWARE_WAKE_MINUTES,
+    CONF_IDLE_TEXT,
+    CONF_IDLE_TITLE,
     CONF_LEAD_HOURS,
     CONF_LISTING_ID,
     CONF_LOGO_DATA,
@@ -57,6 +62,9 @@ from .const import (
     CONF_WEATHER_ENTITY,
     CONF_WELCOME_TEXT,
     CONF_WELCOME_TITLE,
+    CONF_WIFI_KEY_LABEL,
+    CONF_WIFI_LABEL,
+    CONF_WIFI_NAME_LABEL,
     DATA_PENDING_TOKENS,
     DATE_TIME_FORMAT_EU,
     DATE_TIME_FORMAT_US,
@@ -69,8 +77,6 @@ from .const import (
     DEFAULT_FIRMWARE_WAKE_MINUTES,
     DEFAULT_LEAD_HOURS,
     DEFAULT_POLL_MINUTES,
-    DEFAULT_WELCOME_TEXT,
-    DEFAULT_WELCOME_TITLE,
     DOMAIN,
     ENDPOINT_ENTITY_SUFFIX,
     ENDPOINT_ORIGINAL_NAME,
@@ -83,6 +89,7 @@ from .firmware import (
     FirmwareOptions,
     write_firmware_config,
 )
+from .localization import display_text_defaults, normalize_display_language
 from .logo import LogoError, encode_logo, valid_logo_data
 from .models import MappingOptions
 from .runtime import GuestyTerminalRuntime
@@ -217,6 +224,8 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
     """Configure display mappings and refresh behavior."""
 
     _mapping_endpoint: str | None = None
+    _mapping_language: str | None = None
+    _mapping_language_changed: bool = False
 
     async def async_step_init(
         self, _user_input: dict[str, Any] | None = None
@@ -229,6 +238,18 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                 "mapping": "Listing einem Display zuordnen",
                 "firmware": "E1001-Firmware erstellen",
                 "general": "Allgemeine Einstellungen",
+            }
+        elif language.startswith("fr"):
+            menu_options = {
+                "mapping": "Associer une annonce à un écran",
+                "firmware": "Créer le firmware E1001",
+                "general": "Paramètres généraux",
+            }
+        elif language.startswith("es"):
+            menu_options = {
+                "mapping": "Asignar un alojamiento a una pantalla",
+                "firmware": "Crear firmware E1001",
+                "general": "Ajustes generales",
             }
         else:
             menu_options = {
@@ -271,6 +292,21 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
             )
         ]
 
+    def _stored_mapping(self, endpoint: str) -> MappingOptions | None:
+        """Return one persisted mapping without mutating entry options."""
+        raw_mappings = self.config_entry.options.get(CONF_MAPPINGS, {})
+        if not isinstance(raw_mappings, dict):
+            return None
+        raw_mapping = raw_mappings.get(endpoint)
+        if not isinstance(raw_mapping, dict):
+            return None
+        return MappingOptions.from_dict(endpoint, raw_mapping)
+
+    def _system_display_language(self) -> str:
+        """Use the Home Assistant language for a newly configured display."""
+        language = getattr(getattr(self.hass, "config", None), "language", "en")
+        return normalize_display_language(language, fallback="en")
+
     async def async_step_mapping(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -284,7 +320,9 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
 
         if user_input is not None:
             self._mapping_endpoint = user_input[CONF_ENDPOINT_ENTITY]
-            return await self.async_step_mapping_details()
+            self._mapping_language = None
+            self._mapping_language_changed = False
+            return await self.async_step_mapping_language()
 
         endpoint_values = {str(choice["value"]) for choice in endpoints}
         raw_mappings = self.config_entry.options.get(CONF_MAPPINGS, {})
@@ -307,6 +345,51 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                     ): SelectSelector(
                         SelectSelectorConfig(
                             options=endpoints, mode=SelectSelectorMode.DROPDOWN
+                        )
+                    )
+                }
+            ),
+        )
+
+    async def async_step_mapping_language(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose a display language before editing its localized copy."""
+        endpoint = self._mapping_endpoint
+        if endpoint is None:
+            return await self.async_step_mapping()
+
+        current = self._stored_mapping(endpoint)
+        current_language = (
+            current.display_language
+            if current is not None
+            else self._system_display_language()
+        )
+        if user_input is not None:
+            selected = normalize_display_language(
+                user_input[CONF_DISPLAY_LANGUAGE], fallback=current_language
+            )
+            self._mapping_language = selected
+            self._mapping_language_changed = (
+                current is not None and selected != current.display_language
+            )
+            return await self.async_step_mapping_details()
+
+        return self.async_show_form(
+            step_id="mapping_language",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_DISPLAY_LANGUAGE, default=current_language
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=[
+                                SelectOptionDict(value="de", label="Deutsch"),
+                                SelectOptionDict(value="en", label="English"),
+                                SelectOptionDict(value="fr", label="Français"),
+                                SelectOptionDict(value="es", label="Español"),
+                            ],
+                            mode=SelectSelectorMode.DROPDOWN,
                         )
                     )
                 }
@@ -339,8 +422,18 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                 mapping = MappingOptions(
                     endpoint_entity=endpoint,
                     listing_id=user_input[CONF_LISTING_ID],
+                    display_language=(
+                        self._mapping_language or self._system_display_language()
+                    ),
                     welcome_title=user_input[CONF_WELCOME_TITLE],
                     welcome_text=user_input[CONF_WELCOME_TEXT],
+                    idle_title=user_input[CONF_IDLE_TITLE],
+                    idle_text=user_input[CONF_IDLE_TEXT],
+                    door_code_label=user_input[CONF_DOOR_CODE_LABEL],
+                    wifi_label=user_input[CONF_WIFI_LABEL],
+                    wifi_name_label=user_input[CONF_WIFI_NAME_LABEL],
+                    wifi_key_label=user_input[CONF_WIFI_KEY_LABEL],
+                    checkout_label=user_input[CONF_CHECKOUT_LABEL],
                     date_time_format=user_input[CONF_DATE_TIME_FORMAT],
                     lead_hours=int(user_input[CONF_LEAD_HOURS]),
                     clear_after_minutes=int(user_input[CONF_CLEAR_AFTER_MINUTES]),
@@ -358,6 +451,19 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
             if isinstance(raw_mapping, dict)
             else None
         )
+        language = self._mapping_language or (
+            current.display_language
+            if current is not None
+            else self._system_display_language()
+        )
+        language_defaults = display_text_defaults(language)
+        keep_current_text = current is not None and not self._mapping_language_changed
+
+        def text_default(attribute: str) -> str:
+            if keep_current_text:
+                return str(getattr(current, attribute))
+            return str(getattr(language_defaults, attribute))
+
         listing_values = {str(choice["value"]) for choice in listings}
         listing_field = (
             vol.Required(CONF_LISTING_ID, default=current.listing_id)
@@ -381,20 +487,37 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                     ),
                     vol.Required(
                         CONF_WELCOME_TITLE,
-                        default=(
-                            current.welcome_title
-                            if current is not None
-                            else DEFAULT_WELCOME_TITLE
-                        ),
+                        default=text_default("welcome_title"),
                     ): TextSelector(TextSelectorConfig(multiline=False)),
                     vol.Required(
                         CONF_WELCOME_TEXT,
-                        default=(
-                            current.welcome_text
-                            if current is not None
-                            else DEFAULT_WELCOME_TEXT
-                        ),
+                        default=text_default("welcome_text"),
                     ): TextSelector(TextSelectorConfig(multiline=True)),
+                    vol.Required(
+                        CONF_IDLE_TITLE, default=text_default("idle_title")
+                    ): TextSelector(TextSelectorConfig(multiline=False)),
+                    vol.Required(
+                        CONF_IDLE_TEXT, default=text_default("idle_text")
+                    ): TextSelector(TextSelectorConfig(multiline=True)),
+                    vol.Required(
+                        CONF_DOOR_CODE_LABEL,
+                        default=text_default("door_code_label"),
+                    ): TextSelector(TextSelectorConfig(multiline=False)),
+                    vol.Required(
+                        CONF_WIFI_LABEL, default=text_default("wifi_label")
+                    ): TextSelector(TextSelectorConfig(multiline=False)),
+                    vol.Required(
+                        CONF_WIFI_NAME_LABEL,
+                        default=text_default("wifi_name_label"),
+                    ): TextSelector(TextSelectorConfig(multiline=False)),
+                    vol.Required(
+                        CONF_WIFI_KEY_LABEL,
+                        default=text_default("wifi_key_label"),
+                    ): TextSelector(TextSelectorConfig(multiline=False)),
+                    vol.Required(
+                        CONF_CHECKOUT_LABEL,
+                        default=text_default("checkout_label"),
+                    ): TextSelector(TextSelectorConfig(multiline=False)),
                     vol.Required(
                         CONF_DATE_TIME_FORMAT,
                         default=(
@@ -488,6 +611,10 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
         ).lower()
         if language.startswith("de"):
             logo_status = "vorhanden" if has_logo else "nicht eingerichtet"
+        elif language.startswith("fr"):
+            logo_status = "configuré" if has_logo else "non configuré"
+        elif language.startswith("es"):
+            logo_status = "configurado" if has_logo else "no configurado"
         else:
             logo_status = "configured" if has_logo else "not configured"
 

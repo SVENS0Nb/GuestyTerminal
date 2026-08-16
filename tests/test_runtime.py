@@ -26,6 +26,7 @@ ACTION_V3 = "guestyterminal_display_1_guesty_terminal_update_display_v3"
 ACTION_V4 = "guestyterminal_display_1_guesty_terminal_update_display_v4"
 ACTION_V5 = "guestyterminal_display_1_guesty_terminal_update_display_v5"
 ACTION_V6 = "guestyterminal_display_1_guesty_terminal_update_display_v6"
+ACTION_V7 = "guestyterminal_display_1_guesty_terminal_update_display_v7"
 
 
 class FakeServices:
@@ -46,6 +47,7 @@ class FakeServices:
                 ACTION_V4,
                 ACTION_V5,
                 ACTION_V6,
+                ACTION_V7,
             )
         )
 
@@ -247,6 +249,43 @@ def test_v6_force_redraw_keeps_real_fingerprints() -> None:
     assert len(sent["content_id"]) == 24
     assert len(sent["base_content_id"]) == 24
     assert sent["force_redraw"] is True
+
+
+def test_v7_action_receives_custom_display_labels() -> None:
+    welcome = DisplayPayload(
+        mode="welcome",
+        property_name="LOFT",
+        welcome_title="Bienvenue, Anna !",
+        welcome_text="Bienvenue",
+        door_code="4827",
+        wifi_name="WiFi",
+        wifi_password="secret",
+        checkout_label="Départ : 17/08 - 11:00",
+        valid_until_epoch=int(datetime(2100, 1, 1, tzinfo=UTC).timestamp()),
+        door_code_label="ACCÈS",
+        wifi_label="RÉSEAU",
+        wifi_name_label="Nom :",
+        wifi_key_label="Clé :",
+        idle_title="Bienvenue",
+        idle_text="Le logement est prêt pour le prochain séjour.",
+        no_active_booking_label="Aucune réservation active",
+        weather_condition="sunny",
+        weather_temperature="19 °C",
+    )
+    runtime, hass, _coordinator = _runtime(state=ACTION_V7, payload=welcome)
+
+    asyncio.run(runtime.async_push_endpoint(ENDPOINT))
+
+    sent = hass.services.calls[0][2]
+    assert sent["door_code_label"] == "ACCÈS"
+    assert sent["wifi_label"] == "RÉSEAU"
+    assert sent["wifi_name_label"] == "Nom :"
+    assert sent["wifi_key_label"] == "Clé :"
+    assert sent["idle_title"] == "Bienvenue"
+    assert sent["idle_text"] == "Le logement est prêt pour le prochain séjour."
+    assert sent["no_active_booking_label"] == "Aucune réservation active"
+    assert len(sent["base_content_id"]) == 24
+    assert sent["force_redraw"] is False
 
 
 def test_v3_push_all_uses_the_same_global_logo_for_every_display() -> None:

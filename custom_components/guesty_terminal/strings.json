@@ -43,6 +43,13 @@
           "endpoint_entity": "reTerminal-Display"
         }
       },
+      "mapping_language": {
+        "title": "Displaysprache auswählen",
+        "description": "Die ausgewählte Sprache füllt im nächsten Schritt alle Gasttexte vor. Beim Wechsel der Sprache werden die Textfelder durch die neuen Sprachvorlagen ersetzt; danach kannst du jedes Feld individuell bearbeiten.",
+        "data": {
+          "display_language": "Displaysprache"
+        }
+      },
       "mapping_details": {
         "title": "Display-Zuordnung bearbeiten",
         "description": "Vorhandene Einstellungen werden aus der ausgewählten Display-Zuordnung übernommen.",
@@ -50,6 +57,13 @@
           "listing_id": "Guesty-Listing",
           "welcome_title": "Begrüßungsüberschrift",
           "welcome_text": "Begrüßungstext",
+          "idle_title": "Überschrift ohne aktive Buchung",
+          "idle_text": "Text ohne aktive Buchung",
+          "door_code_label": "Beschriftung Türcode",
+          "wifi_label": "Beschriftung WiFi",
+          "wifi_name_label": "Beschriftung WiFi-Name",
+          "wifi_key_label": "Beschriftung WiFi-Passwort",
+          "checkout_label": "Beschriftung Check-out",
           "date_time_format": "Datums- und Zeitformat",
           "lead_hours": "Anzeige vor Check-in (Stunden)",
           "clear_after_minutes": "Nach Check-out weiter anzeigen (Minuten)",
@@ -61,6 +75,8 @@
         "data_description": {
           "welcome_title": "Verfügbare Variablen: first_name, property_name, check_in, check_out",
           "welcome_text": "Zeilenumbrüche werden auf dem Display übernommen.",
+          "idle_text": "Dieser Text erscheint, wenn keine Buchung angezeigt wird.",
+          "checkout_label": "Nur die Beschriftung eingeben; Datum und Uhrzeit werden automatisch ergänzt.",
           "weather_entity": "Optional. Zeigt oben rechts das aktuelle Wettersymbol und die gerundete Außentemperatur dieser Home-Assistant-Wetterentität."
         }
       },

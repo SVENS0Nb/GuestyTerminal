@@ -1,0 +1,151 @@
+{
+  "title": "GuestyTerminal",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Conectar Guesty",
+        "description": "Crea las credenciales en Guesty, en Integraciones > API y Webhooks. Permanecen en Home Assistant y nunca se envían a la pantalla.",
+        "data": {
+          "client_id": "ID de cliente",
+          "client_secret": "Secreto de cliente"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Volver a conectar Guesty",
+        "data": {
+          "client_id": "ID de cliente",
+          "client_secret": "Secreto de cliente"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Guesty no está disponible en este momento.",
+      "invalid_auth": "El ID o el secreto de cliente no son válidos."
+    },
+    "abort": {
+      "already_configured": "Esta aplicación de Guesty ya está configurada."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configurar GuestyTerminal",
+        "menu_options": {
+          "mapping": "Asignar un alojamiento a una pantalla",
+          "firmware": "Crear firmware E1001",
+          "general": "Ajustes generales"
+        }
+      },
+      "mapping": {
+        "title": "Elegir asignación de pantalla",
+        "description": "Elige la pantalla cuyo alojamiento y textos deseas editar.",
+        "data": {
+          "endpoint_entity": "Pantalla reTerminal"
+        }
+      },
+      "mapping_language": {
+        "title": "Elegir idioma de la pantalla",
+        "description": "El idioma seleccionado rellena previamente todos los textos para huéspedes en el siguiente paso. Al cambiar el idioma se sustituyen los campos por las nuevas plantillas; después puedes editar cada campo.",
+        "data": {
+          "display_language": "Idioma de la pantalla"
+        }
+      },
+      "mapping_details": {
+        "title": "Editar asignación de pantalla",
+        "description": "Se conservan los ajustes existentes de la pantalla seleccionada.",
+        "data": {
+          "listing_id": "Alojamiento de Guesty",
+          "welcome_title": "Título de bienvenida",
+          "welcome_text": "Texto de bienvenida",
+          "idle_title": "Título sin reserva activa",
+          "idle_text": "Texto sin reserva activa",
+          "door_code_label": "Etiqueta del código de puerta",
+          "wifi_label": "Etiqueta WiFi",
+          "wifi_name_label": "Etiqueta del nombre WiFi",
+          "wifi_key_label": "Etiqueta de la contraseña WiFi",
+          "checkout_label": "Etiqueta de salida",
+          "date_time_format": "Formato de fecha y hora",
+          "lead_hours": "Mostrar antes de la entrada (horas)",
+          "clear_after_minutes": "Seguir mostrando después de la salida (minutos)",
+          "show_door_code": "Mostrar código de puerta",
+          "show_wifi": "Mostrar WiFi y código QR",
+          "weather_entity": "Entidad meteorológica para la temperatura exterior",
+          "remove_mapping": "Eliminar la asignación de pantalla seleccionada"
+        },
+        "data_description": {
+          "welcome_title": "Variables disponibles: first_name, property_name, check_in, check_out",
+          "welcome_text": "Los saltos de línea se conservan en la pantalla.",
+          "idle_text": "Este texto aparece cuando no se muestra ninguna reserva.",
+          "checkout_label": "Introduce solo la etiqueta; la fecha y la hora se añaden automáticamente.",
+          "weather_entity": "Opcional. Muestra arriba a la derecha el icono meteorológico actual y la temperatura exterior redondeada."
+        }
+      },
+      "general": {
+        "title": "Ajustes generales",
+        "description": "Estos ajustes se aplican a todas las pantallas. Logotipo global: {logo_status}. Un archivo nuevo sustituye al actual.",
+        "data": {
+          "poll_minutes": "Actualización de Guesty (minutos)",
+          "logo_upload": "Logotipo global para todas las pantallas",
+          "remove_logo": "Eliminar logotipo global"
+        },
+        "data_description": {
+          "logo_upload": "PNG o JPEG, máximo 5 MB. El logotipo se escala sin borde y se optimiza para cuatro niveles de gris."
+        }
+      },
+      "firmware": {
+        "title": "Crear firmware E1001",
+        "description": "Crea una configuración ESPHome segura en /config/esphome. En modo Automático, la pantalla duerme con batería y permanece conectada con alimentación USB. LED, zumbador y micrófono se desactivan.",
+        "data": {
+          "firmware_device_name": "Nombre del dispositivo",
+          "firmware_friendly_name": "Nombre visible",
+          "firmware_power_mode": "Modo de alimentación",
+          "firmware_wake_minutes": "Despertar con batería cada … minutos",
+          "firmware_awake_seconds": "Tiempo máximo despierto (segundos)",
+          "firmware_overwrite": "Sustituir una configuración GuestyTerminal existente"
+        },
+        "data_description": {
+          "firmware_device_name": "Entre 1 y 24 letras minúsculas, números o guiones. Debe ser único para cada pantalla.",
+          "firmware_power_mode": "Se recomienda Automático para el E1001.",
+          "firmware_awake_seconds": "La pantalla vuelve a dormir antes en cuanto Home Assistant entrega los datos nuevos."
+        }
+      }
+    },
+    "error": {
+      "invalid_firmware_options": "Los ajustes del firmware no son válidos.",
+      "invalid_logo": "No se pudo procesar el logotipo. Usa un PNG o JPEG visible de hasta 5 MB.",
+      "firmware_file_exists": "Ya existe un archivo ESPHome con este nombre. Activa la sustitución solo para una configuración creada por GuestyTerminal.",
+      "firmware_write_failed": "No se pudo escribir la configuración ESPHome. Comprueba que /config/esphome esté disponible."
+    },
+    "abort": {
+      "no_displays": "No se encontró ninguna pantalla ESPHome compatible. Flashea primero el paquete E1001 incluido y despierta la pantalla.",
+      "no_listings": "Guesty no devolvió ningún alojamiento activo.",
+      "firmware_created": "La configuración se creó en {path}. Abre ESPHome Device Builder, elige {device_name} y luego Instalar. Se recomienda USB para la primera instalación."
+    }
+  },
+  "entity": {
+    "button": {
+      "update_all_firmware": {
+        "name": "Actualizar el firmware de todas las pantallas"
+      }
+    }
+  },
+  "exceptions": {
+    "firmware_no_managed_configs": {"message": "No se encontró ninguna configuración ESPHome administrada por GuestyTerminal."},
+    "firmware_config_update_failed": {"message": "No se pudieron actualizar de forma segura las configuraciones ESPHome administradas."},
+    "firmware_builder_unavailable": {"message": "ESPHome Device Builder no está disponible o no está conectado a Home Assistant."},
+    "firmware_builder_auth_required": {"message": "ESPHome Device Builder requiere una autenticación independiente."},
+    "firmware_builder_too_old": {"message": "Actualiza ESPHome Device Builder a la versión 2026.7 o posterior."},
+    "firmware_builder_invalid_response": {"message": "ESPHome Device Builder devolvió una respuesta inesperada."},
+    "firmware_queue_failed": {"message": "ESPHome Device Builder no pudo crear los trabajos de firmware."},
+    "firmware_update_in_progress": {"message": "Ya se está preparando una actualización conjunta del firmware."}
+  },
+  "selector": {
+    "firmware_power_mode": {
+      "options": {
+        "auto": "Automático (recomendado)",
+        "battery": "Siempre con batería",
+        "mains": "Siempre conectado"
+      }
+    }
+  }
+}

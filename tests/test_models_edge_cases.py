@@ -220,6 +220,7 @@ def test_templates_shortening_visibility_and_service_data() -> None:
     renewed = replace(payload, valid_until_epoch=payload.valid_until_epoch + 60)
     assert renewed.content_id == content_id
     assert replace(payload, door_code="different").content_id != content_id
+    assert replace(payload, door_code_label="ACCESS").content_id != content_id
     assert replace(payload, weather_temperature="19 °C").content_id != content_id
     assert (
         replace(payload, weather_temperature="19 °C").base_content_id

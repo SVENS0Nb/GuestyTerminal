@@ -25,11 +25,12 @@ from .const import (
     DISPLAY_ACTION_V4_SUFFIX,
     DISPLAY_ACTION_V5_SUFFIX,
     DISPLAY_ACTION_V6_SUFFIX,
+    DISPLAY_ACTION_V7_SUFFIX,
     MODE_WELCOME,
 )
 from .coordinator import GuestyTerminalCoordinator
 from .logo import logo_fingerprint, valid_logo_data
-from .models import DisplayPayload, Listing
+from .models import DisplayPayload, Listing, MappingOptions
 
 _LOGGER = logging.getLogger(__name__)
 _ACTION_PATTERN = re.compile(r"^[a-z0-9_]+$")
@@ -67,6 +68,7 @@ async def async_send_display_payload(
             DISPLAY_ACTION_V4_SUFFIX,
             DISPLAY_ACTION_V5_SUFFIX,
             DISPLAY_ACTION_V6_SUFFIX,
+            DISPLAY_ACTION_V7_SUFFIX,
         )
     ):
         _LOGGER.warning("Ignoring invalid ESPHome display endpoint %s", action)
@@ -85,6 +87,7 @@ async def async_send_display_payload(
                     DISPLAY_ACTION_V4_SUFFIX,
                     DISPLAY_ACTION_V5_SUFFIX,
                     DISPLAY_ACTION_V6_SUFFIX,
+                    DISPLAY_ACTION_V7_SUFFIX,
                 )
             )
             service_data = payload.as_service_data(
@@ -94,11 +97,17 @@ async def async_send_display_payload(
                         DISPLAY_ACTION_V4_SUFFIX,
                         DISPLAY_ACTION_V5_SUFFIX,
                         DISPLAY_ACTION_V6_SUFFIX,
+                        DISPLAY_ACTION_V7_SUFFIX,
                     )
                 ),
                 include_weather=action.endswith(
-                    (DISPLAY_ACTION_V5_SUFFIX, DISPLAY_ACTION_V6_SUFFIX)
+                    (
+                        DISPLAY_ACTION_V5_SUFFIX,
+                        DISPLAY_ACTION_V6_SUFFIX,
+                        DISPLAY_ACTION_V7_SUFFIX,
+                    )
                 ),
+                include_labels=action.endswith(DISPLAY_ACTION_V7_SUFFIX),
             )
             if action.endswith(
                 (
@@ -106,6 +115,7 @@ async def async_send_display_payload(
                     DISPLAY_ACTION_V4_SUFFIX,
                     DISPLAY_ACTION_V5_SUFFIX,
                     DISPLAY_ACTION_V6_SUFFIX,
+                    DISPLAY_ACTION_V7_SUFFIX,
                 )
             ):
                 active_logo = (
@@ -116,7 +126,7 @@ async def async_send_display_payload(
                     service_data["content_id"] = _logo_aware_content_id(
                         service_data["content_id"], active_logo
                     )
-            if action.endswith(DISPLAY_ACTION_V6_SUFFIX):
+            if action.endswith((DISPLAY_ACTION_V6_SUFFIX, DISPLAY_ACTION_V7_SUFFIX)):
                 service_data["base_content_id"] = _logo_aware_content_id(
                     payload.base_content_id, active_logo
                 )
@@ -153,13 +163,20 @@ async def async_clear_configured_displays(
     raw_mappings = entry.options.get(CONF_MAPPINGS, {})
     if not isinstance(raw_mappings, dict):
         return
-    idle = DisplayPayload.idle(Listing("", "Unterkunft"))
     logo_data = valid_logo_data(entry.options.get(CONF_LOGO_DATA))
     await asyncio.gather(
         *(
-            async_send_display_payload(hass, endpoint, idle, logo_data=logo_data)
-            for endpoint in raw_mappings
-            if isinstance(endpoint, str)
+            async_send_display_payload(
+                hass,
+                endpoint,
+                DisplayPayload.idle(
+                    Listing("", "Unterkunft"),
+                    MappingOptions.from_dict(endpoint, raw_mapping),
+                ),
+                logo_data=logo_data,
+            )
+            for endpoint, raw_mapping in raw_mappings.items()
+            if isinstance(endpoint, str) and isinstance(raw_mapping, dict)
         ),
         return_exceptions=True,
     )
@@ -283,19 +300,27 @@ class GuestyTerminalRuntime:
             else None
         )
         return DisplayPayload.idle(
-            listing or Listing("", payload.property_name or "Unterkunft")
+            listing or Listing("", payload.property_name or "Unterkunft"), mapping
         )
 
     async def async_clear_endpoint(self, endpoint_entity: str) -> bool:
         """Replace a potentially sensitive E-paper image with an idle screen."""
         property_name = "Unterkunft"
+        mapping = next(
+            (
+                item
+                for item in self.coordinator.mapping_options()
+                if item.endpoint_entity == endpoint_entity
+            ),
+            None,
+        )
         if self.coordinator.data is not None:
             current = self.coordinator.data.payloads.get(endpoint_entity)
             if current is not None and current.property_name:
                 property_name = current.property_name
         return await self._async_send_payload(
             endpoint_entity,
-            DisplayPayload.idle(Listing("", property_name)),
+            DisplayPayload.idle(Listing("", property_name), mapping),
         )
 
     async def async_clear_all(self) -> None:

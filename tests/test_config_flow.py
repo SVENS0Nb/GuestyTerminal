@@ -13,9 +13,12 @@ from custom_components.guesty_terminal.config_flow import (
     _validate_credentials,
 )
 from custom_components.guesty_terminal.const import (
+    CONF_CHECKOUT_LABEL,
     CONF_CLEAR_AFTER_MINUTES,
     CONF_CLIENT_ID,
     CONF_DATE_TIME_FORMAT,
+    CONF_DISPLAY_LANGUAGE,
+    CONF_DOOR_CODE_LABEL,
     CONF_ENDPOINT_ENTITY,
     CONF_FIRMWARE_AWAKE_SECONDS,
     CONF_FIRMWARE_DEVICE_NAME,
@@ -23,6 +26,8 @@ from custom_components.guesty_terminal.const import (
     CONF_FIRMWARE_OVERWRITE,
     CONF_FIRMWARE_POWER_MODE,
     CONF_FIRMWARE_WAKE_MINUTES,
+    CONF_IDLE_TEXT,
+    CONF_IDLE_TITLE,
     CONF_LEAD_HOURS,
     CONF_LISTING_ID,
     CONF_LOGO_DATA,
@@ -36,6 +41,9 @@ from custom_components.guesty_terminal.const import (
     CONF_WEATHER_ENTITY,
     CONF_WELCOME_TEXT,
     CONF_WELCOME_TITLE,
+    CONF_WIFI_KEY_LABEL,
+    CONF_WIFI_LABEL,
+    CONF_WIFI_NAME_LABEL,
     DATA_PENDING_TOKENS,
     DOMAIN,
 )
@@ -159,8 +167,13 @@ def test_options_mapping_can_add_remove_and_show_forms(monkeypatch) -> None:
     assert form["type"] == "form"
     assert form["step_id"] == "mapping"
 
-    details_form = asyncio.run(
+    language_form = asyncio.run(
         flow.async_step_mapping({CONF_ENDPOINT_ENTITY: endpoint})
+    )
+    assert language_form["step_id"] == "mapping_language"
+    assert language_form["data_schema"]({})[CONF_DISPLAY_LANGUAGE] == "en"
+    details_form = asyncio.run(
+        flow.async_step_mapping_language({CONF_DISPLAY_LANGUAGE: "en"})
     )
     assert details_form["type"] == "form"
     assert details_form["step_id"] == "mapping_details"
@@ -171,6 +184,13 @@ def test_options_mapping_can_add_remove_and_show_forms(monkeypatch) -> None:
                 CONF_LISTING_ID: "listing-1",
                 CONF_WELCOME_TITLE: "Hallo {first_name}",
                 CONF_WELCOME_TEXT: "Willkommen",
+                CONF_IDLE_TITLE: "Ready",
+                CONF_IDLE_TEXT: "Ready for the next stay.",
+                CONF_DOOR_CODE_LABEL: "DOOR CODE",
+                CONF_WIFI_LABEL: "WIFI",
+                CONF_WIFI_NAME_LABEL: "Name:",
+                CONF_WIFI_KEY_LABEL: "Key:",
+                CONF_CHECKOUT_LABEL: "Check-out:",
                 CONF_DATE_TIME_FORMAT: "eu",
                 CONF_LEAD_HOURS: 6,
                 CONF_CLEAR_AFTER_MINUTES: 30,
@@ -182,6 +202,7 @@ def test_options_mapping_can_add_remove_and_show_forms(monkeypatch) -> None:
         )
     )
     assert created["data"][CONF_MAPPINGS][endpoint][CONF_LISTING_ID] == "listing-1"
+    assert created["data"][CONF_MAPPINGS][endpoint][CONF_DISPLAY_LANGUAGE] == "en"
     assert (
         created["data"][CONF_MAPPINGS][endpoint][CONF_WEATHER_ENTITY] == "weather.home"
     )
@@ -268,8 +289,12 @@ def test_options_mapping_remembers_each_configured_display(monkeypatch) -> None:
     selection = asyncio.run(flow.async_step_mapping())
     assert selection["data_schema"]({})[CONF_ENDPOINT_ENTITY] == endpoints[0]
 
-    first_form = asyncio.run(
+    first_language = asyncio.run(
         flow.async_step_mapping({CONF_ENDPOINT_ENTITY: endpoints[0]})
+    )
+    assert first_language["data_schema"]({})[CONF_DISPLAY_LANGUAGE] == "de"
+    first_form = asyncio.run(
+        flow.async_step_mapping_language({CONF_DISPLAY_LANGUAGE: "de"})
     )
     first = first_form["data_schema"]({})
     assert first[CONF_LISTING_ID] == "listing-1"
@@ -282,8 +307,12 @@ def test_options_mapping_remembers_each_configured_display(monkeypatch) -> None:
     assert first[CONF_SHOW_WIFI] is False
     assert first[CONF_WEATHER_ENTITY] == "weather.loft"
 
-    second_form = asyncio.run(
+    second_language = asyncio.run(
         flow.async_step_mapping({CONF_ENDPOINT_ENTITY: endpoints[1]})
+    )
+    assert second_language["data_schema"]({})[CONF_DISPLAY_LANGUAGE] == "de"
+    second_form = asyncio.run(
+        flow.async_step_mapping_language({CONF_DISPLAY_LANGUAGE: "de"})
     )
     second = second_form["data_schema"]({})
     assert second[CONF_LISTING_ID] == "listing-2"
@@ -295,6 +324,71 @@ def test_options_mapping_remembers_each_configured_display(monkeypatch) -> None:
     assert second[CONF_SHOW_DOOR_CODE] is False
     assert second[CONF_SHOW_WIFI] is True
     assert second[CONF_WEATHER_ENTITY] == "weather.garden"
+
+
+def test_display_language_uses_system_default_and_refills_copy_on_change(
+    monkeypatch,
+) -> None:
+    endpoint = "sensor.one_guesty_terminal_endpoint"
+    coordinator = SimpleNamespace(
+        data=SimpleNamespace(listings={"listing-1": Listing("listing-1", "Loft")})
+    )
+    entry = SimpleNamespace(
+        options={
+            CONF_MAPPINGS: {
+                endpoint: {
+                    CONF_LISTING_ID: "listing-1",
+                    CONF_DISPLAY_LANGUAGE: "en",
+                    CONF_WELCOME_TITLE: "Our custom welcome",
+                    CONF_WELCOME_TEXT: "Our saved copy",
+                    CONF_IDLE_TITLE: "Custom idle",
+                    CONF_IDLE_TEXT: "Custom idle copy",
+                    CONF_DOOR_CODE_LABEL: "ACCESS",
+                    CONF_WIFI_LABEL: "NETWORK",
+                    CONF_WIFI_NAME_LABEL: "SSID:",
+                    CONF_WIFI_KEY_LABEL: "Password:",
+                    CONF_CHECKOUT_LABEL: "Departure:",
+                }
+            }
+        },
+        runtime_data=SimpleNamespace(coordinator=coordinator),
+    )
+    flow = _options_flow(entry)
+    flow.hass.config = SimpleNamespace(language="es-ES")
+    monkeypatch.setattr(
+        flow,
+        "_endpoint_choices",
+        lambda: [{"value": endpoint, "label": "Display"}],
+    )
+
+    language_form = asyncio.run(
+        flow.async_step_mapping({CONF_ENDPOINT_ENTITY: endpoint})
+    )
+    assert language_form["data_schema"]({})[CONF_DISPLAY_LANGUAGE] == "en"
+
+    unchanged = asyncio.run(
+        flow.async_step_mapping_language({CONF_DISPLAY_LANGUAGE: "en"})
+    )["data_schema"]({})
+    assert unchanged[CONF_WELCOME_TITLE] == "Our custom welcome"
+    assert unchanged[CONF_DOOR_CODE_LABEL] == "ACCESS"
+
+    flow._mapping_endpoint = endpoint
+    changed = asyncio.run(
+        flow.async_step_mapping_language({CONF_DISPLAY_LANGUAGE: "fr"})
+    )["data_schema"]({})
+    assert changed[CONF_WELCOME_TITLE] == "Bienvenue, {first_name} !"
+    assert changed[CONF_DOOR_CODE_LABEL] == "CODE PORTE"
+    assert changed[CONF_WIFI_NAME_LABEL] == "Nom :"
+    assert changed[CONF_CHECKOUT_LABEL] == "Départ :"
+
+    new_entry = SimpleNamespace(
+        options={}, runtime_data=SimpleNamespace(coordinator=coordinator)
+    )
+    new_flow = _options_flow(new_entry)
+    new_flow.hass.config = SimpleNamespace(language="es-ES")
+    new_flow._mapping_endpoint = endpoint
+    default_language = asyncio.run(new_flow.async_step_mapping_language())
+    assert default_language["data_schema"]({})[CONF_DISPLAY_LANGUAGE] == "es"
 
 
 def test_general_options_upload_and_remove_one_global_logo(

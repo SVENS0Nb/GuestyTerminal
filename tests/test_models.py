@@ -100,6 +100,8 @@ def test_builds_welcome_payload_inside_lead_window() -> None:
     assert payload.door_code == "4827"
     assert payload.wifi_name == "Guest-WLAN"
     assert payload.wifi_password == "Beispiel-2026"
+    assert payload.door_code_label == "TÜRCODE"
+    assert payload.wifi_name_label == "Name:"
     assert payload.checkout_label == "Check-out: 17.08. - 11:00 Uhr"
     assert (
         payload.booking_summary == "Anna Beispiel · 14.08.2026 15:00 – 17.08.2026 11:00"
@@ -129,6 +131,49 @@ def test_uses_per_display_us_date_and_12_hour_time_format() -> None:
         payload.booking_summary
         == "Anna Beispiel · 08/14/2026 3:00 PM – 08/17/2026 11:00 AM"
     )
+
+
+def test_localizes_and_customizes_every_static_display_label() -> None:
+    options = MappingOptions.from_dict(
+        "sensor.fr_display_guesty_terminal_endpoint",
+        {
+            "listing_id": "listing-1",
+            "display_language": "fr",
+            "door_code_label": "ACCÈS",
+            "wifi_label": "RÉSEAU",
+            "wifi_name_label": "Nom :",
+            "wifi_key_label": "Clé :",
+            "checkout_label": "Départ :",
+        },
+    )
+    payload = build_display_payload(
+        _listing(),
+        [_reservation()],
+        options,
+        now=datetime(2026, 8, 14, 12, 0, tzinfo=UTC),
+    )
+
+    assert payload.welcome_title == "Bienvenue, Anna !"
+    assert payload.door_code_label == "ACCÈS"
+    assert payload.wifi_label == "RÉSEAU"
+    assert payload.wifi_name_label == "Nom :"
+    assert payload.wifi_key_label == "Clé :"
+    assert payload.checkout_label == "Départ : 17/08 - 11:00"
+    service_data = payload.as_service_data(include_labels=True)
+    assert service_data["door_code_label"] == "ACCÈS"
+    assert service_data["wifi_key_label"] == "Clé :"
+    assert service_data["idle_title"] == "Bienvenue"
+    assert service_data["idle_text"] == (
+        "Le logement est prêt pour le prochain\nséjour."
+    )
+    assert service_data["no_active_booking_label"] == ("Aucune réservation active")
+
+    idle = DisplayPayload.idle(_listing(), options)
+    assert idle.welcome_title == "Bienvenue"
+    assert idle.welcome_text == "Le logement est prêt pour le prochain\nséjour."
+    assert idle.idle_title == "Bienvenue"
+    assert idle.no_active_booking_label == "Aucune réservation active"
+    assert idle.booking_summary == "Aucune réservation active"
 
 
 def test_older_mapping_defaults_to_eu_date_and_time_format() -> None:
