@@ -6,9 +6,10 @@ import asyncio
 import hashlib
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
@@ -28,6 +29,7 @@ from .const import (
     DISPLAY_ACTION_V7_SUFFIX,
     DISPLAY_ACTION_V8_SUFFIX,
     DISPLAY_ACTION_V9_SUFFIX,
+    DISPLAY_RECONNECT_STATE,
     DISPLAY_REFRESH_REQUEST_STATE,
     LOGO_DISPLAY_MODES,
 )
@@ -225,9 +227,22 @@ class GuestyTerminalRuntime:
     _unsubscribers: list[Callable[[], None]] = field(default_factory=list)
     _locks: dict[str, asyncio.Lock] = field(default_factory=dict)
     _sync_requests: set[str] = field(default_factory=set)
+    _tasks: set[asyncio.Future[Any]] = field(default_factory=set)
+    _stopped: bool = False
+
+    def _create_task(self, coroutine: Coroutine[Any, Any, Any]) -> None:
+        """Create a Home Assistant task that can be cancelled during unload."""
+        if self._stopped:
+            coroutine.close()
+            return
+        task = self.hass.async_create_task(coroutine)
+        if isinstance(task, asyncio.Future):
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
 
     async def async_start(self) -> None:
         """Start endpoint and coordinator listeners."""
+        self._stopped = False
         mappings = self.coordinator.mapping_options()
         endpoints = [item.endpoint_entity for item in mappings]
         if endpoints:
@@ -253,9 +268,17 @@ class GuestyTerminalRuntime:
 
     async def async_stop(self) -> None:
         """Stop all registered listeners."""
+        self._stopped = True
         for unsubscribe in self._unsubscribers:
             unsubscribe()
         self._unsubscribers.clear()
+        pending = [task for task in self._tasks if not task.done()]
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        self._tasks.clear()
+        self._sync_requests.clear()
 
     @callback
     def _handle_endpoint_state(self, event: Event) -> None:
@@ -265,13 +288,16 @@ class GuestyTerminalRuntime:
         endpoint = str(event.data.get("entity_id") or "")
         if not endpoint:
             return
+        if new_state.state == DISPLAY_RECONNECT_STATE:
+            # The firmware emits this short-lived discovery pulse before
+            # restoring the actual ESPHome action. Wait for that real state
+            # instead of scheduling a guaranteed invalid service call.
+            return
         if new_state.state == DISPLAY_REFRESH_REQUEST_STATE:
             if endpoint in self._sync_requests:
                 return
             self._sync_requests.add(endpoint)
-            self.hass.async_create_task(
-                self._async_sync_and_force_redraw_endpoint(endpoint)
-            )
+            self._create_task(self._async_sync_and_force_redraw_endpoint(endpoint))
             return
         if endpoint in self._sync_requests:
             # The firmware restores the real action state immediately after
@@ -283,7 +309,7 @@ class GuestyTerminalRuntime:
         def _delayed_push(_now: datetime) -> None:
             if cancel in self._unsubscribers:
                 self._unsubscribers.remove(cancel)
-            self.hass.async_create_task(self.async_push_endpoint(endpoint))
+            self._create_task(self.async_push_endpoint(endpoint))
 
         # ESPHome publishes the endpoint entity just before its user-defined
         # action is registered. A short delay removes that connection race.
@@ -292,9 +318,7 @@ class GuestyTerminalRuntime:
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        self.hass.async_create_task(
-            self.async_push_all(exclude=frozenset(self._sync_requests))
-        )
+        self._create_task(self.async_push_all(exclude=frozenset(self._sync_requests)))
 
     @callback
     def _handle_weather_state(self, event: Event) -> None:
@@ -321,7 +345,7 @@ class GuestyTerminalRuntime:
                 # explicitly forced payload without adding full panel flashes
                 # for every weather-entity state change.
                 continue
-            self.hass.async_create_task(self.async_push_endpoint(endpoint))
+            self._create_task(self.async_push_endpoint(endpoint))
 
     async def async_push_all(self, *, exclude: frozenset[str] = frozenset()) -> None:
         """Push current payloads to every display that is online."""
@@ -342,8 +366,21 @@ class GuestyTerminalRuntime:
             # Let the firmware restore the endpoint sensor's real ESPHome
             # action before the refreshed payload is sent back.
             await asyncio.sleep(0.5)
+            self.coordinator.invalidate_guest_data_caches()
             await self.coordinator.async_request_refresh()
-            await self.async_force_redraw_endpoint(endpoint)
+            if not self.coordinator.last_update_success:
+                _LOGGER.warning(
+                    "Guesty refresh failed; not redrawing display %s with stale data",
+                    endpoint,
+                )
+                return
+            if (
+                self.coordinator.data is not None
+                and endpoint in self.coordinator.data.payloads
+            ):
+                await self.async_force_redraw_endpoint(endpoint)
+            else:
+                await self.async_clear_endpoint(endpoint)
         finally:
             self._sync_requests.discard(endpoint)
 

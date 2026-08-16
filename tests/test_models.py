@@ -117,6 +117,22 @@ def test_extracts_only_supported_reservation_note_types() -> None:
     ) == ("Allgemein", "Reinigung", "Späte Anreise")
 
 
+def test_explicitly_cleared_notes_do_not_fall_back_to_stale_copies() -> None:
+    assert extract_reservation_notes(
+        {
+            "notes": {
+                "other": "",
+                "cleaning": None,
+                "specialRequests": "",
+            },
+            "generalNotes": "Veraltete allgemeine Notiz",
+            "notesForCleaner": "Veraltete Reinigungsnotiz",
+            "specialRequests": "Veralteter Sonderwunsch",
+            "channelMetadata": {"specialRequests": "Veralteter Channel-Sonderwunsch"},
+        }
+    ) == ("", "", "")
+
+
 def test_resolves_keycode_by_custom_field_definition() -> None:
     populated = {"customFields": [{"fieldId": "field-123", "value": "5643"}]}
     definitions = [{"_id": "field-123", "name": "keycode"}]
@@ -355,6 +371,28 @@ def test_older_mapping_defaults_to_eu_date_and_time_format() -> None:
         "sensor.display", {"listing_id": "listing-1", "date_time_format": "other"}
     )
     assert invalid.date_time_format == "eu"
+
+
+def test_corrupt_mapping_values_are_bounded_and_legacy_idle_copy_is_removed() -> None:
+    mapping = MappingOptions.from_dict(
+        "sensor.display",
+        {
+            "listing_id": "listing-1",
+            "lead_hours": "invalid",
+            "clear_after_minutes": 999,
+            "show_door_code": "false",
+            "show_wifi": "true",
+            "idle_title": "Obsolete welcome page",
+            "idle_text": "Obsolete welcome copy",
+        },
+    )
+
+    assert mapping.lead_hours == 1
+    assert mapping.clear_after_minutes == 120
+    assert mapping.show_door_code is False
+    assert mapping.show_wifi is True
+    assert "idle_title" not in mapping.as_dict()
+    assert "idle_text" not in mapping.as_dict()
 
 
 def test_builds_weather_fields_into_visible_content() -> None:

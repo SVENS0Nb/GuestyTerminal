@@ -10,6 +10,10 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        homeassistant-version: ["2025.12.0", "2026.2.3"]
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -21,7 +25,16 @@ jobs:
           cache: pip
 
       - name: Install test dependencies
-        run: python -m pip install -r requirements-test.txt
+        run: >-
+          python -m pip install -r requirements-test.txt
+          homeassistant==${{ matrix.homeassistant-version }}
+
+      # Home Assistant 2025.12 pins aiodns 3.5.0, whose metadata predates the
+      # breaking pycares 5 release and therefore lacks the necessary upper
+      # bound. Keep that historical environment internally consistent.
+      - name: Pin legacy DNS resolver for Home Assistant 2025.12
+        if: matrix.homeassistant-version == '2025.12.0'
+        run: python -m pip install 'pycares<5'
 
       - name: Run linting
         run: ruff check .
@@ -31,3 +44,39 @@ jobs:
 
       - name: Run tests with 80% coverage gate
         run: pytest
+
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install ESPHome
+        run: python -m pip install esphome==2026.7.4
+
+      - name: Create non-production build secrets
+        run: |
+          cp esphome/secrets.example.yaml esphome/secrets.yaml
+          sed -i 's/GENERATE_A_32_BYTE_BASE64_KEY/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=/' esphome/secrets.yaml
+
+      - name: Validate ESPHome configuration
+        run: esphome config esphome/guestyterminal-display-1.yaml
+
+      - name: Compile E1001 firmware
+        run: esphome compile esphome/guestyterminal-display-1.yaml
+
+      - name: Enforce firmware flash budget
+        shell: bash
+        run: |
+          firmware_bin=$(find esphome/.esphome/build -name firmware.ota.bin -print -quit)
+          test -n "$firmware_bin"
+          firmware_size=$(stat -c%s "$firmware_bin")
+          maximum_size=1835008
+          maximum_budget=$((maximum_size * 95 / 100))
+          test "$firmware_size" -le "$maximum_budget"

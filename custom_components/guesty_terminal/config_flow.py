@@ -190,11 +190,19 @@ class GuestyTerminalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Validate and store replacement credentials."""
         errors: dict[str, str] = {}
         if user_input is not None:
+            client_id = user_input[CONF_CLIENT_ID].strip()
+            client_secret = user_input[CONF_CLIENT_SECRET].strip()
+            if any(
+                entry.entry_id != self._reauth_entry.entry_id
+                and entry.unique_id == client_id
+                for entry in self._async_current_entries()
+            ):
+                return self.async_abort(reason="already_configured")
             try:
                 await _validate_credentials(
                     self.hass,
-                    user_input[CONF_CLIENT_ID],
-                    user_input[CONF_CLIENT_SECRET],
+                    client_id,
+                    client_secret,
                 )
             except GuestyAuthenticationError:
                 errors["base"] = "invalid_auth"
@@ -203,9 +211,10 @@ class GuestyTerminalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 return self.async_update_reload_and_abort(
                     self._reauth_entry,
+                    unique_id=client_id,
                     data_updates={
-                        CONF_CLIENT_ID: user_input[CONF_CLIENT_ID].strip(),
-                        CONF_CLIENT_SECRET: user_input[CONF_CLIENT_SECRET].strip(),
+                        CONF_CLIENT_ID: client_id,
+                        CONF_CLIENT_SECRET: client_secret,
                     },
                 )
 
@@ -286,12 +295,24 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
     def _endpoint_choices(self) -> list[SelectOptionDict]:
         entity_registry = er.async_get(self.hass)
         device_registry = dr.async_get(self.hass)
+        endpoint_owners: dict[str, str] = {}
+        async_entries = getattr(self.hass.config_entries, "async_entries", None)
+        if callable(async_entries):
+            for config_entry in async_entries(DOMAIN):
+                mappings = config_entry.options.get(CONF_MAPPINGS, {})
+                if isinstance(mappings, dict):
+                    for endpoint, mapping in mappings.items():
+                        if isinstance(endpoint, str) and isinstance(mapping, dict):
+                            endpoint_owners.setdefault(endpoint, config_entry.entry_id)
         choices: list[SelectOptionDict] = []
         for entry in entity_registry.entities.values():
             if not (
                 entry.original_name == ENDPOINT_ORIGINAL_NAME
                 or entry.entity_id.endswith(ENDPOINT_ENTITY_SUFFIX)
             ):
+                continue
+            owner = endpoint_owners.get(entry.entity_id)
+            if owner is not None and owner != self.config_entry.entry_id:
                 continue
             label = entry.entity_id
             if entry.device_id:
@@ -340,7 +361,10 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
             return self.async_abort(reason="no_listings")
 
         if user_input is not None:
-            self._mapping_endpoint = user_input[CONF_ENDPOINT_ENTITY]
+            endpoint = user_input[CONF_ENDPOINT_ENTITY]
+            if endpoint not in {str(choice["value"]) for choice in endpoints}:
+                return self.async_abort(reason="display_already_configured")
+            self._mapping_endpoint = endpoint
             self._mapping_language = None
             self._mapping_language_changed = False
             return await self.async_step_mapping_language()
@@ -460,16 +484,6 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                     ),
                     welcome_title=user_input[CONF_WELCOME_TITLE],
                     welcome_text=user_input[CONF_WELCOME_TEXT],
-                    idle_title=(
-                        stored_mapping.idle_title
-                        if keep_checkout_text
-                        else checkout_defaults.idle_title
-                    ),
-                    idle_text=(
-                        stored_mapping.idle_text
-                        if keep_checkout_text
-                        else checkout_defaults.idle_text
-                    ),
                     door_code_label=user_input[CONF_DOOR_CODE_LABEL],
                     wifi_label=user_input[CONF_WIFI_LABEL],
                     wifi_name_label=user_input[CONF_WIFI_NAME_LABEL],

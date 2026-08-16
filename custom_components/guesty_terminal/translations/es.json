@@ -168,6 +168,7 @@
       "no_displays": "No se encontró ninguna pantalla ESPHome compatible. Flashea primero el paquete E1001 incluido y despierta la pantalla.",
       "no_listings": "Guesty no devolvió ningún alojamiento activo.",
       "no_mappings": "Configura primero al menos una asignación de pantalla.",
+      "display_already_configured": "Esta pantalla ya está asignada a otra configuración de GuestyTerminal.",
       "firmware_created": "La configuración se creó en {path}. Abre ESPHome Device Builder, elige {device_name} y luego Instalar. Se recomienda USB para la primera instalación."
     }
   },

@@ -115,7 +115,7 @@ api:
       then:
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            const bool renderer_current = id(guesty_render_revision) == 16;
+            const bool renderer_current = id(guesty_render_revision) == 17;
             int battery_percent = -1;
             if (id(guesty_battery_level).has_state()
                 && std::isfinite(id(guesty_battery_level).state)) {
@@ -238,7 +238,7 @@ api:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
-                        id(guesty_render_revision) = 16;
+                        id(guesty_render_revision) = 17;
                         if (mode != "welcome" && mode != "checkout"
                             && id(guesty_display_battery_percent) >= 0) {
                           id(guesty_rendered_battery_percent) =
@@ -450,61 +450,61 @@ font:
   - file: "gfonts://Inter@600"
     id: guesty_font_property
     size: 17
-    bpp: 4
+    bpp: 2
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Lora@600"
     id: guesty_font_welcome
     size: 46
-    bpp: 4
+    bpp: 2
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Lora@600"
     id: guesty_font_welcome_small
     size: 36
-    bpp: 4
+    bpp: 2
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@600"
     id: guesty_font_body
     size: 21
-    bpp: 4
+    bpp: 2
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@800"
     id: guesty_font_label
     size: 16
-    bpp: 4
+    bpp: 2
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@700"
     id: guesty_font_door_code
     size: 46
-    bpp: 4
+    bpp: 2
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@700"
     id: guesty_font_door_code_small
     size: 32
-    bpp: 4
+    bpp: 2
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@600"
     id: guesty_font_detail
     size: 16
-    bpp: 4
+    bpp: 2
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@700"
     id: guesty_font_detail_bold
     size: 16
-    bpp: 4
+    bpp: 2
     glyphsets:
       - GF_Latin_Core
   - file: "gfonts://Inter@600"
     id: guesty_font_weather_temperature
     size: 22
-    bpp: 4
+    bpp: 2
     glyphsets:
       - GF_Latin_Core
   # Material Design Icons 7.4.47, the same established pictogram family used
@@ -515,7 +515,7 @@ font:
       url: "https://raw.githubusercontent.com/Templarian/MaterialDesign-Webfont/v7.4.47/fonts/materialdesignicons-webfont.ttf"
     id: guesty_font_weather_icon
     size: 48
-    bpp: 4
+    bpp: 2
     glyphs:
       - "\U000F002A" # mdi-alert-outline
       - "\U000F0079" # mdi-battery

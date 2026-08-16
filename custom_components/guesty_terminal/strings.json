@@ -3,213 +3,214 @@
   "config": {
     "step": {
       "user": {
-        "title": "Mit Guesty verbinden",
-        "description": "Erstelle die Zugangsdaten in Guesty unter Integrationen > API & Webhooks. Die Zugangsdaten bleiben in Home Assistant und werden nie an das Display übertragen.",
+        "title": "Connect to Guesty",
+        "description": "Create credentials in Guesty under Integrations > API & Webhooks. Credentials remain in Home Assistant and are never sent to the display.",
         "data": {
-          "client_id": "Client-ID",
-          "client_secret": "Client-Secret"
+          "client_id": "Client ID",
+          "client_secret": "Client secret"
         }
       },
       "reauth_confirm": {
-        "title": "Guesty erneut verbinden",
+        "title": "Reconnect Guesty",
         "data": {
-          "client_id": "Client-ID",
-          "client_secret": "Client-Secret"
+          "client_id": "Client ID",
+          "client_secret": "Client secret"
         }
       }
     },
     "error": {
-      "cannot_connect": "Guesty ist momentan nicht erreichbar.",
-      "invalid_auth": "Client-ID oder Client-Secret ist ungültig."
+      "cannot_connect": "Guesty is currently unavailable.",
+      "invalid_auth": "The Client ID or Client secret is invalid."
     },
     "abort": {
-      "already_configured": "Diese Guesty-Anwendung ist bereits eingerichtet."
+      "already_configured": "This Guesty application is already configured."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "GuestyTerminal konfigurieren",
+        "title": "Configure GuestyTerminal",
         "menu_options": {
-          "mapping": "Listing einem Display zuordnen",
-          "checkout": "Checkout-Seite konfigurieren",
-          "empty_room": "Seite für leeres Zimmer konfigurieren",
-          "firmware": "E1001-Firmware erstellen",
-          "general": "Allgemeine Einstellungen"
+          "mapping": "Assign a listing to a display",
+          "checkout": "Configure checkout page",
+          "empty_room": "Configure empty-room page",
+          "firmware": "Create E1001 firmware",
+          "general": "General settings"
         }
       },
       "mapping": {
-        "title": "Display-Zuordnung auswählen",
-        "description": "Wähle das Display aus, dessen Listing und Begrüßung du bearbeiten möchtest.",
+        "title": "Select display mapping",
+        "description": "Choose the display whose listing and welcome text you want to edit.",
         "data": {
-          "endpoint_entity": "reTerminal-Display"
+          "endpoint_entity": "reTerminal display"
         }
       },
       "mapping_language": {
-        "title": "Displaysprache auswählen",
-        "description": "Die ausgewählte Sprache füllt im nächsten Schritt alle Gasttexte vor. Beim Wechsel der Sprache werden die Textfelder durch die neuen Sprachvorlagen ersetzt; danach kannst du jedes Feld individuell bearbeiten.",
+        "title": "Choose display language",
+        "description": "The selected language pre-fills all guest-facing text in the next step. Changing the language replaces the text fields with the new language presets; you can then edit every field individually.",
         "data": {
-          "display_language": "Displaysprache"
+          "display_language": "Display language"
         }
       },
       "mapping_details": {
-        "title": "Display-Zuordnung bearbeiten",
-        "description": "Vorhandene Einstellungen werden aus der ausgewählten Display-Zuordnung übernommen.",
+        "title": "Edit display mapping",
+        "description": "Existing settings are loaded from the selected display mapping.",
         "data": {
-          "listing_id": "Guesty-Listing",
-          "welcome_title": "Begrüßungsüberschrift",
-          "welcome_text": "Begrüßungstext",
-          "door_code_label": "Beschriftung Türcode",
-          "wifi_label": "Beschriftung WiFi",
-          "wifi_name_label": "Beschriftung WiFi-Name",
-          "wifi_key_label": "Beschriftung WiFi-Passwort",
-          "checkout_label": "Beschriftung Check-out",
-          "date_time_format": "Datums- und Zeitformat",
-          "lead_hours": "Anzeige vor Check-in (Stunden)",
-          "clear_after_minutes": "Nach Check-out weiter anzeigen (Minuten)",
-          "show_door_code": "Keycode anzeigen",
-          "show_wifi": "WiFi und QR-Code anzeigen",
-          "weather_entity": "Wetterentität für Außentemperatur",
-          "remove_mapping": "Ausgewählte Display-Zuordnung entfernen"
+          "listing_id": "Guesty listing",
+          "welcome_title": "Welcome heading",
+          "welcome_text": "Welcome text",
+          "door_code_label": "Door-code label",
+          "wifi_label": "WiFi label",
+          "wifi_name_label": "WiFi-name label",
+          "wifi_key_label": "WiFi-password label",
+          "checkout_label": "Check-out label",
+          "date_time_format": "Date and time format",
+          "lead_hours": "Show before check-in (hours)",
+          "clear_after_minutes": "Continue after checkout (minutes)",
+          "show_door_code": "Show keycode",
+          "show_wifi": "Show WiFi and QR code",
+          "weather_entity": "Weather entity for outdoor temperature",
+          "remove_mapping": "Remove selected display mapping"
         },
         "data_description": {
-          "welcome_title": "Verfügbare Variablen: first_name, property_name, check_in, check_out",
-          "welcome_text": "Zeilenumbrüche werden auf dem Display übernommen.",
-          "checkout_label": "Nur die Beschriftung eingeben; Datum und Uhrzeit werden automatisch ergänzt.",
-          "weather_entity": "Optional. Zeigt oben rechts das aktuelle Wettersymbol und die gerundete Außentemperatur dieser Home-Assistant-Wetterentität."
+          "welcome_title": "Available variables: first_name, property_name, check_in, check_out",
+          "welcome_text": "Line breaks are preserved on the display.",
+          "checkout_label": "Enter only the label; date and time are added automatically.",
+          "weather_entity": "Optional. Shows the current weather symbol and rounded outdoor temperature from this Home Assistant weather entity in the top-right corner."
         }
       },
       "checkout": {
-        "title": "Checkout-Seite auswählen",
-        "description": "Wähle ein bereits konfiguriertes Display aus.",
+        "title": "Select checkout page",
+        "description": "Select an already configured display.",
         "data": {
-          "endpoint_entity": "reTerminal-Display"
+          "endpoint_entity": "reTerminal display"
         }
       },
       "checkout_details": {
-        "title": "Checkout-Seite bearbeiten",
-        "description": "Displaysprache: {display_language}. Datums- und Zeitformat: {date_time_format}. Beide Einstellungen werden automatisch von der Display-Zuordnung übernommen.",
+        "title": "Edit checkout page",
+        "description": "Display language: {display_language}. Date and time format: {date_time_format}. Both settings are inherited automatically from the display mapping.",
         "data": {
-          "checkout_start_time": "Checkout-Seite anzeigen ab",
-          "checkout_page_title": "Checkout-Überschrift",
-          "checkout_page_message": "Checkout-Nachricht",
-          "checkout_instructions_label": "Überschrift der Checkout-Anweisungen",
-          "checkout_instructions_fallback": "Text, falls Guesty keine Checkout-Anweisungen enthält"
+          "checkout_start_time": "Show checkout page from",
+          "checkout_page_title": "Checkout heading",
+          "checkout_page_message": "Checkout message",
+          "checkout_instructions_label": "Checkout instructions heading",
+          "checkout_instructions_fallback": "Text used when Guesty has no checkout instructions"
         },
         "data_description": {
-          "checkout_page_title": "Verfügbare Variablen: first_name, property_name, check_in, check_out, check_out_date, check_out_time",
-          "checkout_page_message": "Zeilenumbrüche werden auf dem Display übernommen.",
-          "checkout_instructions_label": "Die Guesty-Checkout-Anweisungen werden automatisch darunter angezeigt.",
-          "checkout_instructions_fallback": "Dieser Text erscheint nur, wenn im Guesty-Listing keine Checkout-Anweisungen hinterlegt sind."
+          "checkout_page_title": "Available variables: first_name, property_name, check_in, check_out, check_out_date, check_out_time",
+          "checkout_page_message": "Line breaks are preserved on the display.",
+          "checkout_instructions_label": "Guesty's checkout instructions are shown automatically underneath.",
+          "checkout_instructions_fallback": "This text appears only when the Guesty listing contains no checkout instructions."
         }
       },
       "empty_room": {
-        "title": "Seite für leeres Zimmer auswählen",
-        "description": "Wähle ein bereits konfiguriertes Display aus.",
+        "title": "Select empty-room page",
+        "description": "Select an already configured display.",
         "data": {
-          "endpoint_entity": "reTerminal-Display"
+          "endpoint_entity": "reTerminal display"
         }
       },
       "empty_room_details": {
-        "title": "Seite für leeres Zimmer bearbeiten",
-        "description": "Displaysprache: {display_language}. Datums- und Zeitformat: {date_time_format}. Beide Einstellungen werden automatisch von der Display-Zuordnung übernommen.",
+        "title": "Edit empty-room page",
+        "description": "Display language: {display_language}. Date and time format: {date_time_format}. Both settings are inherited automatically from the display mapping.",
         "data": {
-          "empty_page_title": "Überschrift für die nächste Buchung",
-          "empty_no_booking_text": "Text ohne kommende Buchung",
-          "general_notes_label": "Überschrift Allgemeine Notizen",
-          "cleaner_notes_label": "Überschrift Notizen für Reinigung",
-          "special_requests_label": "Überschrift Sonderwünsche"
+          "empty_page_title": "Next-booking heading",
+          "empty_no_booking_text": "Text without an upcoming booking",
+          "general_notes_label": "General notes heading",
+          "cleaner_notes_label": "Notes for cleaner heading",
+          "special_requests_label": "Special requests heading"
         },
         "data_description": {
-          "empty_page_title": "Vorname und Buchungszeitraum werden automatisch darunter angezeigt.",
-          "empty_no_booking_text": "Dieser Text erscheint nur, wenn keine kommende Buchung gefunden wurde.",
-          "general_notes_label": "Das Feld erscheint nur, wenn General notes in Guesty vorhanden sind.",
-          "cleaner_notes_label": "Das Feld erscheint nur, wenn Notes for cleaner in Guesty vorhanden sind.",
-          "special_requests_label": "Das Feld erscheint nur, wenn Special requests in Guesty vorhanden sind. Vorhandene Felder verteilen sich automatisch über die gesamte Breite."
+          "empty_page_title": "The guest's first name and booking period are added automatically underneath.",
+          "empty_no_booking_text": "This text appears only when no upcoming booking can be found.",
+          "general_notes_label": "This card appears only when Guesty contains General notes.",
+          "cleaner_notes_label": "This card appears only when Guesty contains Notes for cleaner.",
+          "special_requests_label": "This card appears only when Guesty contains Special requests. Visible cards automatically share the full width."
         }
       },
       "general": {
-        "title": "Allgemeine Einstellungen",
-        "description": "Diese Einstellungen gelten für alle Displays. Globales Logo: {logo_status}. Eine neue Datei ersetzt das bisherige Logo.",
+        "title": "General settings",
+        "description": "These settings apply to every display. Global logo: {logo_status}. Uploading a new file replaces the existing logo.",
         "data": {
-          "poll_minutes": "Guesty-Aktualisierung (Minuten)",
-          "logo_upload": "Globales Logo für alle Displays",
-          "remove_logo": "Globales Logo entfernen"
+          "poll_minutes": "Guesty refresh interval (minutes)",
+          "logo_upload": "Global logo for all displays",
+          "remove_logo": "Remove global logo"
         },
         "data_description": {
-          "logo_upload": "PNG oder JPEG, maximal 5 MB. Das Logo wird automatisch ohne Umrandung skaliert und auf vier Graustufen optimiert."
+          "logo_upload": "PNG or JPEG, up to 5 MB. The logo is automatically scaled without a border and optimized for four grayscale levels."
         }
       },
       "firmware": {
-        "title": "E1001-Firmware erstellen",
-        "description": "Erzeugt eine sichere ESPHome-Konfiguration unter /config/esphome. Im Modus Automatisch schläft das Display auf Akku und bleibt bei USB-Strom online. LED, Lade-LED, Buzzer und Mikrofon werden deaktiviert.",
+        "title": "Create E1001 firmware",
+        "description": "Creates a secure ESPHome configuration under /config/esphome. Automatic mode sleeps on battery and stays online on USB power. The status and charging LEDs, buzzer, and microphone are disabled.",
         "data": {
-          "firmware_device_name": "Gerätename",
-          "firmware_friendly_name": "Anzeigename",
-          "firmware_power_mode": "Stromsparmodus",
-          "firmware_wake_minutes": "Auf Akku alle ... Minuten aufwachen",
-          "firmware_awake_seconds": "Maximal wach bleiben (Sekunden)",
-          "firmware_overwrite": "Vorhandene GuestyTerminal-Konfiguration ersetzen"
+          "firmware_device_name": "Device name",
+          "firmware_friendly_name": "Display name",
+          "firmware_power_mode": "Power mode",
+          "firmware_wake_minutes": "Wake on battery every ... minutes",
+          "firmware_awake_seconds": "Maximum awake time (seconds)",
+          "firmware_overwrite": "Replace an existing GuestyTerminal configuration"
         },
         "data_description": {
-          "firmware_device_name": "1-24 Kleinbuchstaben, Zahlen oder Bindestriche. Für jedes Display eindeutig.",
-          "firmware_power_mode": "Automatisch wird für den E1001 empfohlen.",
-          "firmware_awake_seconds": "Das Display schläft früher ein, sobald Home Assistant neue Daten geliefert hat."
+          "firmware_device_name": "1-24 lowercase letters, numbers, or hyphens. Unique for every display.",
+          "firmware_power_mode": "Automatic is recommended for the E1001.",
+          "firmware_awake_seconds": "The display sleeps earlier as soon as Home Assistant has delivered new data."
         }
       }
     },
     "error": {
-      "invalid_firmware_options": "Die Firmware-Einstellungen sind ungültig.",
-      "invalid_logo": "Das Logo konnte nicht verarbeitet werden. Verwende eine sichtbare PNG- oder JPEG-Datei mit maximal 5 MB.",
-      "firmware_file_exists": "Unter diesem Gerätenamen existiert bereits eine ESPHome-Datei. Aktiviere Ersetzen nur für eine zuvor von GuestyTerminal erzeugte Datei; fremde Dateien werden nie überschrieben.",
-      "firmware_write_failed": "Die ESPHome-Konfiguration konnte nicht geschrieben werden. Prüfe, ob /config/esphome verfügbar ist."
+      "invalid_firmware_options": "The firmware settings are invalid.",
+      "invalid_logo": "The logo could not be processed. Use a visible PNG or JPEG file up to 5 MB.",
+      "firmware_file_exists": "An ESPHome file already uses this device name. Enable replacement only for a file previously created by GuestyTerminal; other files are never overwritten.",
+      "firmware_write_failed": "The ESPHome configuration could not be written. Verify that /config/esphome is available."
     },
     "abort": {
-      "no_displays": "Kein kompatibles ESPHome-Display gefunden. Flashe zuerst das mitgelieferte E1001-Paket und wecke das Display auf.",
-      "no_listings": "Guesty hat keine aktiven Listings zurückgegeben.",
-      "no_mappings": "Richte zuerst mindestens eine Display-Zuordnung ein.",
-      "firmware_created": "Die Konfiguration wurde unter {path} erstellt. Öffne jetzt den ESPHome Device Builder, wähle {device_name} und anschließend Installieren. Für die Erstinstallation wird USB empfohlen."
+      "no_displays": "No compatible ESPHome display was found. Flash the supplied E1001 package and wake the display first.",
+      "no_listings": "Guesty returned no active listings.",
+      "no_mappings": "Configure at least one display mapping first.",
+      "display_already_configured": "This display is already assigned to another GuestyTerminal configuration.",
+      "firmware_created": "The configuration was created at {path}. Open ESPHome Device Builder, select {device_name}, then choose Install. USB is recommended for the first installation."
     }
   },
   "entity": {
     "button": {
       "update_all_firmware": {
-        "name": "Alle Display-Firmwares aktualisieren"
+        "name": "Update all display firmware"
       }
     }
   },
   "exceptions": {
     "firmware_no_managed_configs": {
-      "message": "Es wurden keine von GuestyTerminal verwalteten ESPHome-Konfigurationen gefunden. Erstelle die Display-Firmware zuerst über die GuestyTerminal-Einrichtung."
+      "message": "No GuestyTerminal-managed ESPHome configurations were found. Create the display firmware through GuestyTerminal setup first."
     },
     "firmware_config_update_failed": {
-      "message": "Die verwalteten ESPHome-Konfigurationen konnten nicht sicher aktualisiert werden."
+      "message": "The managed ESPHome configurations could not be updated safely."
     },
     "firmware_builder_unavailable": {
-      "message": "Der ESPHome Device Builder ist nicht erreichbar oder nicht mit Home Assistant verbunden."
+      "message": "ESPHome Device Builder is unavailable or not connected to Home Assistant."
     },
     "firmware_builder_auth_required": {
-      "message": "Der ESPHome Device Builder verlangt eine eigene Anmeldung. Verwende den mit Home Assistant verbundenen Device Builder ohne zusätzliche Zugangsdaten."
+      "message": "ESPHome Device Builder requires separate authentication. Use the Device Builder connected to Home Assistant without additional credentials."
     },
     "firmware_builder_too_old": {
-      "message": "Der ESPHome Device Builder unterstützt Sammelupdates noch nicht. Aktualisiere ihn auf Version 2026.7 oder neuer."
+      "message": "ESPHome Device Builder does not support bulk updates yet. Update it to version 2026.7 or later."
     },
     "firmware_builder_invalid_response": {
-      "message": "Der ESPHome Device Builder hat eine unerwartete Antwort auf den Sammelauftrag geliefert."
+      "message": "ESPHome Device Builder returned an unexpected response to the bulk request."
     },
     "firmware_queue_failed": {
-      "message": "Der ESPHome Device Builder konnte die Firmware-Aufträge nicht anlegen."
+      "message": "ESPHome Device Builder could not create the firmware jobs."
     },
     "firmware_update_in_progress": {
-      "message": "Ein Sammelupdate der Display-Firmware wird bereits vorbereitet."
+      "message": "A display firmware bulk update is already being prepared."
     }
   },
   "selector": {
     "firmware_power_mode": {
       "options": {
-        "auto": "Automatisch (empfohlen)",
-        "battery": "Immer Akkubetrieb",
-        "mains": "Immer online"
+        "auto": "Automatic (recommended)",
+        "battery": "Always battery mode",
+        "mains": "Always online"
       }
     }
   }

@@ -53,6 +53,9 @@ class FakeConfigEntries:
         entry.options = changes.get("options", entry.options)
         entry.version = changes.get("version", entry.version)
 
+    def async_entries(self, _domain):
+        return []
+
 
 class FakeStore:
     stored = {"access_token": "stored"}
@@ -180,10 +183,11 @@ def test_setup_and_unload_entry(monkeypatch) -> None:
 
 
 def test_unload_failure_retains_runtime(monkeypatch) -> None:
+    stopped = []
     runtime = SimpleNamespace(async_stop=lambda: None)
 
     async def stop():
-        return None
+        stopped.append(True)
 
     runtime.async_stop = stop
     entry = _entry()
@@ -194,6 +198,7 @@ def test_unload_failure_retains_runtime(monkeypatch) -> None:
     )
     assert not asyncio.run(integration.async_unload_entry(hass, entry))
     assert entry.entry_id in hass.data[DOMAIN]
+    assert stopped == []
 
 
 def test_migration_updates_existing_timing_and_skips_current_version() -> None:

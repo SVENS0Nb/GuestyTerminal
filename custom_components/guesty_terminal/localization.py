@@ -15,8 +15,6 @@ class DisplayTextDefaults:
 
     welcome_title: str
     welcome_text: str
-    idle_title: str
-    idle_text: str
     door_code_label: str
     wifi_label: str
     wifi_name_label: str
@@ -41,8 +39,6 @@ _DEFAULTS = {
             "Schön, dass du da bist.\n"
             "Wir wünschen dir einen entspannten und angenehmen Aufenthalt."
         ),
-        idle_title="Willkommen",
-        idle_text="Die Unterkunft ist für den nächsten Aufenthalt bereit.",
         door_code_label="TÜRCODE",
         wifi_label="WIFI",
         wifi_name_label="Name:",
@@ -69,8 +65,6 @@ _DEFAULTS = {
         welcome_text=(
             "It is great to have you here.\nWe wish you a relaxing and pleasant stay."
         ),
-        idle_title="Welcome",
-        idle_text="The property is ready for the next stay.",
         door_code_label="DOOR CODE",
         wifi_label="WIFI",
         wifi_name_label="Name:",
@@ -98,8 +92,6 @@ _DEFAULTS = {
             "Nous sommes ravis de vous accueillir.\n"
             "Nous vous souhaitons un séjour agréable et reposant."
         ),
-        idle_title="Bienvenue",
-        idle_text="Le logement est prêt pour le prochain séjour.",
         door_code_label="CODE PORTE",
         wifi_label="WIFI",
         wifi_name_label="Nom :",
@@ -126,8 +118,6 @@ _DEFAULTS = {
         welcome_text=(
             "Nos alegra tenerte aquí.\nTe deseamos una estancia agradable y relajante."
         ),
-        idle_title="Bienvenido",
-        idle_text="El alojamiento está listo para la próxima estancia.",
         door_code_label="CÓDIGO DE PUERTA",
         wifi_label="WIFI",
         wifi_name_label="Nombre:",

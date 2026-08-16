@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 from custom_components.guesty_terminal.api import (
     GuestyAuthenticationError,
     GuestyError,
+    GuestyRateLimitError,
 )
 from custom_components.guesty_terminal.const import CONF_MAPPINGS, CONF_WEATHER_ENTITY
 from custom_components.guesty_terminal.coordinator import GuestyTerminalCoordinator
@@ -47,7 +48,10 @@ class FakeClient:
 
     async def async_get_listing(self, listing_id):
         self.listing_calls.append(listing_id)
-        return self.full_listings.get(listing_id, {})
+        value = self.full_listings.get(listing_id, {})
+        if isinstance(value, Exception):
+            raise value
+        return value
 
     async def async_get_reservations(self, listing_ids):
         self.reservation_calls.append(listing_ids)
@@ -112,6 +116,7 @@ def _coordinator(
     coordinator._listing_detail_cache = {}
     coordinator._next_reservation_cache = {}
     coordinator._account_id = None
+    coordinator._blocked_endpoints = set()
     return coordinator
 
 
@@ -145,6 +150,30 @@ def test_mapping_options_ignores_invalid_records() -> None:
 
     coordinator.entry.options = {CONF_MAPPINGS: []}
     assert coordinator.mapping_options() == []
+
+    coordinator.entry.options = {CONF_MAPPINGS: {endpoint: _mapping()}}
+    coordinator.block_endpoints({endpoint})
+    assert coordinator.mapping_options() == []
+
+
+def test_explicit_sync_invalidates_guest_api_caches() -> None:
+    coordinator = _coordinator()
+    coordinator._keycode_cache[("reservation", "version")] = "opaque-code"
+    coordinator._guest_cache["guest"] = (0.0, {"firstName": "Mia"})
+    coordinator._custom_field_definitions["account"] = []
+    coordinator._listing_detail_cache["listing"] = (0.0, Listing("listing", "Loft"))
+    coordinator._next_reservation_cache["listing"] = (
+        0.0,
+        {"reservationId": "next"},
+    )
+
+    coordinator.invalidate_guest_data_caches()
+
+    assert coordinator._keycode_cache == {}
+    assert coordinator._guest_cache == {}
+    assert coordinator._custom_field_definitions == {}
+    assert coordinator._listing_detail_cache == {}
+    assert coordinator._next_reservation_cache == {}
 
 
 def test_weather_values_round_temperature_and_tolerate_invalid_states() -> None:
@@ -246,6 +275,18 @@ def test_keycode_resolution_uses_direct_values_and_cache() -> None:
     assert client.custom_calls == ["res-direct"]
 
 
+def test_keycode_without_change_marker_is_never_retained_indefinitely() -> None:
+    client = FakeClient()
+    client.populated["res-live"] = {"keyCode": "5678"}
+    coordinator = _coordinator(client=client)
+    raw = {"_id": "res-live"}
+
+    assert asyncio.run(coordinator._async_keycode(raw)) == "5678"
+    client.populated["res-live"] = {"customFields": []}
+    assert asyncio.run(coordinator._async_keycode(raw)) == ""
+    assert client.custom_calls == ["res-live", "res-live"]
+
+
 def test_keycode_resolution_uses_definitions_and_tolerates_failures() -> None:
     client = FakeClient()
     client.populated["res-1"] = {
@@ -293,6 +334,26 @@ def test_v3_keycode_resolves_current_account_and_retries_guest_failures() -> Non
     client.guests["guest-1"] = {"firstName": "Mia"}
     assert asyncio.run(coordinator._async_guest(raw))["firstName"] == "Mia"
     assert asyncio.run(coordinator._async_guest(raw))["firstName"] == "Mia"
+    assert client.guest_calls == ["guest-1", "guest-1"]
+
+
+def test_guest_cache_expires_instead_of_retaining_a_name_forever(monkeypatch) -> None:
+    client = FakeClient()
+    client.guests["guest-1"] = {"firstName": "Mia"}
+    coordinator = _coordinator(client=client)
+    now = [100.0]
+    monkeypatch.setattr(
+        "custom_components.guesty_terminal.coordinator.time.monotonic",
+        lambda: now[0],
+    )
+    raw = {"guestId": "guest-1"}
+
+    assert asyncio.run(coordinator._async_guest(raw))["firstName"] == "Mia"
+    client.guests["guest-1"] = {"firstName": "Anna"}
+    now[0] += 1_799
+    assert asyncio.run(coordinator._async_guest(raw))["firstName"] == "Mia"
+    now[0] += 2
+    assert asyncio.run(coordinator._async_guest(raw))["firstName"] == "Anna"
     assert client.guest_calls == ["guest-1", "guest-1"]
 
 
@@ -378,6 +439,45 @@ def test_update_skips_full_listing_when_wifi_exists_and_missing_mappings() -> No
     data = asyncio.run(coordinator._async_update_data())
     assert client.listing_calls == ["missing"]
     assert data.payloads == {}
+
+
+def test_broken_listing_details_do_not_block_unrelated_displays() -> None:
+    client = FakeClient()
+    client.listings = [
+        {
+            "_id": "good",
+            "title": "Good",
+            "wifiName": "WiFi",
+            "wifiPassword": "password",
+            "checkoutInstructions": "Leave keys inside.",
+        }
+    ]
+    client.full_listings["removed"] = GuestyError("not found")
+    coordinator = _coordinator(
+        {
+            CONF_MAPPINGS: {
+                "sensor.good": _mapping("good"),
+                "sensor.removed": _mapping("removed"),
+            }
+        },
+        client,
+    )
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert "sensor.good" in data.payloads
+    assert "sensor.removed" not in data.payloads
+
+
+def test_rate_limit_from_optional_enrichment_sets_coordinator_retry_after() -> None:
+    client = FakeClient()
+    client.listings = [{"_id": "listing-1", "title": "Loft"}]
+    client.full_listings["listing-1"] = GuestyRateLimitError(73)
+    coordinator = _coordinator({CONF_MAPPINGS: {"sensor.display": _mapping()}}, client)
+
+    with pytest.raises(UpdateFailed) as error:
+        asyncio.run(coordinator._async_update_data())
+    assert error.value.retry_after == 73
 
 
 def test_update_fetches_and_caches_next_booking_for_empty_room_page() -> None:
