@@ -65,7 +65,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.15") == 2
+    assert rendered.count("ref: v0.3.17") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
@@ -76,8 +76,8 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
 
     assert package.count("bpp: 4") == 11
     assert "lut_mode: ${gray_lut_mode}" in package
-    assert "id(guesty_render_revision) == 12" in package
-    assert "guesty_terminal_update_display_v7" in package
+    assert "id(guesty_render_revision) == 14" in package
+    assert "guesty_terminal_update_display_v9" in package
     assert '"Bei Fragen sind wir für dich da."' not in package
     assert "id(guesty_logo_data).size() == logo_hex_length" in package
     assert "it.line(32, 402, 768, 402)" in package
@@ -94,9 +94,42 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "idle_title: string" in package
     assert "idle_text: string" in package
     assert "no_active_booking_label: string" in package
-    assert "id(guesty_idle_title).c_str()" in package
-    assert "const std::string &body = id(guesty_idle_text)" in package
+    assert "id(guesty_next_booking_title).empty()" in package
+    assert "empty_title.c_str()" in package
+    assert "id(guesty_idle_text).c_str()" in package
     assert "return id(guesty_no_active_booking_label)" in package
+    assert "checkout_instructions_title: string" in package
+    assert "checkout_instructions: string" in package
+    assert "next_booking_title: string" in package
+    assert "next_booking_guest: string" in package
+    assert "next_booking_period: string" in package
+    assert "general_notes_label: string" in package
+    assert "general_notes: string" in package
+    assert "cleaner_notes_label: string" in package
+    assert "cleaner_notes: string" in package
+    assert "special_requests_label: string" in package
+    assert "special_requests: string" in package
+    assert "id: guesty_checkout_page" in package
+    assert "draw_rounded_panel(32, 218, 736, 154, 12)" in package
+    assert "id(guesty_checkout_instructions_title).c_str()" in package
+    assert "id(guesty_checkout_instructions)" in package
+    assert "id: guesty_idle_page" in package
+    assert "const int note_count" in package
+    assert "constexpr int cards_width = 736" in package
+    assert "(cards_width - gap * (note_count - 1)) / note_count" in package
+    assert "cards.push_back({id(guesty_special_requests_label)" in package
+    assert "const int guest_y = note_count == 0 ? 190 : 142" in package
+    assert "const int period_y = note_count == 0 ? 252 : 202" in package
+    for sensitive_global in (
+        "guesty_next_booking_guest",
+        "guesty_next_booking_period",
+        "guesty_general_notes",
+        "guesty_cleaner_notes",
+        "guesty_special_requests",
+    ):
+        start = package.index(f"  - id: {sensitive_global}\n")
+        end = package.find("\n  - id:", start + 1)
+        assert "restore_value: true" not in package[start:end]
     assert "detail_value_x(id(guesty_wifi_name_label))" in package
     assert "detail_value_x(id(guesty_wifi_key_label))" in package
     assert "const int qr_modules = id(guesty_wifi_qr).get_size()" in package
@@ -240,7 +273,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.15", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.17", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -252,8 +285,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.15") == 2
-    assert 'version: "0.3.15"' in updated
+    assert updated.count("ref: v0.3.17") == 2
+    assert 'version: "0.3.17"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -270,13 +303,13 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.15", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.17", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.15", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.17", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")

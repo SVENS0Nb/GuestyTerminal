@@ -26,7 +26,9 @@ from .const import (
     DISPLAY_ACTION_V5_SUFFIX,
     DISPLAY_ACTION_V6_SUFFIX,
     DISPLAY_ACTION_V7_SUFFIX,
-    MODE_WELCOME,
+    DISPLAY_ACTION_V8_SUFFIX,
+    DISPLAY_ACTION_V9_SUFFIX,
+    LOGO_DISPLAY_MODES,
 )
 from .coordinator import GuestyTerminalCoordinator
 from .logo import logo_fingerprint, valid_logo_data
@@ -69,6 +71,8 @@ async def async_send_display_payload(
             DISPLAY_ACTION_V5_SUFFIX,
             DISPLAY_ACTION_V6_SUFFIX,
             DISPLAY_ACTION_V7_SUFFIX,
+            DISPLAY_ACTION_V8_SUFFIX,
+            DISPLAY_ACTION_V9_SUFFIX,
         )
     ):
         _LOGGER.warning("Ignoring invalid ESPHome display endpoint %s", action)
@@ -88,6 +92,8 @@ async def async_send_display_payload(
                     DISPLAY_ACTION_V5_SUFFIX,
                     DISPLAY_ACTION_V6_SUFFIX,
                     DISPLAY_ACTION_V7_SUFFIX,
+                    DISPLAY_ACTION_V8_SUFFIX,
+                    DISPLAY_ACTION_V9_SUFFIX,
                 )
             )
             service_data = payload.as_service_data(
@@ -98,6 +104,8 @@ async def async_send_display_payload(
                         DISPLAY_ACTION_V5_SUFFIX,
                         DISPLAY_ACTION_V6_SUFFIX,
                         DISPLAY_ACTION_V7_SUFFIX,
+                        DISPLAY_ACTION_V8_SUFFIX,
+                        DISPLAY_ACTION_V9_SUFFIX,
                     )
                 ),
                 include_weather=action.endswith(
@@ -105,9 +113,21 @@ async def async_send_display_payload(
                         DISPLAY_ACTION_V5_SUFFIX,
                         DISPLAY_ACTION_V6_SUFFIX,
                         DISPLAY_ACTION_V7_SUFFIX,
+                        DISPLAY_ACTION_V8_SUFFIX,
+                        DISPLAY_ACTION_V9_SUFFIX,
                     )
                 ),
-                include_labels=action.endswith(DISPLAY_ACTION_V7_SUFFIX),
+                include_labels=action.endswith(
+                    (
+                        DISPLAY_ACTION_V7_SUFFIX,
+                        DISPLAY_ACTION_V8_SUFFIX,
+                        DISPLAY_ACTION_V9_SUFFIX,
+                    )
+                ),
+                include_checkout_page=action.endswith(
+                    (DISPLAY_ACTION_V8_SUFFIX, DISPLAY_ACTION_V9_SUFFIX)
+                ),
+                include_empty_page=action.endswith(DISPLAY_ACTION_V9_SUFFIX),
             )
             if action.endswith(
                 (
@@ -116,17 +136,28 @@ async def async_send_display_payload(
                     DISPLAY_ACTION_V5_SUFFIX,
                     DISPLAY_ACTION_V6_SUFFIX,
                     DISPLAY_ACTION_V7_SUFFIX,
+                    DISPLAY_ACTION_V8_SUFFIX,
+                    DISPLAY_ACTION_V9_SUFFIX,
                 )
             ):
                 active_logo = (
-                    valid_logo_data(logo_data) if payload.mode == MODE_WELCOME else ""
+                    valid_logo_data(logo_data)
+                    if payload.mode in LOGO_DISPLAY_MODES
+                    else ""
                 )
                 service_data["logo_data"] = active_logo
                 if include_content_id:
                     service_data["content_id"] = _logo_aware_content_id(
                         service_data["content_id"], active_logo
                     )
-            if action.endswith((DISPLAY_ACTION_V6_SUFFIX, DISPLAY_ACTION_V7_SUFFIX)):
+            if action.endswith(
+                (
+                    DISPLAY_ACTION_V6_SUFFIX,
+                    DISPLAY_ACTION_V7_SUFFIX,
+                    DISPLAY_ACTION_V8_SUFFIX,
+                    DISPLAY_ACTION_V9_SUFFIX,
+                )
+            ):
                 service_data["base_content_id"] = _logo_aware_content_id(
                     payload.base_content_id, active_logo
                 )
@@ -195,13 +226,21 @@ class GuestyTerminalRuntime:
 
     async def async_start(self) -> None:
         """Start endpoint and coordinator listeners."""
-        endpoints = [
-            item.endpoint_entity for item in self.coordinator.mapping_options()
-        ]
+        mappings = self.coordinator.mapping_options()
+        endpoints = [item.endpoint_entity for item in mappings]
         if endpoints:
             self._unsubscribers.append(
                 async_track_state_change_event(
                     self.hass, endpoints, self._handle_endpoint_state
+                )
+            )
+        weather_entities = sorted(
+            {item.weather_entity for item in mappings if item.weather_entity}
+        )
+        if weather_entities:
+            self._unsubscribers.append(
+                async_track_state_change_event(
+                    self.hass, weather_entities, self._handle_weather_state
                 )
             )
 
@@ -237,6 +276,33 @@ class GuestyTerminalRuntime:
     @callback
     def _handle_coordinator_update(self) -> None:
         self.hass.async_create_task(self.async_push_all())
+
+    @callback
+    def _handle_weather_state(self, event: Event) -> None:
+        """Push live weather to displays mapped to the changed entity."""
+        weather_entity = str(event.data.get("entity_id") or "")
+        endpoints = {
+            mapping.endpoint_entity
+            for mapping in self.coordinator.mapping_options()
+            if mapping.weather_entity == weather_entity
+        }
+        for endpoint in endpoints:
+            endpoint_state = self.hass.states.get(endpoint)
+            action = str(getattr(endpoint_state, "state", "")).strip()
+            if not action.endswith(
+                (
+                    DISPLAY_ACTION_V6_SUFFIX,
+                    DISPLAY_ACTION_V7_SUFFIX,
+                    DISPLAY_ACTION_V8_SUFFIX,
+                    DISPLAY_ACTION_V9_SUFFIX,
+                )
+            ):
+                # Older firmware cannot perform the hybrid weather refresh.
+                # It will still receive live weather on its next normal or
+                # explicitly forced payload without adding full panel flashes
+                # for every weather-entity state change.
+                continue
+            self.hass.async_create_task(self.async_push_endpoint(endpoint))
 
     async def async_push_all(self) -> None:
         """Push current payloads to every display that is online."""
@@ -283,9 +349,8 @@ class GuestyTerminalRuntime:
         if self.coordinator.data is None:
             return None
         payload = self.coordinator.data.payloads.get(endpoint_entity)
-        if payload is None or not payload.is_expired(datetime.now(UTC)):
+        if payload is None:
             return payload
-
         mapping = next(
             (
                 item
@@ -294,6 +359,10 @@ class GuestyTerminalRuntime:
             ),
             None,
         )
+        if not payload.is_expired(datetime.now(UTC)):
+            return self.coordinator.payload_with_current_weather(
+                endpoint_entity, payload
+            )
         listing = (
             self.coordinator.data.listings.get(mapping.listing_id)
             if mapping is not None

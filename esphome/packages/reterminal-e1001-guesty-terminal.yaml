@@ -76,7 +76,7 @@ api:
             - delay: 1s
             - component.update: guesty_terminal_endpoint
   actions:
-    - action: guesty_terminal_update_display_v7
+    - action: guesty_terminal_update_display_v9
       variables:
         mode: string
         property_name: string
@@ -93,6 +93,17 @@ api:
         idle_title: string
         idle_text: string
         no_active_booking_label: string
+        checkout_instructions_title: string
+        checkout_instructions: string
+        next_booking_title: string
+        next_booking_guest: string
+        next_booking_period: string
+        general_notes_label: string
+        general_notes: string
+        cleaner_notes_label: string
+        cleaner_notes: string
+        special_requests_label: string
+        special_requests: string
         valid_until_epoch: int
         content_id: string
         base_content_id: string
@@ -104,7 +115,7 @@ api:
       then:
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            const bool renderer_current = id(guesty_render_revision) == 12;
+            const bool renderer_current = id(guesty_render_revision) == 14;
             id(guesty_content_changed) = force_redraw || content_id.empty()
                 || content_id != id(guesty_content_id)
                 || !renderer_current;
@@ -114,7 +125,7 @@ api:
                 && !content_id.empty()
                 && !base_content_id.empty()
                 && base_content_id == id(guesty_base_content_id)
-                && mode == "welcome";
+                && mode != "idle";
             id(guesty_mode) = mode;
             id(guesty_property_name) = property_name;
             id(guesty_welcome_title) = welcome_title;
@@ -130,14 +141,25 @@ api:
             id(guesty_idle_title) = idle_title;
             id(guesty_idle_text) = idle_text;
             id(guesty_no_active_booking_label) = no_active_booking_label;
+            id(guesty_checkout_instructions_title) = checkout_instructions_title;
+            id(guesty_checkout_instructions) = checkout_instructions;
+            id(guesty_next_booking_title) = next_booking_title;
+            id(guesty_next_booking_guest) = next_booking_guest;
+            id(guesty_next_booking_period) = next_booking_period;
+            id(guesty_general_notes_label) = general_notes_label;
+            id(guesty_general_notes) = general_notes;
+            id(guesty_cleaner_notes_label) = cleaner_notes_label;
+            id(guesty_cleaner_notes) = cleaner_notes;
+            id(guesty_special_requests_label) = special_requests_label;
+            id(guesty_special_requests) = special_requests;
             id(guesty_logo_data) = logo_data;
             id(guesty_weather_condition) = weather_condition;
             id(guesty_weather_temperature) = weather_temperature;
             id(guesty_valid_until_epoch) = valid_until_epoch;
-            id(guesty_screen_sensitive) = mode == "welcome";
+            id(guesty_screen_sensitive) = mode != "idle";
             id(guesty_has_wifi) =
                 mode == "welcome" && !wifi_name.empty();
-            id(guesty_has_weather) = mode == "welcome"
+            id(guesty_has_weather) = mode != "idle"
                 && (!weather_condition.empty() || !weather_temperature.empty());
 
             if (id(guesty_content_changed) && id(guesty_has_wifi)) {
@@ -168,11 +190,17 @@ api:
             then:
               - if:
                   condition:
-                    lambda: return mode == "welcome";
+                    lambda: return mode == "checkout";
                   then:
-                    - display.page.show: guesty_welcome_page
+                    - display.page.show: guesty_checkout_page
                   else:
-                    - display.page.show: guesty_idle_page
+                    - if:
+                        condition:
+                          lambda: return mode == "welcome";
+                        then:
+                          - display.page.show: guesty_welcome_page
+                        else:
+                          - display.page.show: guesty_idle_page
               - lambda: |-
                   if (id(guesty_weather_only_changed)) {
                     id(guesty_epaper).request_partial_update();
@@ -186,7 +214,7 @@ api:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
-                        id(guesty_render_revision) = 12;
+                        id(guesty_render_revision) = 14;
                     - text_sensor.template.publish:
                         id: guesty_last_booking
                         state: !lambda |-
@@ -260,17 +288,50 @@ globals:
     type: std::string
     restore_value: true
     max_restore_data_length: 48
-    initial_value: '"Willkommen"'
+    initial_value: '"NÄCHSTE BUCHUNG"'
   - id: guesty_idle_text
     type: std::string
     restore_value: true
     max_restore_data_length: 160
-    initial_value: '"Die Unterkunft ist für den nächsten Aufenthalt bereit."'
+    initial_value: '"Keine bevorstehende Buchung"'
   - id: guesty_no_active_booking_label
     type: std::string
     restore_value: true
     max_restore_data_length: 64
     initial_value: '"Keine aktive Buchung"'
+  - id: guesty_checkout_instructions_title
+    type: std::string
+    initial_value: '"CHECK-OUT"'
+  - id: guesty_checkout_instructions
+    type: std::string
+    initial_value: '""'
+  - id: guesty_next_booking_title
+    type: std::string
+    initial_value: '""'
+  - id: guesty_next_booking_guest
+    type: std::string
+    initial_value: '""'
+  - id: guesty_next_booking_period
+    type: std::string
+    initial_value: '""'
+  - id: guesty_general_notes_label
+    type: std::string
+    initial_value: '"ALLGEMEINE NOTIZEN"'
+  - id: guesty_general_notes
+    type: std::string
+    initial_value: '""'
+  - id: guesty_cleaner_notes_label
+    type: std::string
+    initial_value: '"FÜR DIE REINIGUNG"'
+  - id: guesty_cleaner_notes
+    type: std::string
+    initial_value: '""'
+  - id: guesty_special_requests_label
+    type: std::string
+    initial_value: '"SONDERWÜNSCHE"'
+  - id: guesty_special_requests
+    type: std::string
+    initial_value: '""'
   - id: guesty_logo_data
     type: std::string
     initial_value: '""'
@@ -539,7 +600,7 @@ text_sensor:
     entity_category: diagnostic
     update_interval: never
     lambda: |-
-      std::string action = "${device_name}_guesty_terminal_update_display_v7";
+      std::string action = "${device_name}_guesty_terminal_update_display_v9";
       for (char &character : action) {
         if (character == '-') character = '_';
       }
@@ -844,30 +905,242 @@ display:
             }
           }
 
-      - id: guesty_idle_page
+      - id: guesty_checkout_page
         lambda: |-
-          it.print(400, 135, id(guesty_font_property),
-                   TextAlign::TOP_CENTER,
+          const auto draw_lines = [&](int x, int y, const std::string &text,
+                                      esphome::font::Font *font,
+                                      int line_height, int maximum_lines) {
+            size_t start = 0;
+            int line = 0;
+            while (start <= text.size() && line < maximum_lines) {
+              const size_t end = text.find('\n', start);
+              const std::string part = text.substr(
+                  start, end == std::string::npos ? std::string::npos : end - start);
+              it.print(x, y + line * line_height, font, part.c_str());
+              line++;
+              if (end == std::string::npos) break;
+              start = end + 1;
+            }
+          };
+
+          const auto draw_rounded_panel = [&](int x, int y, int width,
+                                               int height, int radius) {
+            const Color light_gray(85, 85, 85);
+            it.filled_rectangle(x + radius, y, width - radius * 2,
+                                height, light_gray);
+            it.filled_rectangle(x, y + radius, width,
+                                height - radius * 2, light_gray);
+            it.filled_circle(x + radius, y + radius, radius, light_gray);
+            it.filled_circle(x + width - radius - 1, y + radius,
+                             radius, light_gray);
+            it.filled_circle(x + radius, y + height - radius - 1,
+                             radius, light_gray);
+            it.filled_circle(x + width - radius - 1,
+                             y + height - radius - 1, radius, light_gray);
+          };
+
+          const auto weather_icon = [](const std::string &condition) {
+            if (condition == "sunny") return "\U000F0599";
+            if (condition == "clear-night") return "\U000F0594";
+            if (condition == "fog") return "\U000F0591";
+            if (condition == "hail") return "\U000F0592";
+            if (condition == "lightning") return "\U000F0593";
+            if (condition == "lightning-rainy") return "\U000F067E";
+            if (condition == "partlycloudy") return "\U000F0595";
+            if (condition == "pouring") return "\U000F0596";
+            if (condition == "rainy") return "\U000F0597";
+            if (condition == "snowy") return "\U000F0598";
+            if (condition == "snowy-rainy") return "\U000F067F";
+            if (condition == "windy") return "\U000F059D";
+            if (condition == "windy-variant") return "\U000F059E";
+            if (condition == "exceptional") return "\U000F002A";
+            return "\U000F0590";
+          };
+
+          it.print(32, 24, id(guesty_font_property),
                    id(guesty_property_name).c_str());
-          esphome::font::Font *title_font = id(guesty_idle_title).size() > 24
+          if (id(guesty_has_weather)) {
+            it.print(650, 12, id(guesty_font_weather_icon),
+                     weather_icon(id(guesty_weather_condition)));
+            it.print(768, 27, id(guesty_font_weather_temperature),
+                     TextAlign::TOP_RIGHT,
+                     id(guesty_weather_temperature).c_str());
+          }
+          esphome::font::Font *title_font = id(guesty_welcome_title).size() > 24
               ? id(guesty_font_welcome_small)
               : id(guesty_font_welcome);
-          it.print(400, 185, title_font, TextAlign::TOP_CENTER,
-                   id(guesty_idle_title).c_str());
-          it.line(220, 255, 580, 255);
-          const std::string &body = id(guesty_idle_text);
-          size_t start = 0;
-          int line = 0;
-          while (start <= body.size() && line < 2) {
-            const size_t end = body.find('\n', start);
-            const std::string text = body.substr(
-                start, end == std::string::npos ? std::string::npos
-                                                : end - start);
-            it.print(400, 285 + line * 30, id(guesty_font_body),
-                     TextAlign::TOP_CENTER, text.c_str());
-            line++;
-            if (end == std::string::npos) break;
-            start = end + 1;
+          it.print(32, 52, title_font, id(guesty_welcome_title).c_str());
+          it.line(32, 116, 768, 116);
+
+          draw_lines(32, 142, id(guesty_welcome_text),
+                     id(guesty_font_body), 28, 2);
+
+          draw_rounded_panel(32, 218, 736, 154, 12);
+          it.print(56, 238, id(guesty_font_label),
+                   id(guesty_checkout_instructions_title).c_str());
+          draw_lines(56, 272, id(guesty_checkout_instructions),
+                     id(guesty_font_detail), 25, 4);
+
+          it.line(32, 402, 768, 402);
+          it.print(32, 430, id(guesty_font_detail),
+                   id(guesty_checkout_label).c_str());
+          constexpr int logo_width = 144;
+          constexpr int logo_height = 48;
+          constexpr int logo_x = 624;
+          constexpr int logo_y = 416;
+          constexpr size_t logo_hex_length =
+              logo_width * logo_height / 4 * 2;
+          if (id(guesty_logo_data).size() == logo_hex_length) {
+            const auto hex_value = [](char character) -> uint8_t {
+              if (character >= '0' && character <= '9') {
+                return character - '0';
+              }
+              if (character >= 'a' && character <= 'f') {
+                return character - 'a' + 10;
+              }
+              if (character >= 'A' && character <= 'F') {
+                return character - 'A' + 10;
+              }
+              return 0;
+            };
+            for (int y = 0; y < logo_height; y++) {
+              for (int x = 0; x < logo_width; x++) {
+                const size_t pixel = y * logo_width + x;
+                const size_t byte_index = pixel / 4;
+                const size_t hex_index = byte_index * 2;
+                const uint8_t packed =
+                    (hex_value(id(guesty_logo_data)[hex_index]) << 4)
+                    | hex_value(id(guesty_logo_data)[hex_index + 1]);
+                const uint8_t level =
+                    (packed >> ((3 - (pixel & 0x03)) * 2)) & 0x03;
+                if (level < 3) {
+                  const uint8_t ink = (3 - level) * 85;
+                  it.draw_pixel_at(logo_x + x, logo_y + y,
+                                   Color(ink, ink, ink));
+                }
+              }
+            }
+          }
+
+      - id: guesty_idle_page
+        lambda: |-
+          const auto draw_lines = [&](int x, int y, const std::string &text,
+                                      esphome::font::Font *font,
+                                      int line_height, int maximum_lines) {
+            size_t start = 0;
+            int line = 0;
+            while (start <= text.size() && line < maximum_lines) {
+              const size_t end = text.find('\n', start);
+              const std::string part = text.substr(
+                  start, end == std::string::npos ? std::string::npos : end - start);
+              it.print(x, y + line * line_height, font, part.c_str());
+              line++;
+              if (end == std::string::npos) break;
+              start = end + 1;
+            }
+          };
+
+          const auto draw_rounded_panel = [&](int x, int y, int width,
+                                               int height, int radius) {
+            const Color light_gray(85, 85, 85);
+            it.filled_rectangle(x + radius, y, width - radius * 2,
+                                height, light_gray);
+            it.filled_rectangle(x, y + radius, width,
+                                height - radius * 2, light_gray);
+            it.filled_circle(x + radius, y + radius, radius, light_gray);
+            it.filled_circle(x + width - radius - 1, y + radius,
+                             radius, light_gray);
+            it.filled_circle(x + radius, y + height - radius - 1,
+                             radius, light_gray);
+            it.filled_circle(x + width - radius - 1,
+                             y + height - radius - 1, radius, light_gray);
+          };
+
+          const auto weather_icon = [](const std::string &condition) {
+            if (condition == "sunny") return "\U000F0599";
+            if (condition == "clear-night") return "\U000F0594";
+            if (condition == "fog") return "\U000F0591";
+            if (condition == "hail") return "\U000F0592";
+            if (condition == "lightning") return "\U000F0593";
+            if (condition == "lightning-rainy") return "\U000F067E";
+            if (condition == "partlycloudy") return "\U000F0595";
+            if (condition == "pouring") return "\U000F0596";
+            if (condition == "rainy") return "\U000F0597";
+            if (condition == "snowy") return "\U000F0598";
+            if (condition == "snowy-rainy") return "\U000F067F";
+            if (condition == "windy") return "\U000F059D";
+            if (condition == "windy-variant") return "\U000F059E";
+            if (condition == "exceptional") return "\U000F002A";
+            return "\U000F0590";
+          };
+
+          it.print(32, 24, id(guesty_font_property),
+                   id(guesty_property_name).c_str());
+          if (id(guesty_has_weather)) {
+            it.print(650, 12, id(guesty_font_weather_icon),
+                     weather_icon(id(guesty_weather_condition)));
+            it.print(768, 27, id(guesty_font_weather_temperature),
+                     TextAlign::TOP_RIGHT,
+                     id(guesty_weather_temperature).c_str());
+          }
+          const std::string &empty_title = id(guesty_next_booking_title).empty()
+              ? id(guesty_idle_title) : id(guesty_next_booking_title);
+          it.print(32, 82, id(guesty_font_label), empty_title.c_str());
+          it.line(32, 116, 768, 116);
+
+          if (id(guesty_next_booking_guest).empty()) {
+            it.print(400, 208, id(guesty_font_welcome_small),
+                     TextAlign::TOP_CENTER,
+                     id(guesty_idle_text).c_str());
+          } else {
+            const int note_count =
+                (!id(guesty_general_notes).empty() ? 1 : 0)
+                + (!id(guesty_cleaner_notes).empty() ? 1 : 0)
+                + (!id(guesty_special_requests).empty() ? 1 : 0);
+            const int guest_y = note_count == 0 ? 190 : 142;
+            const int period_y = note_count == 0 ? 252 : 202;
+            it.print(32, guest_y, id(guesty_font_welcome),
+                     id(guesty_next_booking_guest).c_str());
+            it.print(32, period_y, id(guesty_font_body),
+                     id(guesty_next_booking_period).c_str());
+
+            if (note_count > 0) {
+              struct NoteCard {
+                std::string label;
+                std::string text;
+              };
+              std::vector<NoteCard> cards;
+              if (!id(guesty_general_notes).empty()) {
+                cards.push_back({id(guesty_general_notes_label),
+                                 id(guesty_general_notes)});
+              }
+              if (!id(guesty_cleaner_notes).empty()) {
+                cards.push_back({id(guesty_cleaner_notes_label),
+                                 id(guesty_cleaner_notes)});
+              }
+              if (!id(guesty_special_requests).empty()) {
+                cards.push_back({id(guesty_special_requests_label),
+                                 id(guesty_special_requests)});
+              }
+
+              constexpr int cards_x = 32;
+              constexpr int cards_y = 246;
+              constexpr int cards_width = 736;
+              constexpr int cards_height = 202;
+              constexpr int gap = 16;
+              const int card_width =
+                  (cards_width - gap * (note_count - 1)) / note_count;
+              for (int index = 0; index < note_count; index++) {
+                const int x = cards_x + index * (card_width + gap);
+                const int width = index == note_count - 1
+                    ? cards_x + cards_width - x : card_width;
+                draw_rounded_panel(x, cards_y, width, cards_height, 12);
+                it.print(x + 20, cards_y + 20, id(guesty_font_label),
+                         cards[index].label.c_str());
+                draw_lines(x + 20, cards_y + 56, cards[index].text,
+                           id(guesty_font_detail), 24, 6);
+              }
+            }
           }
 
 deep_sleep:
@@ -925,6 +1198,13 @@ interval:
                       id(guesty_weather_condition).clear();
                       id(guesty_weather_temperature).clear();
                       id(guesty_checkout_label).clear();
+                      id(guesty_checkout_instructions_title).clear();
+                      id(guesty_checkout_instructions).clear();
+                      id(guesty_next_booking_guest).clear();
+                      id(guesty_next_booking_period).clear();
+                      id(guesty_general_notes).clear();
+                      id(guesty_cleaner_notes).clear();
+                      id(guesty_special_requests).clear();
                       id(guesty_has_wifi) = false;
                       id(guesty_has_weather) = false;
                       id(guesty_screen_sensitive) = false;
@@ -970,6 +1250,13 @@ interval:
                 id(guesty_weather_condition).clear();
                 id(guesty_weather_temperature).clear();
                 id(guesty_checkout_label).clear();
+                id(guesty_checkout_instructions_title).clear();
+                id(guesty_checkout_instructions).clear();
+                id(guesty_next_booking_guest).clear();
+                id(guesty_next_booking_period).clear();
+                id(guesty_general_notes).clear();
+                id(guesty_cleaner_notes).clear();
+                id(guesty_special_requests).clear();
                 id(guesty_has_wifi) = false;
                 id(guesty_has_weather) = false;
                 id(guesty_screen_sensitive) = false;

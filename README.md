@@ -20,7 +20,9 @@ aktuellen Reservierung auf einem Seeed Studio reTerminal E1001 an:
   und WiFi;
 - höhere, aufgeräumte Fußleiste mit optionalem globalem Unterkunftslogo;
 - vier echte Graustufen für geglättete, besser lesbare Schriftkanten;
-- automatische neutrale Seite 30 Minuten nach Check-out oder bei Stornierung;
+- drei automatische Seiten für Willkommen, Check-out und leeres Zimmer;
+- nächste Buchung mit Vorname, Zeitraum und nur tatsächlich vorhandenen
+  Guesty-Notizen auf der Seite für das leere Zimmer;
 - Zuordnung eines Guesty-Listings zu jedem Display in der Home-Assistant-UI;
 - Firmware-Assistent für gerätespezifische E1001-Konfigurationen;
 - zentraler Home-Assistant-Knopf für OTA-Sammelupdates aller von
@@ -36,7 +38,8 @@ installiert daraus die Firmware.
 ## Architektur
 
 1. Die Custom Integration ruft Listings und ausschließlich bestätigte
-   Reservierungen über die aktuelle Guesty-v3-Suche ab.
+   Reservierungen über die aktuelle Guesty-v3-Suche ab. Für ein leeres Zimmer
+   lädt sie zusätzlich gezielt nur die nächste spätere Reservierung.
 2. `keycode` wird zuerst direkt aus der Reservierung gelesen. Falls Guesty es
    als Custom Field zurückgibt, löst die Integration die Field-ID über die
    Account-Felddefinitionen auf.
@@ -173,9 +176,10 @@ Upload ist nicht erforderlich.
    Anzeigezeitraum geladen. Bleibt die Sprache unverändert, bleiben eigene
    Texte erhalten. Ein bewusster Sprachwechsel setzt die Textfelder auf die
    Vorlagen der neuen Sprache zurück, bevor sie individuell bearbeitet werden.
-6. Neben Überschrift und Begrüßung lassen sich auch die neutrale Seite sowie
-   die Beschriftungen für Türcode, WiFi, Name, Passwort und Check-out pro
-   Display frei bearbeiten.
+6. Neben Überschrift und Begrüßung lassen sich die Beschriftungen für Türcode,
+   WiFi, Name, Passwort und Check-out pro Display frei bearbeiten. Die
+   Checkout- und Leerzimmer-Seiten besitzen jeweils eine eigene
+   Konfigurationsseite.
 7. Optional eine Home-Assistant-`weather`-Entität für Wettersymbol und
    Außentemperatur auswählen.
 8. Für jedes weitere Display wiederholen.
@@ -202,10 +206,52 @@ Verfügbare Platzhalter für Begrüßungen:
 
 Der Standardtitel lautet `Willkommen, {first_name}!`.
 
+## Checkout-Seite konfigurieren
+
+Für jedes bereits zugeordnete Display gibt es unter **Konfigurieren →
+Checkout-Seite konfigurieren** eine eigene Seite. Sprache sowie EU-/US-Datums-
+und Zeitformat werden automatisch aus der Display-Zuordnung übernommen. Die
+Startzeit ist standardmäßig `05:00` am lokalen Checkout-Tag und kann pro
+Display geändert werden.
+
+Überschrift, Abschiedsnachricht, Überschrift der Anweisungen und ein Ersatztext
+für Listings ohne Anweisungen sind frei editierbar und werden dauerhaft pro
+Display gespeichert. Zusätzlich zu den Begrüßungsvariablen stehen
+`{check_out_date}` und `{check_out_time}` zur Verfügung. Bei einem bewussten
+Wechsel der Displaysprache werden auch diese Checkout-Texte mit den passenden
+deutschen, englischen, französischen oder spanischen Vorlagen neu befüllt.
+
+Die eigentlichen Checkout-Anweisungen liest GuestyTerminal aus dem vollständigen
+Guesty-Listing. Der Checkout-Modus zeigt weder Türcode noch WiFi-Daten. Wetter
+und globales Logo bleiben sichtbar. Nach Ablauf der konfigurierten
+Nachlaufzeit erscheint die Seite für das leere Zimmer.
+
+## Seite für ein leeres Zimmer konfigurieren
+
+Die dritte Seite wird unter **Konfigurieren → Seite für leeres Zimmer
+konfigurieren** pro Display eingestellt. Sie übernimmt automatisch die bereits
+gewählte Displaysprache sowie das EU-/US-Datums- und Zeitformat. Überschrift,
+Text für den Fall ohne weitere Buchung und die drei Notizüberschriften sind
+frei editierbar und bleiben beim erneuten Öffnen gespeichert. Ein bewusster
+Wechsel der Displaysprache setzt auch diese Texte auf die deutschen,
+englischen, französischen oder spanischen Vorlagen zurück.
+
+Wenn eine nächste bestätigte Buchung existiert, zeigt die Seite deren Vornamen
+und Zeitraum. Aus Guesty werden ausschließlich **General notes**, **Notes for
+cleaner** und **Special requests** übernommen. Leere Notizarten erzeugen kein
+Feld: Eine vorhandene Notiz nutzt die gesamte Breite, zwei Notizen werden in
+zwei gleich große Felder und drei Notizen in drei gleich große Felder verteilt.
+Ohne Notizen stehen Buchungsname und Zeitraum großzügig und vertikal
+ausgewogen. Die Seite hat keine Fußleiste und zeigt weder Türcode noch WiFi.
+
 ## Anzeige- und Sicherheitsverhalten
 
 - Der Gastbildschirm erscheint standardmäßig eine Stunde vor Check-in.
-- 30 Minuten nach Check-out wird er durch eine neutrale Seite ersetzt.
+- Am Checkout-Tag wechselt er ab der pro Display eingestellten Startzeit
+  standardmäßig um 05:00 Uhr auf die eigene Checkout-Seite.
+- 30 Minuten nach Check-out erscheint die Seite für das leere Zimmer mit der
+  nächsten bestätigten Buchung. Existiert keine, erscheint der konfigurierbare
+  Ersatztext.
 - Maßgeblich ist ausschließlich der Guesty-Reservierungsstatus `confirmed`.
   Zahlungsstatus, Zahlungseingang und Auszahlung durch Airbnb oder andere
   Buchungsportale werden bewusst nicht ausgewertet.
@@ -302,6 +348,14 @@ erneutes Kompilieren in der GuestyTerminal-Zuordnung geändert werden. Firmware
 **0.3.15** ergänzt die frei konfigurierbaren und pro Display lokalisierten
 Beschriftungen. Änderungen an diesen Texten werden anschließend dynamisch über
 Home Assistant übertragen und benötigen keine weitere Firmwarekompilierung.
+Firmware **0.3.16** ergänzt den lokalisierten Checkout-Tagesmodus mit eigener
+Konfigurationsseite und den im Guesty-Listing hinterlegten
+Checkout-Anweisungen. Nach der einmaligen Aktualisierung auf 0.3.16 können die
+Checkout-Texte und die Startzeit ohne erneute Firmwarekompilierung geändert
+werden. Firmware **0.3.17** ergänzt die dritte Seite für ein leeres Zimmer,
+die gezielte Suche nach der nächsten Buchung und die dynamischen Notizfelder.
+Nach der einmaligen Aktualisierung auf 0.3.17 können alle Texte dieser Seite
+über Home Assistant geändert werden, ohne erneut zu kompilieren.
 
 ## Datenschutz
 

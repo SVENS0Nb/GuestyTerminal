@@ -221,12 +221,25 @@ def test_templates_shortening_visibility_and_service_data() -> None:
     assert renewed.content_id == content_id
     assert replace(payload, door_code="different").content_id != content_id
     assert replace(payload, door_code_label="ACCESS").content_id != content_id
+    assert (
+        replace(payload, checkout_instructions="Close the windows").content_id
+        != content_id
+    )
     assert replace(payload, weather_temperature="19 °C").content_id != content_id
     assert (
         replace(payload, weather_temperature="19 °C").base_content_id
         == payload.base_content_id
     )
     assert not DisplayPayload.idle(listing).is_expired()
+    checkout_payload = replace(
+        payload,
+        mode="checkout",
+        checkout_instructions_title="CHECK-OUT",
+        checkout_instructions="Close the windows",
+    )
+    checkout_data = checkout_payload.as_service_data(include_checkout_page=True)
+    assert checkout_data["checkout_instructions_title"] == "CHECK-OUT"
+    assert checkout_data["checkout_instructions"] == "Close the windows"
     assert render_template("broken {", {}) == "broken {"
 
     hidden = build_display_payload(

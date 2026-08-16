@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -15,6 +16,7 @@ from custom_components.guesty_terminal.api import (
 )
 from custom_components.guesty_terminal.const import CONF_MAPPINGS, CONF_WEATHER_ENTITY
 from custom_components.guesty_terminal.coordinator import GuestyTerminalCoordinator
+from custom_components.guesty_terminal.models import DisplayPayload, Listing
 
 
 class FakeClient:
@@ -24,10 +26,12 @@ class FakeClient:
         self.listings = []
         self.full_listings = {}
         self.reservations = []
+        self.next_reservations = {}
         self.populated = {}
         self.definitions = {}
         self.listing_calls = []
         self.reservation_calls = []
+        self.next_reservation_calls = []
         self.custom_calls = []
         self.definition_calls = []
         self.guests = {}
@@ -48,6 +52,13 @@ class FakeClient:
     async def async_get_reservations(self, listing_ids):
         self.reservation_calls.append(listing_ids)
         return self.reservations
+
+    async def async_get_next_reservation(self, listing_id):
+        self.next_reservation_calls.append(listing_id)
+        value = self.next_reservations.get(listing_id, {})
+        if isinstance(value, Exception):
+            raise value
+        return value
 
     async def async_get_reservation_custom_fields(self, reservation_id):
         self.custom_calls.append(reservation_id)
@@ -98,6 +109,8 @@ def _coordinator(
     coordinator._keycode_cache = {}
     coordinator._custom_field_definitions = {}
     coordinator._guest_cache = {}
+    coordinator._listing_detail_cache = {}
+    coordinator._next_reservation_cache = {}
     coordinator._account_id = None
     return coordinator
 
@@ -161,6 +174,55 @@ def test_weather_values_round_temperature_and_tolerate_invalid_states() -> None:
     assert coordinator._weather_values(
         coordinator.mapping_options()[0].__class__("sensor.display", "listing-1")
     ) == ("", "")
+
+
+def test_live_weather_repairs_empty_cache_and_survives_temporary_outage() -> None:
+    endpoint = "sensor.display"
+    mapping = _mapping()
+    mapping[CONF_WEATHER_ENTITY] = "weather.home"
+    coordinator = _coordinator(
+        {CONF_MAPPINGS: {endpoint: mapping}},
+        states={
+            "weather.home": SimpleNamespace(
+                state="sunny",
+                attributes={"temperature": 21.6, "temperature_unit": "°C"},
+            )
+        },
+    )
+    cached = DisplayPayload(
+        mode="welcome",
+        property_name="LOFT",
+        welcome_title="Hallo Anna",
+        welcome_text="Willkommen",
+        door_code="4827",
+        wifi_name="WiFi",
+        wifi_password="secret",
+        checkout_label="morgen",
+        valid_until_epoch=4102444800,
+    )
+
+    repaired = coordinator.payload_with_current_weather(endpoint, cached)
+
+    assert repaired.weather_condition == "sunny"
+    assert repaired.weather_temperature == "22 °C"
+    assert repaired.content_id != cached.content_id
+    assert repaired.base_content_id == cached.base_content_id
+
+    coordinator.hass.states.states["weather.home"] = SimpleNamespace(
+        state="unavailable", attributes={}
+    )
+    assert coordinator.payload_with_current_weather(endpoint, repaired) is repaired
+
+    idle = DisplayPayload.idle(Listing("listing-1", "Loft"))
+    assert coordinator.payload_with_current_weather(endpoint, idle) is idle
+
+    checkout = replace(repaired, mode="checkout")
+    coordinator.hass.states.states["weather.home"] = SimpleNamespace(
+        state="rainy",
+        attributes={"temperature": 17, "temperature_unit": "°C"},
+    )
+    checkout_weather = coordinator.payload_with_current_weather(endpoint, checkout)
+    assert checkout_weather.weather_condition == "rainy"
 
 
 def test_keycode_resolution_uses_direct_values_and_cache() -> None:
@@ -243,6 +305,7 @@ def test_update_builds_payload_and_fetches_missing_listing_details() -> None:
         "timezone": "Europe/Berlin",
         "wifiName": "Guest WiFi",
         "wifiPassword": "secret",
+        "terms": {"checkoutInstructions": "Fenster schließen."},
     }
     client.reservations = [
         {
@@ -279,12 +342,16 @@ def test_update_builds_payload_and_fetches_missing_listing_details() -> None:
     assert client.listing_calls == ["listing-1"]
     assert client.reservation_calls == [["listing-1"]]
     assert data.listings["listing-1"].wifi_name == "Guest WiFi"
+    assert data.listings["listing-1"].checkout_instructions == "Fenster schließen."
     assert len(data.reservations) == 1
     assert data.payloads[endpoint].door_code == "4827"
     assert data.payloads[endpoint].welcome_title == "Hallo Anna"
     assert data.payloads[endpoint].weather_condition == "sunny"
     assert data.payloads[endpoint].weather_temperature == "22 °C"
     assert client.guest_calls == ["guest-1"]
+
+    asyncio.run(coordinator._async_update_data())
+    assert client.listing_calls == ["listing-1"]
 
 
 def test_update_skips_full_listing_when_wifi_exists_and_missing_mappings() -> None:
@@ -303,6 +370,82 @@ def test_update_skips_full_listing_when_wifi_exists_and_missing_mappings() -> No
     data = asyncio.run(coordinator._async_update_data())
     assert client.listing_calls == ["missing"]
     assert data.payloads == {}
+
+
+def test_update_fetches_and_caches_next_booking_for_empty_room_page() -> None:
+    endpoint = "sensor.display_guesty_terminal_endpoint"
+    client = FakeClient()
+    client.listings = [
+        {
+            "_id": "listing-1",
+            "title": "Loft",
+            "timezone": "Europe/Berlin",
+            "wifiName": "Guest WiFi",
+            "wifiPassword": "secret",
+            "checkoutInstructions": "Fenster schließen.",
+        }
+    ]
+    client.next_reservations["listing-1"] = {
+        "reservationId": "next-reservation",
+        "stay": [{"listingId": "listing-1"}],
+        "status": "confirmed",
+        "guestId": "guest-next",
+        "checkIn": "2099-09-10T14:00:00Z",
+        "checkOut": "2099-09-13T08:00:00Z",
+        "notes": {
+            "other": "Anreise mit Hund",
+            "cleaning": "Hundenapf bereitstellen",
+            "specialRequests": "Allergiker-Kissen",
+        },
+    }
+    client.guests["guest-next"] = {"firstName": "Mia", "lastName": "Muster"}
+    coordinator = _coordinator(
+        {CONF_MAPPINGS: {endpoint: _mapping()}},
+        client,
+    )
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    payload = data.payloads[endpoint]
+    assert payload.mode == "empty"
+    assert payload.next_booking_guest == "Mia"
+    assert "2099" in payload.next_booking_period
+    assert payload.general_notes == "Anreise mit Hund"
+    assert payload.cleaner_notes == "Hundenapf bereitstellen"
+    assert payload.special_requests == "Allergiker-Kissen"
+    assert client.next_reservation_calls == ["listing-1"]
+    assert client.guest_calls == ["guest-next"]
+    assert client.custom_calls == []
+
+    repeated = asyncio.run(coordinator._async_update_data())
+    assert repeated.payloads[endpoint].next_booking_guest == "Mia"
+    assert client.next_reservation_calls == ["listing-1"]
+    assert client.guest_calls == ["guest-next"]
+
+
+def test_next_booking_failure_keeps_empty_page_privacy_safe() -> None:
+    endpoint = "sensor.display_guesty_terminal_endpoint"
+    client = FakeClient()
+    client.listings = [
+        {
+            "_id": "listing-1",
+            "title": "Loft",
+            "wifiName": "WiFi",
+            "wifiPassword": "password",
+            "checkoutInstructions": "Fenster schließen.",
+        }
+    ]
+    client.next_reservations["listing-1"] = GuestyError("temporarily unavailable")
+    coordinator = _coordinator(
+        {CONF_MAPPINGS: {endpoint: _mapping()}},
+        client,
+    )
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert data.payloads[endpoint].mode == "idle"
+    assert data.payloads[endpoint].door_code == ""
+    assert data.payloads[endpoint].wifi_password == ""
 
 
 @pytest.mark.parametrize(
