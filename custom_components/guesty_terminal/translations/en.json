@@ -43,6 +43,13 @@
           "endpoint_entity": "reTerminal display"
         }
       },
+      "mapping_language": {
+        "title": "Choose display language",
+        "description": "The selected language pre-fills all guest-facing text in the next step. Changing the language replaces the text fields with the new language presets; you can then edit every field individually.",
+        "data": {
+          "display_language": "Display language"
+        }
+      },
       "mapping_details": {
         "title": "Edit display mapping",
         "description": "Existing settings are loaded from the selected display mapping.",
@@ -50,6 +57,13 @@
           "listing_id": "Guesty listing",
           "welcome_title": "Welcome heading",
           "welcome_text": "Welcome text",
+          "idle_title": "Heading without an active booking",
+          "idle_text": "Text without an active booking",
+          "door_code_label": "Door-code label",
+          "wifi_label": "WiFi label",
+          "wifi_name_label": "WiFi-name label",
+          "wifi_key_label": "WiFi-password label",
+          "checkout_label": "Check-out label",
           "date_time_format": "Date and time format",
           "lead_hours": "Show before check-in (hours)",
           "clear_after_minutes": "Continue after checkout (minutes)",
@@ -61,6 +75,8 @@
         "data_description": {
           "welcome_title": "Available variables: first_name, property_name, check_in, check_out",
           "welcome_text": "Line breaks are preserved on the display.",
+          "idle_text": "This text is shown when no booking is displayed.",
+          "checkout_label": "Enter only the label; date and time are added automatically.",
           "weather_entity": "Optional. Shows the current weather symbol and rounded outdoor temperature from this Home Assistant weather entity in the top-right corner."
         }
       },

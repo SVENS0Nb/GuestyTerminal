@@ -76,7 +76,7 @@ api:
             - delay: 1s
             - component.update: guesty_terminal_endpoint
   actions:
-    - action: guesty_terminal_update_display_v6
+    - action: guesty_terminal_update_display_v7
       variables:
         mode: string
         property_name: string
@@ -86,6 +86,13 @@ api:
         wifi_name: string
         wifi_password: string
         checkout_label: string
+        door_code_label: string
+        wifi_label: string
+        wifi_name_label: string
+        wifi_key_label: string
+        idle_title: string
+        idle_text: string
+        no_active_booking_label: string
         valid_until_epoch: int
         content_id: string
         base_content_id: string
@@ -97,7 +104,7 @@ api:
       then:
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            const bool renderer_current = id(guesty_render_revision) == 10;
+            const bool renderer_current = id(guesty_render_revision) == 12;
             id(guesty_content_changed) = force_redraw || content_id.empty()
                 || content_id != id(guesty_content_id)
                 || !renderer_current;
@@ -116,6 +123,13 @@ api:
             id(guesty_wifi_name) = wifi_name;
             id(guesty_wifi_password) = wifi_password;
             id(guesty_checkout_label) = checkout_label;
+            id(guesty_door_code_label) = door_code_label;
+            id(guesty_wifi_label) = wifi_label;
+            id(guesty_wifi_name_label) = wifi_name_label;
+            id(guesty_wifi_key_label) = wifi_key_label;
+            id(guesty_idle_title) = idle_title;
+            id(guesty_idle_text) = idle_text;
+            id(guesty_no_active_booking_label) = no_active_booking_label;
             id(guesty_logo_data) = logo_data;
             id(guesty_weather_condition) = weather_condition;
             id(guesty_weather_temperature) = weather_temperature;
@@ -172,7 +186,7 @@ api:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
-                        id(guesty_render_revision) = 10;
+                        id(guesty_render_revision) = 12;
                     - text_sensor.template.publish:
                         id: guesty_last_booking
                         state: !lambda |-
@@ -228,6 +242,35 @@ globals:
   - id: guesty_checkout_label
     type: std::string
     initial_value: '""'
+  - id: guesty_door_code_label
+    type: std::string
+    initial_value: '"TÜRCODE"'
+  - id: guesty_wifi_label
+    type: std::string
+    initial_value: '"WIFI"'
+  - id: guesty_wifi_name_label
+    type: std::string
+    initial_value: '"Name:"'
+  - id: guesty_wifi_key_label
+    type: std::string
+    initial_value: '"Key:"'
+  # The neutral screen copy is non-sensitive and survives deep sleep so a
+  # local privacy fallback keeps the display's configured language.
+  - id: guesty_idle_title
+    type: std::string
+    restore_value: true
+    max_restore_data_length: 48
+    initial_value: '"Willkommen"'
+  - id: guesty_idle_text
+    type: std::string
+    restore_value: true
+    max_restore_data_length: 160
+    initial_value: '"Die Unterkunft ist für den nächsten Aufenthalt bereit."'
+  - id: guesty_no_active_booking_label
+    type: std::string
+    restore_value: true
+    max_restore_data_length: 64
+    initial_value: '"Keine aktive Buchung"'
   - id: guesty_logo_data
     type: std::string
     initial_value: '""'
@@ -496,7 +539,7 @@ text_sensor:
     entity_category: diagnostic
     update_interval: never
     lambda: |-
-      std::string action = "${device_name}_guesty_terminal_update_display_v6";
+      std::string action = "${device_name}_guesty_terminal_update_display_v7";
       for (char &character : action) {
         if (character == '-') character = '_';
       }
@@ -652,6 +695,20 @@ display:
             return value.substr(0, prefix_end) + "…";
           };
 
+          const auto utf8_codepoints = [](const std::string &value) {
+            size_t count = 0;
+            for (const unsigned char character : value) {
+              if ((character & 0xC0) != 0x80) count++;
+            }
+            return count;
+          };
+
+          const auto detail_value_x = [&](const std::string &label) {
+            const size_t offset = std::min<size_t>(96,
+                12 + utf8_codepoints(label) * 9);
+            return 432 + static_cast<int>(offset);
+          };
+
           const auto draw_rounded_panel = [&](int x, int y, int width,
                                                int height, int radius) {
             const Color light_gray(85, 85, 85);
@@ -709,7 +766,8 @@ display:
           // Design 2: two equal, borderless access panels.
           if (!id(guesty_door_code).empty()) {
             draw_rounded_panel(32, 242, 360, 136, 12);
-            it.print(56, 260, id(guesty_font_label), "TÜRCODE");
+            it.print(56, 260, id(guesty_font_label),
+                     id(guesty_door_code_label).c_str());
             esphome::font::Font *code_font = id(guesty_door_code).size() > 8
                 ? id(guesty_font_door_code_small)
                 : id(guesty_font_door_code);
@@ -718,13 +776,18 @@ display:
 
           if (id(guesty_has_wifi)) {
             draw_rounded_panel(408, 242, 360, 136, 12);
-            it.print(432, 260, id(guesty_font_label), "WIFI");
-            it.print(432, 304, id(guesty_font_detail_bold), "Name:");
-            it.print(491, 304, id(guesty_font_detail),
+            it.print(432, 260, id(guesty_font_label),
+                     id(guesty_wifi_label).c_str());
+            it.print(432, 304, id(guesty_font_detail_bold),
+                     id(guesty_wifi_name_label).c_str());
+            it.print(detail_value_x(id(guesty_wifi_name_label)), 304,
+                     id(guesty_font_detail),
                      clipped(id(guesty_wifi_name), 15).c_str());
             if (!id(guesty_wifi_password).empty()) {
-              it.print(432, 334, id(guesty_font_detail_bold), "Key:");
-              it.print(475, 334, id(guesty_font_detail),
+              it.print(432, 334, id(guesty_font_detail_bold),
+                       id(guesty_wifi_key_label).c_str());
+              it.print(detail_value_x(id(guesty_wifi_key_label)), 334,
+                       id(guesty_font_detail),
                        clipped(id(guesty_wifi_password), 15).c_str());
             }
 
@@ -786,14 +849,26 @@ display:
           it.print(400, 135, id(guesty_font_property),
                    TextAlign::TOP_CENTER,
                    id(guesty_property_name).c_str());
-          it.print(400, 185, id(guesty_font_welcome),
-                   TextAlign::TOP_CENTER, "Willkommen");
+          esphome::font::Font *title_font = id(guesty_idle_title).size() > 24
+              ? id(guesty_font_welcome_small)
+              : id(guesty_font_welcome);
+          it.print(400, 185, title_font, TextAlign::TOP_CENTER,
+                   id(guesty_idle_title).c_str());
           it.line(220, 255, 580, 255);
-          it.print(400, 285, id(guesty_font_body),
-                   TextAlign::TOP_CENTER,
-                   "Die Unterkunft ist für den nächsten");
-          it.print(400, 315, id(guesty_font_body),
-                   TextAlign::TOP_CENTER, "Aufenthalt bereit.");
+          const std::string &body = id(guesty_idle_text);
+          size_t start = 0;
+          int line = 0;
+          while (start <= body.size() && line < 2) {
+            const size_t end = body.find('\n', start);
+            const std::string text = body.substr(
+                start, end == std::string::npos ? std::string::npos
+                                                : end - start);
+            it.print(400, 285 + line * 30, id(guesty_font_body),
+                     TextAlign::TOP_CENTER, text.c_str());
+            line++;
+            if (end == std::string::npos) break;
+            start = end + 1;
+          }
 
 deep_sleep:
   id: guesty_deep_sleep
@@ -842,9 +917,8 @@ interval:
                 then:
                   - lambda: |-
                       id(guesty_mode) = "idle";
-                      id(guesty_welcome_title) = "Willkommen";
-                      id(guesty_welcome_text) =
-                          "Die Unterkunft ist für den nächsten Aufenthalt bereit.";
+                      id(guesty_welcome_title) = id(guesty_idle_title);
+                      id(guesty_welcome_text) = id(guesty_idle_text);
                       id(guesty_door_code).clear();
                       id(guesty_wifi_name).clear();
                       id(guesty_wifi_password).clear();
@@ -866,7 +940,8 @@ interval:
                       then:
                         - text_sensor.template.publish:
                             id: guesty_last_booking
-                            state: "Keine aktive Buchung"
+                            state: !lambda |-
+                              return id(guesty_no_active_booking_label);
             - deep_sleep.enter: guesty_deep_sleep
       # On permanent power there is no next wake-up cycle. Enforce the payload
       # lease continuously so stale access data still disappears locally.
@@ -887,9 +962,8 @@ interval:
           then:
             - lambda: |-
                 id(guesty_mode) = "idle";
-                id(guesty_welcome_title) = "Willkommen";
-                id(guesty_welcome_text) =
-                    "Die Unterkunft ist für den nächsten Aufenthalt bereit.";
+                id(guesty_welcome_title) = id(guesty_idle_title);
+                id(guesty_welcome_text) = id(guesty_idle_text);
                 id(guesty_door_code).clear();
                 id(guesty_wifi_name).clear();
                 id(guesty_wifi_password).clear();
@@ -911,4 +985,5 @@ interval:
                 then:
                   - text_sensor.template.publish:
                       id: guesty_last_booking
-                      state: "Keine aktive Buchung"
+                      state: !lambda |-
+                        return id(guesty_no_active_booking_label);

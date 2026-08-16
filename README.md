@@ -166,12 +166,19 @@ Upload ist nicht erforderlich.
 2. In **Einstellungen → Geräte & Dienste → GuestyTerminal → Konfigurieren**
    gehen.
 3. **Listing einem Display zuordnen** wählen.
-4. Zuerst das reTerminal auswählen. Anschließend werden dessen bereits
-   gespeichertes Listing, Begrüßung und Anzeigezeitraum geladen und können
-   bearbeitet werden.
-5. Optional eine Home-Assistant-`weather`-Entität für Wettersymbol und
+4. Zuerst das reTerminal und danach dessen Displaysprache auswählen. Für neue
+   Zuordnungen wird Deutsch, Englisch, Französisch oder Spanisch passend zur
+   Home-Assistant-Systemsprache vorausgewählt.
+5. Anschließend werden das gespeicherte Listing, alle Texte und der
+   Anzeigezeitraum geladen. Bleibt die Sprache unverändert, bleiben eigene
+   Texte erhalten. Ein bewusster Sprachwechsel setzt die Textfelder auf die
+   Vorlagen der neuen Sprache zurück, bevor sie individuell bearbeitet werden.
+6. Neben Überschrift und Begrüßung lassen sich auch die neutrale Seite sowie
+   die Beschriftungen für Türcode, WiFi, Name, Passwort und Check-out pro
+   Display frei bearbeiten.
+7. Optional eine Home-Assistant-`weather`-Entität für Wettersymbol und
    Außentemperatur auswählen.
-6. Für jedes weitere Display wiederholen.
+8. Für jedes weitere Display wiederholen.
 
 Das Datums- und Zeitformat wird pro Display gespeichert. **EU** verwendet
 beispielsweise `17.08.2026 · 14:00 Uhr`, **US** dagegen
@@ -291,7 +298,10 @@ Teilrefresh benötigen Firmware **0.3.13** oder neuer. Firmware **0.3.14**
 rekonstruiert nach jedem Deep Sleep beide vollständigen Controller-RAM-Ebenen,
 bevor nur das Wetterfenster differentiell aktualisiert wird. Dadurch bleiben
 alle Pixel außerhalb des Teilfensters definiert. Die Wetterentität kann ohne
-erneutes Kompilieren in der GuestyTerminal-Zuordnung geändert werden.
+erneutes Kompilieren in der GuestyTerminal-Zuordnung geändert werden. Firmware
+**0.3.15** ergänzt die frei konfigurierbaren und pro Display lokalisierten
+Beschriftungen. Änderungen an diesen Texten werden anschließend dynamisch über
+Home Assistant übertragen und benötigen keine weitere Firmwarekompilierung.
 
 ## Datenschutz
 

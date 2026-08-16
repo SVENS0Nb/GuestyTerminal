@@ -16,15 +16,25 @@ from .const import (
     ACTIVE_RESERVATION_STATUSES,
     DATE_TIME_FORMAT_US,
     DATE_TIME_FORMATS,
+    DEFAULT_CHECKOUT_LABEL,
     DEFAULT_CLEAR_AFTER_MINUTES,
     DEFAULT_DATE_TIME_FORMAT,
+    DEFAULT_DISPLAY_LANGUAGE,
+    DEFAULT_DOOR_CODE_LABEL,
+    DEFAULT_IDLE_TEXT,
+    DEFAULT_IDLE_TITLE,
     DEFAULT_LEAD_HOURS,
+    DEFAULT_NO_ACTIVE_BOOKING_LABEL,
     DEFAULT_WELCOME_TEXT,
     DEFAULT_WELCOME_TITLE,
+    DEFAULT_WIFI_KEY_LABEL,
+    DEFAULT_WIFI_LABEL,
+    DEFAULT_WIFI_NAME_LABEL,
     DISPLAY_LEASE_MINUTES,
     MODE_IDLE,
     MODE_WELCOME,
 )
+from .localization import display_text_defaults, normalize_display_language
 
 _FIELD_NORMALIZER = re.compile(r"[^a-z0-9]+")
 
@@ -372,8 +382,16 @@ class MappingOptions:
 
     endpoint_entity: str
     listing_id: str
+    display_language: str = DEFAULT_DISPLAY_LANGUAGE
     welcome_title: str = DEFAULT_WELCOME_TITLE
     welcome_text: str = DEFAULT_WELCOME_TEXT
+    idle_title: str = DEFAULT_IDLE_TITLE
+    idle_text: str = DEFAULT_IDLE_TEXT
+    door_code_label: str = DEFAULT_DOOR_CODE_LABEL
+    wifi_label: str = DEFAULT_WIFI_LABEL
+    wifi_name_label: str = DEFAULT_WIFI_NAME_LABEL
+    wifi_key_label: str = DEFAULT_WIFI_KEY_LABEL
+    checkout_label: str = DEFAULT_CHECKOUT_LABEL
     date_time_format: str = DEFAULT_DATE_TIME_FORMAT
     lead_hours: int = DEFAULT_LEAD_HOURS
     clear_after_minutes: int = DEFAULT_CLEAR_AFTER_MINUTES
@@ -384,14 +402,36 @@ class MappingOptions:
     @classmethod
     def from_dict(cls, endpoint: str, data: Mapping[str, Any]) -> MappingOptions:
         """Create options with defaults for older stored entries."""
+        language = normalize_display_language(
+            data.get("display_language"), fallback=DEFAULT_DISPLAY_LANGUAGE
+        )
+        defaults = display_text_defaults(language)
         date_time_format = _string(data.get("date_time_format"))
         if date_time_format not in DATE_TIME_FORMATS:
             date_time_format = DEFAULT_DATE_TIME_FORMAT
         return cls(
             endpoint_entity=endpoint,
             listing_id=_string(data.get("listing_id")),
-            welcome_title=_string(data.get("welcome_title")) or DEFAULT_WELCOME_TITLE,
-            welcome_text=_string(data.get("welcome_text")) or DEFAULT_WELCOME_TEXT,
+            display_language=language,
+            welcome_title=(
+                _string(data.get("welcome_title")) or defaults.welcome_title
+            ),
+            welcome_text=_string(data.get("welcome_text")) or defaults.welcome_text,
+            idle_title=_string(data.get("idle_title")) or defaults.idle_title,
+            idle_text=_string(data.get("idle_text")) or defaults.idle_text,
+            door_code_label=(
+                _string(data.get("door_code_label")) or defaults.door_code_label
+            ),
+            wifi_label=_string(data.get("wifi_label")) or defaults.wifi_label,
+            wifi_name_label=(
+                _string(data.get("wifi_name_label")) or defaults.wifi_name_label
+            ),
+            wifi_key_label=(
+                _string(data.get("wifi_key_label")) or defaults.wifi_key_label
+            ),
+            checkout_label=(
+                _string(data.get("checkout_label")) or defaults.checkout_label
+            ),
             date_time_format=date_time_format,
             lead_hours=int(data.get("lead_hours", DEFAULT_LEAD_HOURS)),
             clear_after_minutes=int(
@@ -406,8 +446,16 @@ class MappingOptions:
         """Serialize options for a config entry."""
         return {
             "listing_id": self.listing_id,
+            "display_language": self.display_language,
             "welcome_title": self.welcome_title,
             "welcome_text": self.welcome_text,
+            "idle_title": self.idle_title,
+            "idle_text": self.idle_text,
+            "door_code_label": self.door_code_label,
+            "wifi_label": self.wifi_label,
+            "wifi_name_label": self.wifi_name_label,
+            "wifi_key_label": self.wifi_key_label,
+            "checkout_label": self.checkout_label,
             "date_time_format": self.date_time_format,
             "lead_hours": self.lead_hours,
             "clear_after_minutes": self.clear_after_minutes,
@@ -471,27 +519,63 @@ class DisplayPayload:
     wifi_password: str
     checkout_label: str
     valid_until_epoch: int
+    door_code_label: str = DEFAULT_DOOR_CODE_LABEL
+    wifi_label: str = DEFAULT_WIFI_LABEL
+    wifi_name_label: str = DEFAULT_WIFI_NAME_LABEL
+    wifi_key_label: str = DEFAULT_WIFI_KEY_LABEL
+    idle_title: str = DEFAULT_IDLE_TITLE
+    idle_text: str = DEFAULT_IDLE_TEXT
+    no_active_booking_label: str = DEFAULT_NO_ACTIVE_BOOKING_LABEL
     weather_condition: str = ""
     weather_temperature: str = ""
     booking_summary: str = ""
     reservation_id: str = field(default="", compare=False, repr=False)
 
     @classmethod
-    def idle(cls, listing: Listing) -> DisplayPayload:
+    def idle(
+        cls, listing: Listing, options: MappingOptions | None = None
+    ) -> DisplayPayload:
         """Return the neutral, non-sensitive screen."""
+        language = options.display_language if options is not None else None
+        defaults = display_text_defaults(language or DEFAULT_DISPLAY_LANGUAGE)
         return cls(
             mode=MODE_IDLE,
             property_name=_shorten(listing.display_name.upper(), 38),
-            welcome_title="Willkommen",
-            welcome_text="Die Unterkunft ist für den nächsten Aufenthalt bereit.",
+            welcome_title=_shorten(
+                options.idle_title if options else defaults.idle_title, 36
+            ),
+            welcome_text=_wrap_display_text(
+                options.idle_text if options else defaults.idle_text,
+                width=42,
+                maximum_lines=2,
+            ),
             door_code="",
             wifi_name="",
             wifi_password="",
             checkout_label="",
             valid_until_epoch=0,
+            door_code_label=(
+                options.door_code_label if options else defaults.door_code_label
+            ),
+            wifi_label=options.wifi_label if options else defaults.wifi_label,
+            wifi_name_label=(
+                options.wifi_name_label if options else defaults.wifi_name_label
+            ),
+            wifi_key_label=(
+                options.wifi_key_label if options else defaults.wifi_key_label
+            ),
+            idle_title=_shorten(
+                options.idle_title if options else defaults.idle_title, 36
+            ),
+            idle_text=_wrap_display_text(
+                options.idle_text if options else defaults.idle_text,
+                width=42,
+                maximum_lines=2,
+            ),
+            no_active_booking_label=defaults.no_active_booking,
             weather_condition="",
             weather_temperature="",
-            booking_summary="Keine aktive Buchung",
+            booking_summary=defaults.no_active_booking,
         )
 
     def is_expired(self, now: datetime | None = None) -> bool:
@@ -522,6 +606,10 @@ class DisplayPayload:
             self.wifi_name,
             self.wifi_password,
             self.checkout_label,
+            self.door_code_label,
+            self.wifi_label,
+            self.wifi_name_label,
+            self.wifi_key_label,
         ]
         if include_weather and (self.weather_condition or self.weather_temperature):
             visible_fields.extend((self.weather_condition, self.weather_temperature))
@@ -536,6 +624,7 @@ class DisplayPayload:
         include_content_id: bool = False,
         include_booking_summary: bool = False,
         include_weather: bool = False,
+        include_labels: bool = False,
     ) -> dict[str, Any]:
         """Return the exact ESPHome action payload."""
         data = {
@@ -556,6 +645,14 @@ class DisplayPayload:
         if include_weather:
             data["weather_condition"] = self.weather_condition
             data["weather_temperature"] = self.weather_temperature
+        if include_labels:
+            data["door_code_label"] = self.door_code_label
+            data["wifi_label"] = self.wifi_label
+            data["wifi_name_label"] = self.wifi_name_label
+            data["wifi_key_label"] = self.wifi_key_label
+            data["idle_title"] = self.idle_title
+            data["idle_text"] = self.idle_text
+            data["no_active_booking_label"] = self.no_active_booking_label
         return data
 
 
@@ -616,11 +713,14 @@ def build_display_payload(
         clear_after_minutes=options.clear_after_minutes,
     )
     if reservation is None:
-        return DisplayPayload.idle(listing)
+        return DisplayPayload.idle(listing, options)
 
     zone = _timezone(listing.timezone)
     check_in_local = reservation.check_in.astimezone(zone)
     checkout_local = reservation.check_out.astimezone(zone)
+    language = normalize_display_language(options.display_language)
+    defaults = display_text_defaults(language)
+    checkout_prefix = _shorten(options.checkout_label, 18)
     if options.date_time_format == DATE_TIME_FORMAT_US:
         check_in_display = check_in_local.strftime("%m/%d/%Y · %I:%M %p").replace(
             "· 0", "· "
@@ -628,7 +728,7 @@ def build_display_payload(
         check_out_display = checkout_local.strftime("%m/%d/%Y · %I:%M %p").replace(
             "· 0", "· "
         )
-        checkout_label = checkout_local.strftime("Check-out: %m/%d - %I:%M %p").replace(
+        checkout_value = checkout_local.strftime("%m/%d - %I:%M %p").replace(
             "- 0", "- "
         )
         booking_check_in = check_in_local.strftime("%m/%d/%Y %I:%M %p").replace(
@@ -638,11 +738,22 @@ def build_display_payload(
             " 0", " "
         )
     else:
-        check_in_display = check_in_local.strftime("%d.%m.%Y · %H:%M Uhr")
-        check_out_display = checkout_local.strftime("%d.%m.%Y · %H:%M Uhr")
-        checkout_label = checkout_local.strftime("Check-out: %d.%m. - %H:%M Uhr")
+        date_pattern = "%d.%m.%Y" if language == "de" else "%d/%m/%Y"
+        short_date_pattern = "%d.%m." if language == "de" else "%d/%m"
+        time_suffix = " Uhr" if language == "de" else ""
+        check_in_display = check_in_local.strftime(
+            f"{date_pattern} · %H:%M{time_suffix}"
+        )
+        check_out_display = checkout_local.strftime(
+            f"{date_pattern} · %H:%M{time_suffix}"
+        )
+        checkout_value = checkout_local.strftime(
+            f"{short_date_pattern} - %H:%M{time_suffix}"
+        )
         booking_check_in = check_in_local.strftime("%d.%m.%Y %H:%M")
         booking_check_out = checkout_local.strftime("%d.%m.%Y %H:%M")
+
+    checkout_label = f"{checkout_prefix} {checkout_value}".strip()
 
     values = {
         "first_name": reservation.first_name,
@@ -677,6 +788,13 @@ def build_display_payload(
         wifi_password=_shorten(listing.wifi_password, 64) if options.show_wifi else "",
         checkout_label=checkout_label,
         valid_until_epoch=int(visible_until.timestamp()),
+        door_code_label=_shorten(options.door_code_label, 24),
+        wifi_label=_shorten(options.wifi_label, 16),
+        wifi_name_label=_shorten(options.wifi_name_label, 12),
+        wifi_key_label=_shorten(options.wifi_key_label, 12),
+        idle_title=_shorten(options.idle_title, 36),
+        idle_text=_wrap_display_text(options.idle_text, width=42, maximum_lines=2),
+        no_active_booking_label=defaults.no_active_booking,
         weather_condition=_shorten(_string(weather_condition).lower(), 32),
         weather_temperature=_shorten(_string(weather_temperature), 16),
         booking_summary=_shorten(
