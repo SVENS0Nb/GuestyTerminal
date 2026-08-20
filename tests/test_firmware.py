@@ -65,7 +65,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.23") == 2
+    assert rendered.count("ref: v0.3.24") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
@@ -214,7 +214,7 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert package.count("deep_sleep.enter: guesty_deep_sleep") == 2
     assert "sleep_duration: ${battery_sleep_duration}" in package
     assert "id: guesty_read_external_power" in package
-    assert "id(guesty_external_power).publish_state((status & 0x04) != 0)" in package
+    assert "id(guesty_external_power).publish_state(true)" in package
     gray_driver_path = (
         Path(__file__).parents[1]
         / "esphome"
@@ -254,6 +254,54 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "this->panel_asleep_ = powered_off" in driver
     header = driver_path.with_suffix(".h").read_text(encoding="utf-8")
     assert "bool last_update_successful() const" in header
+
+
+def test_battery_wake_cycle_requires_confirmed_vbus_and_cannot_wake_loop() -> None:
+    package = PACKAGE_FILE.read_text(encoding="utf-8")
+
+    power_start = package.index("  - id: guesty_read_external_power\n")
+    power_end = package.index("\nfont:\n", power_start)
+    power_script = package[power_start:power_end]
+    assert "count: 3" in power_script
+    assert "const bool power_good = (status & 0x04) != 0" in power_script
+    assert "const uint8_t bus_status = (status >> 5) & 0x07" in power_script
+    assert "bus_status == 0x01 || bus_status == 0x03" in power_script
+    assert "id(guesty_external_power_valid_reads) == 3" in power_script
+    assert "id(guesty_external_power_invalid_batches) >= 2" in power_script
+    assert "publish_state(true)" in power_script
+    assert "publish_state(false)" in power_script
+    assert "publish_state((status & 0x04) != 0)" not in power_script
+
+    action_start = package.index("    - action: guesty_terminal_update_display_v9\n")
+    globals_start = package.index("\nglobals:\n", action_start)
+    action = package[action_start:globals_start]
+    final_power_read = action.rindex(
+        "        - script.execute: guesty_read_external_power\n"
+    )
+    sleep_decision = action.rindex(
+        '                const std::string profile = "${power_mode}";\n'
+    )
+    assert final_power_read < sleep_decision
+
+    deep_sleep_start = package.index("\ndeep_sleep:\n")
+    interval_start = package.index("\ninterval:\n", deep_sleep_start)
+    deep_sleep = package[deep_sleep_start:interval_start]
+    assert "wakeup_pin:\n" in deep_sleep
+    assert "number: GPIO3" in deep_sleep
+    assert "inverted: true" in deep_sleep
+    assert "wakeup_pin_mode: INVERT_WAKEUP" in deep_sleep
+    assert "esp32_ext1_wakeup" not in deep_sleep
+
+    green_start = package.index("    id: guesty_button_green\n")
+    middle_start = package.index(
+        "  - platform: gpio\n    id: guesty_button_middle", green_start
+    )
+    green_button = package[green_start:middle_start]
+    assert "on_press:" not in green_button
+
+    interval = package[interval_start:]
+    assert "id(guesty_update_received_this_boot)" in interval
+    assert "static_cast<uint32_t>(${awake_duration_seconds})" in interval
 
 
 def test_partial_refresh_rehydrates_both_complete_controller_planes() -> None:
@@ -329,7 +377,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.23", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.24", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -341,8 +389,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.23") == 2
-    assert 'version: "0.3.23"' in updated
+    assert updated.count("ref: v0.3.24") == 2
+    assert 'version: "0.3.24"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -359,13 +407,13 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.23", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.24", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.23", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.24", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")

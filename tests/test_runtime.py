@@ -26,6 +26,7 @@ from custom_components.guesty_terminal.runtime import (
 )
 
 ENDPOINT = "sensor.guestyterminal_display_1_guesty_terminal_endpoint"
+SECOND_ENDPOINT = "sensor.guestyterminal_display_2_guesty_terminal_endpoint"
 ACTION = "guestyterminal_display_1_guesty_terminal_update_display"
 ACTION_V2 = "guestyterminal_display_1_guesty_terminal_update_display_v2"
 ACTION_V3 = "guestyterminal_display_1_guesty_terminal_update_display_v3"
@@ -35,6 +36,7 @@ ACTION_V6 = "guestyterminal_display_1_guesty_terminal_update_display_v6"
 ACTION_V7 = "guestyterminal_display_1_guesty_terminal_update_display_v7"
 ACTION_V8 = "guestyterminal_display_1_guesty_terminal_update_display_v8"
 ACTION_V9 = "guestyterminal_display_1_guesty_terminal_update_display_v9"
+SECOND_ACTION_V9 = "guestyterminal_display_2_guesty_terminal_update_display_v9"
 
 
 class FakeServices:
@@ -58,6 +60,7 @@ class FakeServices:
                 ACTION_V7,
                 ACTION_V8,
                 ACTION_V9,
+                SECOND_ACTION_V9,
             )
         )
 
@@ -68,11 +71,12 @@ class FakeServices:
 
 
 class FakeStates:
-    def __init__(self, state=None) -> None:
+    def __init__(self, state=None, states=None) -> None:
         self.state = state
+        self.states = states or {}
 
-    def get(self, _entity_id):
-        return self.state
+    def get(self, entity_id):
+        return self.states.get(entity_id, self.state)
 
 
 class FakeHass:
@@ -423,6 +427,34 @@ def test_v3_push_all_uses_the_same_global_logo_for_every_display() -> None:
     assert {call[2]["logo_data"] for call in hass.services.calls} == {logo_data}
 
 
+def test_push_all_routes_each_payload_to_its_own_display_action() -> None:
+    first_listing = Listing("listing-1", "Loft One")
+    second_listing = Listing("listing-2", "Loft Two")
+    first_payload = DisplayPayload.idle(first_listing)
+    second_payload = DisplayPayload.idle(second_listing)
+    runtime, hass, coordinator = _runtime(state=None, payload=first_payload)
+    coordinator.data.payloads[SECOND_ENDPOINT] = second_payload
+    coordinator.data.listings[second_listing.listing_id] = second_listing
+    coordinator._mappings.append(
+        MappingOptions(SECOND_ENDPOINT, second_listing.listing_id)
+    )
+    hass.states.states = {
+        ENDPOINT: SimpleNamespace(state=ACTION_V9),
+        SECOND_ENDPOINT: SimpleNamespace(state=SECOND_ACTION_V9),
+    }
+
+    asyncio.run(runtime.async_push_all())
+
+    sent_by_action = {
+        action: data["property_name"]
+        for _domain, action, data, _blocking in hass.services.calls
+    }
+    assert sent_by_action == {
+        ACTION_V9: "LOFT ONE",
+        SECOND_ACTION_V9: "LOFT TWO",
+    }
+
+
 def test_force_redraw_uses_empty_v2_content_id() -> None:
     runtime, hass, _coordinator = _runtime(state=ACTION_V2)
     assert asyncio.run(runtime.async_force_redraw_endpoint(ENDPOINT))
@@ -562,6 +594,31 @@ def test_clear_endpoint_all_and_removed_entry() -> None:
 
     entry.options = {CONF_MAPPINGS: []}
     asyncio.run(async_clear_configured_displays(hass, entry))
+
+
+def test_removed_duplicate_entry_never_clears_another_accounts_display() -> None:
+    unique_endpoint = "sensor.unique_guesty_terminal_endpoint"
+    runtime, hass, _ = _runtime()
+    del runtime
+    entry = SimpleNamespace(
+        entry_id="entry-removed",
+        options={
+            CONF_MAPPINGS: {
+                ENDPOINT: {"listing_id": "listing-1"},
+                unique_endpoint: {"listing_id": "listing-2"},
+            }
+        },
+    )
+    other = SimpleNamespace(
+        entry_id="entry-owner",
+        options={CONF_MAPPINGS: {ENDPOINT: {"listing_id": "listing-3"}}},
+    )
+    hass.config_entries = SimpleNamespace(async_entries=lambda _domain: [entry, other])
+
+    asyncio.run(async_clear_configured_displays(hass, entry))
+
+    assert len(hass.services.calls) == 1
+    assert hass.services.calls[0][2]["mode"] == "idle"
 
 
 def test_start_stop_and_callbacks(monkeypatch) -> None:

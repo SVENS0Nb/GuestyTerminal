@@ -50,10 +50,15 @@ esphome:
         - output.turn_off: guesty_battery_enable
         - pcf8563.read_time:
         - component.update: guesty_environment
-    - priority: -100
+    # Establish the cable state before WiFi/API can deliver a payload. A late
+    # first reading could otherwise make an auto-mode device on USB take the
+    # fail-safe battery path during a very fast Home Assistant reconnect.
+    - priority: 500
       then:
         - script.execute: guesty_read_external_power
         - script.wait: guesty_read_external_power
+    - priority: -100
+      then:
         - delay: 500ms
         - component.update: guesty_terminal_endpoint
 
@@ -263,6 +268,11 @@ api:
                   state: !lambda |-
                     return booking_summary;
               - delay: 1200ms
+        # Re-read VBUS immediately before deciding the post-sync power state.
+        # This keeps a newly connected cable online and sends a just-unplugged
+        # device back to sleep without relying on a stale boot-time sample.
+        - script.execute: guesty_read_external_power
+        - script.wait: guesty_read_external_power
         - if:
             condition:
               lambda: |-
@@ -429,20 +439,64 @@ globals:
   - id: guesty_update_received_this_boot
     type: bool
     initial_value: "false"
+  # Volatile confidence counter for the charger status. External power is
+  # accepted only after three complete, consistent REG08 samples.
+  - id: guesty_external_power_valid_reads
+    type: uint8_t
+    initial_value: "0"
+  # A previously confirmed cable survives one failed measurement group. This
+  # avoids sleeping on USB because of a transient I2C error while still
+  # detecting an actual unplug within two 15-second checks.
+  - id: guesty_external_power_invalid_batches
+    type: uint8_t
+    initial_value: "0"
 
 script:
   - id: guesty_read_external_power
     mode: restart
     then:
+      - lambda: id(guesty_external_power_valid_reads) = 0;
+      - repeat:
+          count: 3
+          then:
+            - lambda: |-
+                uint8_t reg = 0x08;
+                uint8_t status = 0;
+                const auto error = id(guesty_power_i2c)->write_readv(
+                    0x6B, &reg, 1, &status, 1);
+                if (error != esphome::i2c::ERROR_OK) {
+                  return;
+                }
+
+                // PG_STAT alone is not sufficient: BUS_STAT must also name
+                // a real external input. 001 is a USB host and 011 an
+                // adapter; 000 is no input and 111 is battery-powered OTG.
+                const bool power_good = (status & 0x04) != 0;
+                const uint8_t bus_status = (status >> 5) & 0x07;
+                if (power_good && (bus_status == 0x01 || bus_status == 0x03)) {
+                  id(guesty_external_power_valid_reads)++;
+                }
+            - delay: 25ms
       - lambda: |-
-          uint8_t reg = 0x08;
-          uint8_t status = 0;
-          const auto error = id(guesty_power_i2c)->write_readv(
-              0x6B, &reg, 1, &status, 1);
-          if (error == esphome::i2c::ERROR_OK) {
-            id(guesty_external_power).publish_state((status & 0x04) != 0);
-          } else {
-            // Fail safe to battery behavior when the charger cannot be read.
+          const bool batch_confirmed =
+              id(guesty_external_power_valid_reads) == 3;
+          if (batch_confirmed) {
+            id(guesty_external_power_invalid_batches) = 0;
+            id(guesty_external_power).publish_state(true);
+            return;
+          }
+
+          if (id(guesty_external_power_invalid_batches) < 2) {
+            id(guesty_external_power_invalid_batches)++;
+          }
+          const bool was_confirmed =
+              id(guesty_external_power).has_state()
+              && id(guesty_external_power).state;
+          if (!was_confirmed
+              || id(guesty_external_power_invalid_batches) >= 2) {
+            // Failed, inconsistent or unsupported charger responses fail
+            // safe to battery behavior. A confirmed cable gets one retry so
+            // a single I2C glitch cannot put a USB-powered device to sleep.
             id(guesty_external_power).publish_state(false);
           }
 
@@ -576,7 +630,7 @@ i2c:
     scl: GPIO20
     sda: GPIO19
   # The E1001 power schematic connects the SY6974B charger at 0x6B to this
-  # separate bus. REG08.PG_STAT provides reliable USB/VBUS detection.
+  # separate bus. REG08.PG_STAT and BUS_STAT together identify USB/VBUS.
   - id: guesty_power_i2c
     scl: GPIO40
     sda: GPIO39
@@ -1258,12 +1312,14 @@ display:
 deep_sleep:
   id: guesty_deep_sleep
   sleep_duration: ${battery_sleep_duration}
-  esp32_ext1_wakeup:
-    pins:
-      - number: GPIO3
-        allow_other_uses: true
-        mode: INPUT_PULLUP
-    mode: ANY_LOW
+  wakeup_pin:
+    number: GPIO3
+    allow_other_uses: true
+    mode: INPUT_PULLUP
+    inverted: true
+  # If sleep begins while the momentary button is still held, invert the next
+  # wake edge instead of immediately waking in a battery-draining loop.
+  wakeup_pin_mode: INVERT_WAKEUP
 
 interval:
   # On battery this runs once during boot before deep sleep. While USB power
@@ -1291,8 +1347,10 @@ interval:
                       && (!id(guesty_external_power).has_state()
                           || !id(guesty_external_power).state));
               return battery_mode
-                  && millis() >= static_cast<uint32_t>(${awake_duration_seconds})
-                      * 1000UL;
+                  && (id(guesty_update_received_this_boot)
+                      || millis()
+                          >= static_cast<uint32_t>(${awake_duration_seconds})
+                              * 1000UL);
           then:
             - if:
                 condition:

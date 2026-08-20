@@ -37,15 +37,23 @@ installiert daraus die Firmware.
 
 ## Architektur
 
-1. Die Custom Integration ruft Listings und ausschließlich bestätigte
-   Reservierungen über die aktuelle Guesty-v3-Suche ab. Für ein leeres Zimmer
-   lädt sie zusätzlich gezielt nur die nächste spätere Reservierung.
+1. Die Custom Integration gleicht Guesty standardmäßig alle fünf Minuten ab.
+   Neben laufenden und gerade beendeten Aufenthalten lädt sie pro zugeordnetem
+   Listing immer mindestens die nächsten fünf bestätigten Reservierungen. Der
+   lokale RAM-Snapshot wird nur ersetzt, wenn eine Buchung hinzugekommen,
+   geändert oder aus der bestätigten Ergebnismenge verschwunden ist.
+   Abgeschlossene Buchungen bleiben noch zwölf Stunden nach Check-out im Cache.
 2. `keycode` wird zuerst direkt aus der Reservierung gelesen. Falls Guesty es
    als Custom Field zurückgibt, löst die Integration die Field-ID über die
    Account-Felddefinitionen auf.
 3. Jedes E1001 veröffentlicht in Home Assistant eine diagnostische Entität
    namens `GuestyTerminal Endpoint`.
 4. In den Optionen der Integration wird diese Entität einem Listing zugeordnet.
+   Mehrere Displays dürfen dasselbe Listing verwenden; GuestyTerminal lädt den
+   gemeinsamen Buchungssnapshot nur einmal und erzeugt anschließend für jedes
+   Display einen eigenen Payload mit dessen Texten, Sprache, Zeitformat,
+   Wetterauswahl und Sichtbarkeitseinstellungen. Bei verschiedenen Listings
+   bleiben Reservierungen, Zugangsdaten und Notizen strikt getrennt.
 5. Wenn das E1001 aufwacht, überträgt Home Assistant die aktuellen Daten über
    eine ESPHome Native-API-Aktion. Dazu gehört auch das einmal zentral gewählte
    Logo. Das Gerät zeichnet nur dann neu, wenn sich der sichtbare Inhalt
@@ -197,6 +205,12 @@ Die Symbole stammen aus dem fest auf Version 7.4.47 gesetzten
 [Material-Design-Icons-Wetterset](https://pictogrammers.com/library/mdi/). In die
 Firmware werden nur die tatsächlich benötigten Wetterglyphen eingebaut.
 
+Ein physisches Display kann immer nur einem Guesty-Konto gleichzeitig gehören.
+Die Konfiguration blendet bereits anderweitig zugeordnete Endpunkte aus. Auch
+alte doppelte Zuordnungen werden beim Laden blockiert; das Entfernen einer
+solchen Alt-Zuordnung darf das vom anderen Konto verwaltete Display nicht
+leeren.
+
 Verfügbare Platzhalter für Begrüßungen:
 
 - `{first_name}`
@@ -261,19 +275,37 @@ Symbol folgt ihm in Zehn-Prozent-Stufen.
 - Maßgeblich ist ausschließlich der Guesty-Reservierungsstatus `confirmed`.
   Zahlungsstatus, Zahlungseingang und Auszahlung durch Airbnb oder andere
   Buchungsportale werden bewusst nicht ausgewertet.
-- Im empfohlenen Modus **Automatisch** liest die Firmware den Power-Good-Status
-  des E1001-v1.2-Ladecontrollers aus. Auf Akku schläft das Gerät 30 Minuten und
-  bleibt nach dem Aufwachen höchstens 90 Sekunden aktiv. Sobald Home Assistant
-  die aktuellen Daten geliefert hat, schläft es früher wieder ein. Falls ein
-  älterer Hardwarestand USB-Strom nicht erkennt, kann im Assistenten **Immer
-  online** ausgewählt werden.
+- Home Assistant fragt Guesty standardmäßig alle fünf Minuten ab und hält pro
+  zugeordnetem Listing die fünf nächsten bestätigten Buchungen im RAM. Neue,
+  geänderte und stornierte Buchungen werden durch einen vollständigen
+  Snapshot-Abgleich erkannt. Ist der normalisierte Snapshot identisch, bleibt
+  der Buchungscache unverändert und das E-Paper wird nicht neu gezeichnet. Die
+  separat übertragene 15-Minuten-Freigabe kann aus Datenschutzgründen trotzdem
+  erneuert werden; sie verändert den sichtbaren Inhaltsfingerabdruck nicht.
+  Abgeschlossene Buchungen werden erst zwölf Stunden nach Check-out aus diesem
+  RAM-Cache entfernt; die sichtbare Nachlaufzeit des Displays bleibt davon
+  unabhängig standardmäßig bei 30 Minuten.
+- Im empfohlenen Modus **Automatisch** bestätigt die Firmware USB-Strom durch
+  drei konsistente Power-Good- und USB-/Adapterstatus-Messungen des
+  E1001-v1.2-Ladecontrollers. Fehlerhafte, widersprüchliche oder nicht
+  unterstützte Antworten werden sicher als Akkubetrieb behandelt. Auf Akku
+  schläft das Gerät 30 Minuten und bleibt nach dem Aufwachen höchstens 90
+  Sekunden aktiv. Sobald Home Assistant die aktuellen Daten geliefert hat,
+  schläft es früher wieder ein. Falls ein älterer Hardwarestand USB-Strom nicht
+  erkennt, kann im Assistenten **Immer online** ausgewählt werden.
 - Bei angeschlossenem USB-Strom bleibt das Gerät online. Wird der Strom später
-  getrennt, wechselt es automatisch beim nächsten 15-Sekunden-Test in den
-  Akkubetrieb. Im Akkubetrieb schläft es für das konfigurierte Intervall –
-  standardmäßig 30 Minuten – vollständig. Wird währenddessen USB angeschlossen,
-  erkennt das Gerät dies beim nächsten regulären Aufwachen und bleibt danach
-  online.
-- Die grüne Taste kann das Gerät zusätzlich aus dem Deep Sleep wecken.
+  getrennt, wechselt es nach spätestens zwei aufeinanderfolgenden
+  15-Sekunden-Tests in den Akkubetrieb; eine einzelne gestörte I²C-Messung kann
+  ein tatsächlich über USB versorgtes Gerät dadurch nicht schlafen schicken.
+  Im Akkubetrieb schläft es für das konfigurierte Intervall – standardmäßig 30
+  Minuten – vollständig. Wird währenddessen USB angeschlossen, erkennt das
+  Gerät dies beim nächsten regulären Aufwachen und bleibt danach online.
+- Die grüne Taste kann das Gerät zusätzlich aus dem Deep Sleep wecken. Ohne
+  USB-Verbindung führt dieser Tasten-Wakeup genau wie der regelmäßige Zyklus
+  einen kurzen Abgleich aus und kehrt danach in den Deep Sleep zurück. Während
+  das Gerät bereits wach ist, ändert die Taste weder Betriebsmodus noch
+  Wachzeit. Ein beim Einschlafen noch gehaltener Taster kann keine Schleife aus
+  Deep Sleep und sofortigem Wiederaufwachen erzeugen.
 - GPIO-Status-LED, Lade-LED-Ausgang, Buzzer und Mikrofon-Stromversorgung werden
   von der Firmware deaktiviert. Nach einem vollständigen stromlosen Neustart
   kann die hardwaregesteuerte Lade-LED bis zum Start der Firmware sehr kurz
@@ -411,6 +443,19 @@ Mittellinie zentriert und besitzen eine vergleichbare sichtbare Höhe. Der
 dynamische Füllstand und der sichere partielle Header-Refresh bleiben erhalten.
 Nach dem HACS-Update muss die Display-Firmware einmalig auf 0.3.23 aktualisiert
 werden.
+
+Version **0.3.24** gleicht Guesty standardmäßig alle fünf Minuten mit einem
+lokalen, pro Listing getrennten RAM-Snapshot ab. Neben laufenden Aufenthalten
+werden mindestens die nächsten fünf bestätigten Buchungen erfasst;
+Neuzugänge, Änderungen und Stornierungen werden ohne unnötigen E-Paper-Refresh
+abgeglichen. Abgeschlossene Buchungen bleiben zwölf Stunden nach Check-out im
+Cache, ohne die konfigurierte sichtbare Nachlaufzeit zu verlängern. Mehrere
+Displays desselben Listings erhalten getrennte, endpunktspezifische Payloads;
+Daten verschiedener Listings und Guesty-Konten werden nicht vermischt. Die
+Firmware stabilisiert außerdem die USB-/Akkuerkennung und stellt sicher, dass
+ein Aufwachen über die grüne Taste auf Akku nach dem kurzen Abgleich wieder in
+den Deep Sleep zurückkehrt. Nach dem HACS-Update muss die Display-Firmware für
+diese Energie-Korrekturen einmalig auf 0.3.24 aktualisiert werden.
 
 ## Datenschutz
 
