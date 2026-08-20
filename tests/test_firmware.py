@@ -65,7 +65,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.24") == 2
+    assert rendered.count("ref: v0.3.25") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
@@ -212,6 +212,13 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "guesty_enter_battery_sleep" not in package
     assert "guesty_power_wake" not in package
     assert package.count("deep_sleep.enter: guesty_deep_sleep") == 2
+    assert package.count("safe_mode.mark_successful") == 2
+    search_from = 0
+    for _ in range(2):
+        mark_success = package.index("- safe_mode.mark_successful", search_from)
+        sleep = package.index("- deep_sleep.enter: guesty_deep_sleep", mark_success)
+        assert sleep - mark_success < 100
+        search_from = sleep + 1
     assert "sleep_duration: ${battery_sleep_duration}" in package
     assert "id: guesty_read_external_power" in package
     assert "id(guesty_external_power).publish_state(true)" in package
@@ -377,7 +384,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.24", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.25", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -389,8 +396,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.24") == 2
-    assert 'version: "0.3.24"' in updated
+    assert updated.count("ref: v0.3.25") == 2
+    assert 'version: "0.3.25"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -407,13 +414,13 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.24", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.25", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.24", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.25", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")

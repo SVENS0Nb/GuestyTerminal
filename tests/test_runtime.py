@@ -660,12 +660,78 @@ def test_start_stop_and_callbacks(monkeypatch) -> None:
     assert callbacks["delay"] == 2
     callbacks["later"](datetime.now(UTC))
     assert len(hass.tasks) == 1
+    assert ENDPOINT in runtime._pending_endpoint_pushes
 
     coordinator.listener()
     assert len(hass.tasks) == 2
     asyncio.run(runtime.async_stop())
     assert runtime._unsubscribers == []
     assert "state" in unsubscribed
+    assert runtime._pending_endpoint_pushes == set()
+
+
+def test_reconnect_push_retries_until_esphome_action_is_registered(
+    monkeypatch,
+) -> None:
+    runtime, _hass, _coordinator = _runtime(state=ACTION_V9)
+    attempts = 0
+    delays = []
+
+    async def push(_runtime, _endpoint):
+        nonlocal attempts
+        attempts += 1
+        return attempts == 3
+
+    async def no_wait(delay):
+        delays.append(delay)
+
+    monkeypatch.setattr(GuestyTerminalRuntime, "async_push_endpoint", push)
+    monkeypatch.setattr(asyncio, "sleep", no_wait)
+    runtime._pending_endpoint_pushes.add(ENDPOINT)
+
+    assert asyncio.run(runtime._async_push_endpoint_with_retry(ENDPOINT))
+    assert attempts == 3
+    assert delays == [1.0, 2.0]
+    assert ENDPOINT not in runtime._pending_endpoint_pushes
+
+
+def test_reconnect_push_stops_when_forced_sync_takes_ownership(monkeypatch) -> None:
+    runtime, _hass, _coordinator = _runtime(state=ACTION_V9)
+    attempts = 0
+
+    async def push(_runtime, _endpoint):
+        nonlocal attempts
+        attempts += 1
+        return True
+
+    monkeypatch.setattr(GuestyTerminalRuntime, "async_push_endpoint", push)
+    runtime._pending_endpoint_pushes.add(ENDPOINT)
+    runtime._sync_requests.add(ENDPOINT)
+
+    assert not asyncio.run(runtime._async_push_endpoint_with_retry(ENDPOINT))
+    assert attempts == 0
+    assert ENDPOINT not in runtime._pending_endpoint_pushes
+
+
+def test_reconnect_retry_yields_to_sync_requested_during_backoff(monkeypatch) -> None:
+    runtime, _hass, _coordinator = _runtime(state=ACTION_V9)
+    attempts = 0
+
+    async def push(_runtime, _endpoint):
+        nonlocal attempts
+        attempts += 1
+        return False
+
+    async def request_sync(_delay):
+        runtime._sync_requests.add(ENDPOINT)
+
+    monkeypatch.setattr(GuestyTerminalRuntime, "async_push_endpoint", push)
+    monkeypatch.setattr(asyncio, "sleep", request_sync)
+    runtime._pending_endpoint_pushes.add(ENDPOINT)
+
+    assert not asyncio.run(runtime._async_push_endpoint_with_retry(ENDPOINT))
+    assert attempts == 1
+    assert ENDPOINT not in runtime._pending_endpoint_pushes
 
 
 def test_device_refresh_request_synchronizes_then_forces_one_redraw(

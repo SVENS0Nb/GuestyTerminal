@@ -282,6 +282,11 @@ api:
                         && (!id(guesty_external_power).has_state()
                             || !id(guesty_external_power).state));
             then:
+              # ESPHome 2026.7 and earlier do not count an orderly deep-sleep
+              # entry as a successful OTA boot. Mark it explicitly so a
+              # battery device that synchronizes in under the default 60s
+              # safe-mode window does not roll back working firmware.
+              - safe_mode.mark_successful
               - deep_sleep.enter: guesty_deep_sleep
 
 globals:
@@ -1392,6 +1397,10 @@ interval:
                             id: guesty_last_booking
                             state: !lambda |-
                               return id(guesty_no_active_booking_label);
+            # This timeout path can also finish before ESPHome's default 60s
+            # OTA validation window when awake_duration_seconds is configured
+            # near its 30-second minimum.
+            - safe_mode.mark_successful
             - deep_sleep.enter: guesty_deep_sleep
       # On permanent power there is no next wake-up cycle. Enforce the payload
       # lease continuously so stale access data still disappears locally.

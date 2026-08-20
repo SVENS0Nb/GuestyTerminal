@@ -40,6 +40,7 @@ from .models import DisplayPayload, Listing, MappingOptions
 
 _LOGGER = logging.getLogger(__name__)
 _ACTION_PATTERN = re.compile(r"^[a-z0-9_]+$")
+_ENDPOINT_RETRY_DELAYS = (0.0, 1.0, 2.0, 4.0)
 
 
 def _logo_aware_content_id(content_id: str, logo_data: str) -> str:
@@ -249,6 +250,7 @@ class GuestyTerminalRuntime:
     _unsubscribers: list[Callable[[], None]] = field(default_factory=list)
     _locks: dict[str, asyncio.Lock] = field(default_factory=dict)
     _sync_requests: set[str] = field(default_factory=set)
+    _pending_endpoint_pushes: set[str] = field(default_factory=set)
     _tasks: set[asyncio.Future[Any]] = field(default_factory=set)
     _stopped: bool = False
 
@@ -301,6 +303,7 @@ class GuestyTerminalRuntime:
             await asyncio.gather(*pending, return_exceptions=True)
         self._tasks.clear()
         self._sync_requests.clear()
+        self._pending_endpoint_pushes.clear()
 
     @callback
     def _handle_endpoint_state(self, event: Event) -> None:
@@ -326,17 +329,44 @@ class GuestyTerminalRuntime:
             # publishing its one-shot sync request. The request task performs
             # the authoritative push after Guesty has been refreshed.
             return
+        if endpoint in self._pending_endpoint_pushes:
+            # One reconnect can publish the endpoint more than once while
+            # ESPHome finishes registering its user-defined action. Keep one
+            # bounded retry sequence per display instead of creating a task
+            # storm on a noisy connection.
+            return
 
         @callback
         def _delayed_push(_now: datetime) -> None:
             if cancel in self._unsubscribers:
                 self._unsubscribers.remove(cancel)
-            self._create_task(self.async_push_endpoint(endpoint))
+            self._create_task(self._async_push_endpoint_with_retry(endpoint))
 
         # ESPHome publishes the endpoint entity just before its user-defined
         # action is registered. A short delay removes that connection race.
+        self._pending_endpoint_pushes.add(endpoint)
         cancel: Callable[[], None] = async_call_later(self.hass, 2, _delayed_push)
         self._unsubscribers.append(cancel)
+
+    async def _async_push_endpoint_with_retry(self, endpoint: str) -> bool:
+        """Deliver one authoritative payload across ESPHome reconnect races."""
+        try:
+            for delay in _ENDPOINT_RETRY_DELAYS:
+                if endpoint in self._sync_requests:
+                    return False
+                if delay:
+                    await asyncio.sleep(delay)
+                if endpoint in self._sync_requests:
+                    return False
+                if await self.async_push_endpoint(endpoint):
+                    return True
+            _LOGGER.debug(
+                "ESPHome display %s stayed unavailable during reconnect",
+                endpoint,
+            )
+            return False
+        finally:
+            self._pending_endpoint_pushes.discard(endpoint)
 
     @callback
     def _handle_coordinator_update(self) -> None:
