@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -17,7 +18,11 @@ from custom_components.guesty_terminal.api import (
 )
 from custom_components.guesty_terminal.const import CONF_MAPPINGS, CONF_WEATHER_ENTITY
 from custom_components.guesty_terminal.coordinator import GuestyTerminalCoordinator
-from custom_components.guesty_terminal.models import DisplayPayload, Listing
+from custom_components.guesty_terminal.models import (
+    DisplayPayload,
+    Listing,
+    Reservation,
+)
 
 
 class FakeClient:
@@ -27,12 +32,12 @@ class FakeClient:
         self.listings = []
         self.full_listings = {}
         self.reservations = []
-        self.next_reservations = {}
+        self.upcoming_reservations = {}
         self.populated = {}
         self.definitions = {}
         self.listing_calls = []
         self.reservation_calls = []
-        self.next_reservation_calls = []
+        self.upcoming_reservation_calls = []
         self.custom_calls = []
         self.definition_calls = []
         self.guests = {}
@@ -57,9 +62,9 @@ class FakeClient:
         self.reservation_calls.append(listing_ids)
         return self.reservations
 
-    async def async_get_next_reservation(self, listing_id):
-        self.next_reservation_calls.append(listing_id)
-        value = self.next_reservations.get(listing_id, {})
+    async def async_get_upcoming_reservations(self, listing_id, *, limit):
+        self.upcoming_reservation_calls.append((listing_id, limit))
+        value = self.upcoming_reservations.get(listing_id, [])
         if isinstance(value, Exception):
             raise value
         return value
@@ -114,7 +119,7 @@ def _coordinator(
     coordinator._custom_field_definitions = {}
     coordinator._guest_cache = {}
     coordinator._listing_detail_cache = {}
-    coordinator._next_reservation_cache = {}
+    coordinator._reservation_snapshot_cache = {}
     coordinator._account_id = None
     coordinator._blocked_endpoints = set()
     return coordinator
@@ -162,10 +167,8 @@ def test_explicit_sync_invalidates_guest_api_caches() -> None:
     coordinator._guest_cache["guest"] = (0.0, {"firstName": "Mia"})
     coordinator._custom_field_definitions["account"] = []
     coordinator._listing_detail_cache["listing"] = (0.0, Listing("listing", "Loft"))
-    coordinator._next_reservation_cache["listing"] = (
-        0.0,
-        {"reservationId": "next"},
-    )
+    cached_snapshot = (SimpleNamespace(reservation_id="next"),)
+    coordinator._reservation_snapshot_cache["listing"] = cached_snapshot
 
     coordinator.invalidate_guest_data_caches()
 
@@ -173,7 +176,7 @@ def test_explicit_sync_invalidates_guest_api_caches() -> None:
     assert coordinator._guest_cache == {}
     assert coordinator._custom_field_definitions == {}
     assert coordinator._listing_detail_cache == {}
-    assert coordinator._next_reservation_cache == {}
+    assert coordinator._reservation_snapshot_cache["listing"] is cached_snapshot
 
 
 def test_weather_values_round_temperature_and_tolerate_invalid_states() -> None:
@@ -337,7 +340,7 @@ def test_v3_keycode_resolves_current_account_and_retries_guest_failures() -> Non
     assert client.guest_calls == ["guest-1", "guest-1"]
 
 
-def test_guest_cache_expires_instead_of_retaining_a_name_forever(monkeypatch) -> None:
+def test_guest_cache_is_rechecked_on_the_next_five_minute_poll(monkeypatch) -> None:
     client = FakeClient()
     client.guests["guest-1"] = {"firstName": "Mia"}
     coordinator = _coordinator(client=client)
@@ -350,11 +353,29 @@ def test_guest_cache_expires_instead_of_retaining_a_name_forever(monkeypatch) ->
 
     assert asyncio.run(coordinator._async_guest(raw))["firstName"] == "Mia"
     client.guests["guest-1"] = {"firstName": "Anna"}
-    now[0] += 1_799
+    now[0] += 299
     assert asyncio.run(coordinator._async_guest(raw))["firstName"] == "Mia"
     now[0] += 2
     assert asyncio.run(coordinator._async_guest(raw))["firstName"] == "Anna"
     assert client.guest_calls == ["guest-1", "guest-1"]
+
+
+def test_expired_guest_cache_survives_a_temporary_lookup_failure(monkeypatch) -> None:
+    client = FakeClient()
+    client.guests["guest-1"] = {"firstName": "Mia"}
+    coordinator = _coordinator(client=client)
+    now = [100.0]
+    monkeypatch.setattr(
+        "custom_components.guesty_terminal.coordinator.time.monotonic",
+        lambda: now[0],
+    )
+    raw = {"guestId": "guest-1"}
+
+    assert asyncio.run(coordinator._async_guest(raw))["firstName"] == "Mia"
+    now[0] += 301
+    client.guests["guest-1"] = GuestyError("temporary")
+
+    assert asyncio.run(coordinator._async_guest(raw))["firstName"] == "Mia"
 
 
 def test_update_builds_payload_and_fetches_missing_listing_details() -> None:
@@ -420,7 +441,7 @@ def test_update_builds_payload_and_fetches_missing_listing_details() -> None:
     assert client.guest_calls == ["guest-1"]
 
     asyncio.run(coordinator._async_update_data())
-    assert client.listing_calls == ["listing-1"]
+    assert client.listing_calls == ["listing-1", "listing-1"]
 
 
 def test_update_skips_full_listing_when_wifi_exists_and_missing_mappings() -> None:
@@ -480,7 +501,7 @@ def test_rate_limit_from_optional_enrichment_sets_coordinator_retry_after() -> N
     assert error.value.retry_after == 73
 
 
-def test_update_fetches_and_caches_next_booking_for_empty_room_page() -> None:
+def test_update_reconciles_upcoming_booking_snapshot_for_empty_room_page() -> None:
     endpoint = "sensor.display_guesty_terminal_endpoint"
     client = FakeClient()
     client.listings = [
@@ -493,19 +514,21 @@ def test_update_fetches_and_caches_next_booking_for_empty_room_page() -> None:
             "checkoutInstructions": "Fenster schließen.",
         }
     ]
-    client.next_reservations["listing-1"] = {
-        "reservationId": "next-reservation",
-        "stay": [{"listingId": "listing-1"}],
-        "status": "confirmed",
-        "guestId": "guest-next",
-        "checkIn": "2099-09-10T14:00:00Z",
-        "checkOut": "2099-09-13T08:00:00Z",
-        "notes": {
-            "other": "Anreise mit Hund",
-            "cleaning": "Hundenapf bereitstellen",
-            "specialRequests": "Allergiker-Kissen",
-        },
-    }
+    client.upcoming_reservations["listing-1"] = [
+        {
+            "reservationId": "next-reservation",
+            "stay": [{"listingId": "listing-1"}],
+            "status": "confirmed",
+            "guestId": "guest-next",
+            "checkIn": "2099-09-10T14:00:00Z",
+            "checkOut": "2099-09-13T08:00:00Z",
+            "notes": {
+                "other": "Anreise mit Hund",
+                "cleaning": "Hundenapf bereitstellen",
+                "specialRequests": "Allergiker-Kissen",
+            },
+        }
+    ]
     client.guests["guest-next"] = {"firstName": "Mia", "lastName": "Muster"}
     coordinator = _coordinator(
         {CONF_MAPPINGS: {endpoint: _mapping()}},
@@ -521,17 +544,209 @@ def test_update_fetches_and_caches_next_booking_for_empty_room_page() -> None:
     assert payload.general_notes == "Anreise mit Hund"
     assert payload.cleaner_notes == "Hundenapf bereitstellen"
     assert payload.special_requests == "Allergiker-Kissen"
-    assert client.next_reservation_calls == ["listing-1"]
+    assert client.upcoming_reservation_calls == [("listing-1", 5)]
     assert client.guest_calls == ["guest-next"]
     assert client.custom_calls == []
 
     repeated = asyncio.run(coordinator._async_update_data())
     assert repeated.payloads[endpoint].next_booking_guest == "Mia"
-    assert client.next_reservation_calls == ["listing-1"]
+    assert client.upcoming_reservation_calls == [
+        ("listing-1", 5),
+        ("listing-1", 5),
+    ]
     assert client.guest_calls == ["guest-next"]
 
 
-def test_next_booking_failure_keeps_empty_page_privacy_safe() -> None:
+def test_snapshot_keeps_five_upcoming_bookings_and_changes_only_on_reconcile() -> None:
+    endpoint = "sensor.display_guesty_terminal_endpoint"
+    client = FakeClient()
+    client.listings = [
+        {
+            "_id": "listing-1",
+            "title": "Loft",
+            "wifiName": "Guest WiFi",
+            "wifiPassword": "secret",
+            "checkoutInstructions": "Fenster schließen.",
+        }
+    ]
+
+    def booking(number: int, *, notes: str = "") -> dict:
+        return {
+            "reservationId": f"booking-{number}",
+            "listingId": "listing-1",
+            "status": "confirmed",
+            "guest": {"firstName": f"Guest{number}"},
+            "checkIn": f"2099-09-{number + 10:02d}T14:00:00Z",
+            "checkOut": f"2099-09-{number + 11:02d}T10:00:00Z",
+            "notes": {"specialRequests": notes} if notes else {},
+        }
+
+    client.upcoming_reservations["listing-1"] = [
+        booking(number) for number in range(1, 7)
+    ]
+    coordinator = _coordinator(
+        {CONF_MAPPINGS: {endpoint: _mapping()}},
+        client,
+    )
+
+    first = asyncio.run(coordinator._async_update_data())
+    first_snapshot = coordinator._reservation_snapshot_cache["listing-1"]
+
+    assert [item.reservation_id for item in first.reservations] == [
+        "booking-1",
+        "booking-2",
+        "booking-3",
+        "booking-4",
+        "booking-5",
+    ]
+
+    asyncio.run(coordinator._async_update_data())
+    assert coordinator._reservation_snapshot_cache["listing-1"] is first_snapshot
+
+    client.upcoming_reservations["listing-1"] = [
+        booking(1),
+        booking(3, notes="Late arrival"),
+        booking(4),
+        booking(5),
+        booking(6),
+    ]
+    changed = asyncio.run(coordinator._async_update_data())
+    changed_snapshot = coordinator._reservation_snapshot_cache["listing-1"]
+
+    assert changed_snapshot is not first_snapshot
+    assert [item.reservation_id for item in changed.reservations] == [
+        "booking-1",
+        "booking-3",
+        "booking-4",
+        "booking-5",
+        "booking-6",
+    ]
+    assert changed_snapshot[1].special_requests == "Late arrival"
+    assert client.upcoming_reservation_calls == [
+        ("listing-1", 5),
+        ("listing-1", 5),
+        ("listing-1", 5),
+    ]
+
+
+def test_multiple_displays_receive_only_their_mapped_listing_payload() -> None:
+    first_endpoint = "sensor.first_guesty_terminal_endpoint"
+    second_endpoint = "sensor.second_guesty_terminal_endpoint"
+    third_endpoint = "sensor.third_guesty_terminal_endpoint"
+    client = FakeClient()
+    client.listings = [
+        {
+            "_id": "listing-a",
+            "title": "Loft A",
+            "wifiName": "WiFi A",
+            "wifiPassword": "password-a",
+            "checkoutInstructions": "Leave A tidy.",
+        },
+        {
+            "_id": "listing-b",
+            "title": "Loft B",
+            "wifiName": "WiFi B",
+            "wifiPassword": "password-b",
+            "checkoutInstructions": "Leave B tidy.",
+        },
+    ]
+    client.reservations = [
+        {
+            "reservationId": "reservation-a",
+            "listingId": "listing-a",
+            "status": "confirmed",
+            "guest": {"firstName": "Anna"},
+            "keycode": "1111",
+            "checkIn": "2026-08-14T12:00:00Z",
+            "checkOut": "2099-08-18T10:00:00Z",
+        },
+        {
+            "reservationId": "reservation-b",
+            "listingId": "listing-b",
+            "status": "confirmed",
+            "guest": {"firstName": "Ben"},
+            "keycode": "2222",
+            "checkIn": "2026-08-14T12:00:00Z",
+            "checkOut": "2099-08-18T10:00:00Z",
+        },
+    ]
+    first_mapping = _mapping("listing-a")
+    second_mapping = _mapping("listing-a")
+    second_mapping["welcome_title"] = "Hi {first_name}"
+    second_mapping["show_wifi"] = False
+    third_mapping = _mapping("listing-b")
+    coordinator = _coordinator(
+        {
+            CONF_MAPPINGS: {
+                first_endpoint: first_mapping,
+                second_endpoint: second_mapping,
+                third_endpoint: third_mapping,
+            }
+        },
+        client,
+    )
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert set(data.payloads) == {
+        first_endpoint,
+        second_endpoint,
+        third_endpoint,
+    }
+    assert data.payloads[first_endpoint].reservation_id == "reservation-a"
+    assert data.payloads[first_endpoint].door_code == "1111"
+    assert data.payloads[first_endpoint].wifi_name == "WiFi A"
+    assert data.payloads[second_endpoint].reservation_id == "reservation-a"
+    assert data.payloads[second_endpoint].welcome_title == "Hi Anna"
+    assert data.payloads[second_endpoint].wifi_name == ""
+    assert data.payloads[third_endpoint].reservation_id == "reservation-b"
+    assert data.payloads[third_endpoint].door_code == "2222"
+    assert data.payloads[third_endpoint].wifi_name == "WiFi B"
+    assert client.reservation_calls == [["listing-a", "listing-b"]]
+    assert client.upcoming_reservation_calls == [
+        ("listing-a", 5),
+        ("listing-b", 5),
+    ]
+
+
+def test_completed_booking_remains_cached_until_twelve_hours_after_checkout() -> None:
+    coordinator = _coordinator()
+    checkout = datetime(2026, 8, 20, 10, tzinfo=UTC)
+    completed = Reservation(
+        "completed",
+        "listing-1",
+        "confirmed",
+        "Mia",
+        checkout - timedelta(days=2),
+        checkout,
+    )
+    future_cancelled = Reservation(
+        "future-cancelled",
+        "listing-1",
+        "confirmed",
+        "Lina",
+        checkout + timedelta(days=2),
+        checkout + timedelta(days=4),
+    )
+    coordinator._reservation_snapshot_cache["listing-1"] = (
+        completed,
+        future_cancelled,
+    )
+
+    coordinator._reconcile_reservation_snapshots(
+        {},
+        {"listing-1"},
+        checkout + timedelta(hours=11, minutes=59),
+    )
+
+    assert coordinator._reservation_snapshot_cache["listing-1"] == (completed,)
+
+    coordinator._prune_expired_reservation_snapshots(checkout + timedelta(hours=12))
+
+    assert coordinator._reservation_snapshot_cache["listing-1"] == ()
+
+
+def test_upcoming_snapshot_failure_does_not_replace_cached_data() -> None:
     endpoint = "sensor.display_guesty_terminal_endpoint"
     client = FakeClient()
     client.listings = [
@@ -543,17 +758,27 @@ def test_next_booking_failure_keeps_empty_page_privacy_safe() -> None:
             "checkoutInstructions": "Fenster schließen.",
         }
     ]
-    client.next_reservations["listing-1"] = GuestyError("temporarily unavailable")
+    client.upcoming_reservations["listing-1"] = GuestyError("temporarily unavailable")
     coordinator = _coordinator(
         {CONF_MAPPINGS: {endpoint: _mapping()}},
         client,
     )
 
-    data = asyncio.run(coordinator._async_update_data())
+    cached_reservation = Reservation(
+        "cached",
+        "listing-1",
+        "confirmed",
+        "Mia",
+        datetime.now(UTC) + timedelta(days=1),
+        datetime.now(UTC) + timedelta(days=2),
+    )
+    cached_snapshot = (cached_reservation,)
+    coordinator._reservation_snapshot_cache["listing-1"] = cached_snapshot
 
-    assert data.payloads[endpoint].mode == "idle"
-    assert data.payloads[endpoint].door_code == ""
-    assert data.payloads[endpoint].wifi_password == ""
+    with pytest.raises(UpdateFailed, match="temporarily unavailable"):
+        asyncio.run(coordinator._async_update_data())
+
+    assert coordinator._reservation_snapshot_cache["listing-1"] is cached_snapshot
 
 
 @pytest.mark.parametrize(

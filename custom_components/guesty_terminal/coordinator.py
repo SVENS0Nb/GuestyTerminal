@@ -23,11 +23,14 @@ from .api import (
     GuestyRateLimitError,
 )
 from .const import (
+    ACTIVE_RESERVATION_STATUSES,
+    COMPLETED_RESERVATION_CACHE_HOURS,
     CONF_MAPPINGS,
     CONF_POLL_MINUTES,
     DEFAULT_POLL_MINUTES,
     DOMAIN,
     MAX_POLL_MINUTES,
+    UPCOMING_RESERVATIONS_PER_LISTING,
     WEATHER_DISPLAY_MODES,
 )
 from .models import (
@@ -43,8 +46,8 @@ from .models import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-_LISTING_DETAIL_CACHE_SECONDS = 30 * 60
-_GUEST_CACHE_SECONDS = 30 * 60
+_GUEST_CACHE_SECONDS = DEFAULT_POLL_MINUTES * 60
+_COMPLETED_RESERVATION_RETENTION = timedelta(hours=COMPLETED_RESERVATION_CACHE_HOURS)
 _MAX_KEYCODE_CACHE_ITEMS = 512
 _MAX_GUEST_CACHE_ITEMS = 256
 
@@ -103,9 +106,7 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
         self._custom_field_definitions: dict[str, Any] = {}
         self._guest_cache: dict[str, tuple[float, dict[str, Any]]] = {}
         self._listing_detail_cache: dict[str, tuple[float, Listing]] = {}
-        self._next_reservation_cache: dict[
-            str, tuple[float, dict[str, Any] | None]
-        ] = {}
+        self._reservation_snapshot_cache: dict[str, tuple[Reservation, ...]] = {}
         self._account_id: str | None = None
         self._blocked_endpoints: set[str] = set()
 
@@ -135,7 +136,6 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
         self._guest_cache.clear()
         self._custom_field_definitions.clear()
         self._listing_detail_cache.clear()
-        self._next_reservation_cache.clear()
 
     def _weather_values(self, mapping: MappingOptions) -> tuple[str, str]:
         """Return a compact weather condition and rounded outdoor temperature."""
@@ -301,14 +301,13 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
         if cached is not None:
             if time.monotonic() - cached[0] < _GUEST_CACHE_SECONDS:
                 return cached[1]
-            self._guest_cache.pop(guest_id, None)
         try:
             guest = await self.client.async_get_guest(guest_id)
         except (GuestyAuthenticationError, GuestyRateLimitError):
             raise
         except GuestyError as err:
             _LOGGER.debug("Could not load Guesty guest %s: %s", guest_id, err)
-            return {}
+            return cached[1] if cached is not None else {}
         if guest:
             _bounded_cache_set(
                 self._guest_cache,
@@ -316,10 +315,85 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                 (time.monotonic(), guest),
                 _MAX_GUEST_CACHE_ITEMS,
             )
+        else:
+            self._guest_cache.pop(guest_id, None)
         return guest
+
+    async def _async_normalize_reservation(
+        self,
+        raw: dict[str, Any],
+        listing: Listing,
+        *,
+        include_keycode: bool,
+    ) -> Reservation | None:
+        """Normalize one booking with the required optional enrichments."""
+        guest = await self._async_guest(raw)
+        if guest and not isinstance(raw.get("guest"), dict):
+            raw = {**raw, "guest": guest}
+        keycode = await self._async_keycode(raw) if include_keycode else ""
+        reservation = Reservation.from_api(raw, listing, keycode=keycode)
+        if (
+            reservation is None
+            or not reservation.reservation_id
+            or reservation.status not in ACTIVE_RESERVATION_STATUSES
+        ):
+            return None
+        return reservation
+
+    def _reconcile_reservation_snapshots(
+        self,
+        fresh: dict[str, tuple[Reservation, ...]],
+        mapped_listing_ids: set[str],
+        current: datetime,
+    ) -> None:
+        """Replace only changed per-listing snapshots in the local RAM cache."""
+        cache = self._reservation_snapshot_cache
+        for listing_id in set(cache) - mapped_listing_ids:
+            cache.pop(listing_id, None)
+        for listing_id in mapped_listing_ids:
+            current_snapshot = tuple(
+                reservation
+                for reservation in fresh.get(listing_id, ())
+                if reservation.check_in > current
+                or current < reservation.check_out + _COMPLETED_RESERVATION_RETENTION
+            )
+            fresh_ids = {reservation.reservation_id for reservation in current_snapshot}
+            retained_completed = tuple(
+                reservation
+                for reservation in cache.get(listing_id, ())
+                if reservation.reservation_id not in fresh_ids
+                and reservation.check_out <= current
+                and current < reservation.check_out + _COMPLETED_RESERVATION_RETENTION
+            )
+            snapshot = tuple(
+                sorted(
+                    (*current_snapshot, *retained_completed),
+                    key=lambda reservation: (
+                        reservation.check_in,
+                        reservation.reservation_id,
+                    ),
+                )
+            )
+            if cache.get(listing_id) != snapshot:
+                cache[listing_id] = snapshot
+
+    def _prune_expired_reservation_snapshots(self, current: datetime) -> None:
+        """Expire completed bookings even when the next Guesty request fails."""
+        cache = self._reservation_snapshot_cache
+        for listing_id, snapshot in tuple(cache.items()):
+            retained = tuple(
+                reservation
+                for reservation in snapshot
+                if reservation.check_in > current
+                or current < reservation.check_out + _COMPLETED_RESERVATION_RETENTION
+            )
+            if retained != snapshot:
+                cache[listing_id] = retained
 
     async def _async_update_data(self) -> GuestyTerminalData:
         try:
+            current = datetime.now(UTC)
+            self._prune_expired_reservation_snapshots(current)
             raw_listings = await self.client.async_get_listings()
             listings = {
                 listing.listing_id: listing
@@ -337,15 +411,15 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                 for key, value in self._listing_detail_cache.items()
                 if key in mapped_listing_id_set
             }
-            self._next_reservation_cache = {
-                key: value
-                for key, value in self._next_reservation_cache.items()
-                if key in mapped_listing_id_set
-            }
+            snapshot_cache = getattr(self, "_reservation_snapshot_cache", None)
+            if snapshot_cache is None:
+                snapshot_cache = self._reservation_snapshot_cache = {}
 
-            # The listing collection may omit guest-facing detail fields. Cache
-            # full mapped listings for one battery wake cycle so missing optional
-            # instructions do not create an extra API request on every poll.
+            # The listing collection may omit guest-facing detail fields. Load
+            # those mapped listings on every poll as well, then reconcile the
+            # result against the last successful record. This makes changed or
+            # explicitly cleared instructions and Wi-Fi data visible within the
+            # same five-minute window as reservation changes.
             detail_cache = getattr(self, "_listing_detail_cache", None)
             if detail_cache is None:
                 detail_cache = self._listing_detail_cache = {}
@@ -359,11 +433,6 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                 ):
                     continue
                 cached = detail_cache.get(listing_id)
-                if cached is not None and time.monotonic() - cached[0] < (
-                    _LISTING_DETAIL_CACHE_SECONDS
-                ):
-                    listings[listing_id] = cached[1]
-                    continue
                 try:
                     full = await self.client.async_get_listing(listing_id)
                 except (GuestyAuthenticationError, GuestyRateLimitError):
@@ -381,79 +450,113 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                         listings[listing_id] = cached[1]
                     continue
                 if full and (full_listing := Listing.from_api(full)).listing_id:
-                    listings[listing_id] = full_listing
-                    detail_cache[listing_id] = (time.monotonic(), full_listing)
+                    if cached is not None and cached[1] == full_listing:
+                        listings[listing_id] = cached[1]
+                    else:
+                        listings[listing_id] = full_listing
+                        detail_cache[listing_id] = (
+                            time.monotonic(),
+                            full_listing,
+                        )
                 elif listing is not None:
-                    detail_cache[listing_id] = (time.monotonic(), listing)
+                    if cached is not None:
+                        listings[listing_id] = cached[1]
+                    else:
+                        detail_cache[listing_id] = (time.monotonic(), listing)
 
+            available_listing_ids = [
+                listing_id
+                for listing_id in mapped_listing_ids
+                if listing_id in listings
+            ]
             raw_reservations = await self.client.async_get_reservations(
-                mapped_listing_ids
+                available_listing_ids
             )
-            reservations: list[Reservation] = []
+            raw_by_listing: dict[str, list[tuple[dict[str, Any], bool]]] = {
+                listing_id: [] for listing_id in mapped_listing_ids
+            }
+            known_ids: dict[str, set[str]] = {
+                listing_id: set() for listing_id in mapped_listing_ids
+            }
             for raw in raw_reservations:
                 listing_id = reservation_listing_id(raw)
-                listing = listings.get(listing_id)
-                if listing is None:
+                if listing_id not in raw_by_listing or listing_id not in listings:
                     continue
-                guest = await self._async_guest(raw)
-                if guest and not isinstance(raw.get("guest"), dict):
-                    raw = {**raw, "guest": guest}
-                keycode = await self._async_keycode(raw)
-                reservation = Reservation.from_api(raw, listing, keycode=keycode)
-                if reservation is not None:
-                    reservations.append(reservation)
+                reservation_id = first_present(raw, "reservationId", "_id", "id")
+                if reservation_id:
+                    known_ids[listing_id].add(reservation_id)
+                raw_by_listing[listing_id].append((raw, True))
 
-            # The regular poll deliberately remains narrow for battery and API
-            # efficiency. Fetch only one farther-future reservation per listing
-            # when that window contains no upcoming stay, and cache the result
-            # for one normal battery wake cycle.
-            current = datetime.now(UTC)
-            next_cache = getattr(self, "_next_reservation_cache", None)
-            if next_cache is None:
-                next_cache = self._next_reservation_cache = {}
-            known_ids = {reservation.reservation_id for reservation in reservations}
+            # Fetch an authoritative, ordered future snapshot on every normal
+            # poll. There is deliberately no query TTL here: additions and
+            # future cancellations are detected within five minutes. The
+            # reconciliation layer separately retains completed stays for
+            # twelve hours. The short collection above remains responsible for
+            # a current or just-ended stay and its access code.
+            for listing_id in available_listing_ids:
+                upcoming = await self.client.async_get_upcoming_reservations(
+                    listing_id,
+                    limit=UPCOMING_RESERVATIONS_PER_LISTING,
+                )
+                for raw in upcoming:
+                    reservation_id = first_present(raw, "reservationId", "_id", "id")
+                    if reservation_id and reservation_id in known_ids[listing_id]:
+                        continue
+                    if reservation_id:
+                        known_ids[listing_id].add(reservation_id)
+                    raw_by_listing[listing_id].append((raw, False))
+
+            fresh_snapshots: dict[str, tuple[Reservation, ...]] = {}
             for listing_id in mapped_listing_ids:
-                if any(
-                    reservation.listing_id == listing_id
-                    and reservation.check_in > current
-                    for reservation in reservations
-                ):
-                    continue
-                cached = next_cache.get(listing_id)
-                if cached is not None and time.monotonic() - cached[0] < (
-                    _LISTING_DETAIL_CACHE_SECONDS
-                ):
-                    raw_next = cached[1]
-                else:
-                    try:
-                        raw_next = await self.client.async_get_next_reservation(
-                            listing_id
-                        )
-                    except (GuestyAuthenticationError, GuestyRateLimitError):
-                        raise
-                    except GuestyError as err:
-                        _LOGGER.debug(
-                            "Could not load next reservation for listing %s: %s",
-                            listing_id,
-                            err,
-                        )
-                        raw_next = None
-                    next_cache[listing_id] = (time.monotonic(), raw_next or None)
-                if not raw_next:
-                    continue
-                reservation_id = first_present(raw_next, "reservationId", "_id", "id")
-                if reservation_id in known_ids:
-                    continue
                 listing = listings.get(listing_id)
                 if listing is None:
                     continue
-                guest = await self._async_guest(raw_next)
-                if guest and not isinstance(raw_next.get("guest"), dict):
-                    raw_next = {**raw_next, "guest": guest}
-                next_reservation = Reservation.from_api(raw_next, listing)
-                if next_reservation is not None and next_reservation.check_in > current:
-                    reservations.append(next_reservation)
-                    known_ids.add(next_reservation.reservation_id)
+                normalized: list[Reservation] = []
+                for raw, include_keycode in raw_by_listing[listing_id]:
+                    reservation = await self._async_normalize_reservation(
+                        raw,
+                        listing,
+                        include_keycode=include_keycode,
+                    )
+                    if reservation is not None:
+                        normalized.append(reservation)
+                normalized.sort(
+                    key=lambda reservation: (
+                        reservation.check_in,
+                        reservation.reservation_id,
+                    )
+                )
+                current_or_recent = [
+                    reservation
+                    for reservation in normalized
+                    if reservation.check_in <= current
+                ]
+                upcoming = [
+                    reservation
+                    for reservation in normalized
+                    if reservation.check_in > current
+                ][:UPCOMING_RESERVATIONS_PER_LISTING]
+                fresh_snapshots[listing_id] = tuple(current_or_recent + upcoming)
+
+            self._reconcile_reservation_snapshots(
+                fresh_snapshots,
+                mapped_listing_id_set,
+                current,
+            )
+            reservations = [
+                reservation
+                for listing_id in mapped_listing_ids
+                for reservation in snapshot_cache.get(listing_id, ())
+            ]
+
+            active_reservation_ids = {
+                reservation.reservation_id for reservation in reservations
+            }
+            self._keycode_cache = {
+                key: value
+                for key, value in self._keycode_cache.items()
+                if key[0] in active_reservation_ids
+            }
 
             payloads: dict[str, DisplayPayload] = {}
             for mapping in mappings:

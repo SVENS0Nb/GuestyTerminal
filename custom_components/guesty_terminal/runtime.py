@@ -31,6 +31,7 @@ from .const import (
     DISPLAY_ACTION_V9_SUFFIX,
     DISPLAY_RECONNECT_STATE,
     DISPLAY_REFRESH_REQUEST_STATE,
+    DOMAIN,
     LOGO_DISPLAY_MODES,
 )
 from .coordinator import GuestyTerminalCoordinator
@@ -197,6 +198,26 @@ async def async_clear_configured_displays(
     raw_mappings = entry.options.get(CONF_MAPPINGS, {})
     if not isinstance(raw_mappings, dict):
         return
+    endpoints_owned_elsewhere: set[str] = set()
+    config_entries = getattr(hass, "config_entries", None)
+    async_entries = getattr(config_entries, "async_entries", None)
+    if callable(async_entries):
+        current_entry_id = str(getattr(entry, "entry_id", ""))
+        for configured_entry in async_entries(DOMAIN):
+            if configured_entry is entry or (
+                current_entry_id
+                and str(getattr(configured_entry, "entry_id", "")) == current_entry_id
+            ):
+                continue
+            other_mappings = getattr(configured_entry, "options", {}).get(
+                CONF_MAPPINGS, {}
+            )
+            if isinstance(other_mappings, dict):
+                endpoints_owned_elsewhere.update(
+                    endpoint
+                    for endpoint, mapping in other_mappings.items()
+                    if isinstance(endpoint, str) and isinstance(mapping, dict)
+                )
     logo_data = valid_logo_data(entry.options.get(CONF_LOGO_DATA))
     await asyncio.gather(
         *(
@@ -211,6 +232,7 @@ async def async_clear_configured_displays(
             )
             for endpoint, raw_mapping in raw_mappings.items()
             if isinstance(endpoint, str) and isinstance(raw_mapping, dict)
+            if endpoint not in endpoints_owned_elsewhere
         ),
         return_exceptions=True,
     )

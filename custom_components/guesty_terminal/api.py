@@ -12,7 +12,11 @@ from typing import Any
 
 from aiohttp import ClientError, ClientResponse, ClientSession
 
-from .const import ACTIVE_RESERVATION_STATUSES, TOKEN_REFRESH_MARGIN_SECONDS
+from .const import (
+    ACTIVE_RESERVATION_STATUSES,
+    TOKEN_REFRESH_MARGIN_SECONDS,
+    UPCOMING_RESERVATIONS_PER_LISTING,
+)
 
 API_BASE_URL = "https://open-api.guesty.com/v1"
 TOKEN_URL = "https://open-api.guesty.com/oauth2/token"
@@ -321,28 +325,38 @@ class GuestyClient:
         )
         return data if isinstance(data, dict) else {}
 
-    async def async_get_next_reservation(self, listing_id: str) -> dict[str, Any]:
-        """Return the first confirmed reservation beyond the short poll window."""
+    async def async_get_upcoming_reservations(
+        self,
+        listing_id: str,
+        *,
+        limit: int = UPCOMING_RESERVATIONS_PER_LISTING,
+    ) -> list[dict[str, Any]]:
+        """Return an ordered booking snapshot for one listing.
+
+        One extra row provides headroom for a stay that began earlier on the
+        current UTC date. The coordinator applies exact timezone-aware checks
+        and retains at least the next ``limit`` future reservations.
+        """
+        requested = max(1, int(limit))
         data = await self._request(
             "GET",
             "/reservations-v3/search",
             params={
                 "filter[listingId]": listing_id,
                 "filter[status]": ",".join(ACTIVE_RESERVATION_STATUSES),
-                # The normal collection already covers the next four UTC
-                # dates. Starting here avoids returning a current stay while
-                # still finding the actual next reservation arbitrarily far
-                # in the future.
-                "filter[checkIn][gte]": (
-                    datetime.now(UTC).date() + timedelta(days=4)
-                ).isoformat(),
+                # Query from today rather than the short display window so
+                # additions, edits and cancellations are reconciled on every
+                # normal poll even when the booking is months away.
+                "filter[checkIn][gte]": (datetime.now(UTC).date()).isoformat(),
                 "sort": "checkIn",
-                "limit": 1,
+                "limit": requested + 1,
                 "skip": 0,
             },
         )
         results = data.get("results", []) if isinstance(data, dict) else []
-        return results[0] if results and isinstance(results[0], dict) else {}
+        if not isinstance(results, list):
+            raise GuestyError("Guesty returned invalid upcoming reservation data")
+        return [item for item in results if isinstance(item, dict)][: requested + 1]
 
     async def async_get_current_account(self) -> dict[str, Any]:
         """Return the current Guesty account for custom-field resolution."""

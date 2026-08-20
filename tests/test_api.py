@@ -281,7 +281,7 @@ def test_single_resource_endpoints_and_empty_reservation_request() -> None:
     assert session.request_calls[0][1] == f"{API_BASE_URL}/listings/listing-1"
 
 
-def test_next_reservation_query_returns_only_the_first_valid_result() -> None:
+def test_upcoming_reservation_query_returns_a_bounded_ordered_snapshot() -> None:
     session = FakeSession(
         requests=[
             FakeResponse(
@@ -298,11 +298,15 @@ def test_next_reservation_query_returns_only_the_first_valid_result() -> None:
     )
     client = GuestyClient(session, "id", "secret", token_data=_valid_token())
 
+    assert [
+        item["reservationId"]
+        for item in asyncio.run(
+            client.async_get_upcoming_reservations("listing-1", limit=5)
+        )
+    ] == ["next", "later"]
     assert (
-        asyncio.run(client.async_get_next_reservation("listing-1"))["reservationId"]
-        == "next"
+        asyncio.run(client.async_get_upcoming_reservations("listing-1", limit=5)) == []
     )
-    assert asyncio.run(client.async_get_next_reservation("listing-1")) == {}
 
     method, url, kwargs = session.request_calls[0]
     assert method == "GET"
@@ -311,6 +315,18 @@ def test_next_reservation_query_returns_only_the_first_valid_result() -> None:
     assert params["filter[listingId]"] == "listing-1"
     assert params["filter[status]"] == "confirmed"
     assert params["sort"] == "checkIn"
-    assert params["limit"] == 1
+    assert params["limit"] == 6
     assert params["skip"] == 0
     assert "filter[checkIn][gte]" in params
+
+
+def test_upcoming_reservation_query_rejects_an_invalid_result_shape() -> None:
+    client = GuestyClient(
+        FakeSession(requests=[FakeResponse(200, {"results": {"bad": "shape"}})]),
+        "id",
+        "secret",
+        token_data=_valid_token(),
+    )
+
+    with pytest.raises(GuestyError, match="invalid upcoming"):
+        asyncio.run(client.async_get_upcoming_reservations("listing-1"))

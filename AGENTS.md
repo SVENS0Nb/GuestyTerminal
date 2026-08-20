@@ -54,8 +54,9 @@ them as if they were part of the implementation.
 
 ## End-to-end data flow
 
-1. `GuestyClient` obtains a Client Credentials token and fetches listings and
-   confirmed reservations from Guesty's API.
+1. `GuestyClient` obtains a Client Credentials token and fetches listings,
+   current/recent confirmed reservations, and an ordered upcoming snapshot for
+   every mapped listing from Guesty's API.
 2. `GuestyTerminalCoordinator` resolves full listing details, guest names, the
    `keycode` custom field, and optional Home Assistant weather data.
 3. `build_display_payload()` selects the visible reservation and produces one
@@ -76,6 +77,20 @@ incomplete change.
 
 - A reservation becomes visible one hour before check-in and is removed 30
   minutes after checkout by default. Both values are configurable per display.
+- Guesty is polled every five minutes by default. Every successful poll must
+  reconcile current/recent stays plus at least the next five confirmed
+  reservations per mapped listing. Additions, visible-field changes, and rows
+  that disappear because of cancellation replace that listing's RAM snapshot;
+  an equal normalized snapshot must be retained without a cache write.
+- A confirmed reservation that has completed remains in the Home Assistant RAM
+  snapshot until 12 hours after checkout, even if it disappears from a later
+  successful Guesty response. This retention does not extend the display's
+  configured post-checkout visibility. Future cancellations are removed
+  immediately and are never retained until their planned checkout.
+- Upcoming snapshot queries are authoritative and must not use a TTL. If any
+  required snapshot query fails, retain the coordinator's last successful data
+  rather than interpreting the failure as a cancellation. The display lease
+  limits how long stale sensitive content can remain visible.
 - On the local checkout date, the checkout page replaces the welcome page from
   the per-display start time (05:00 by default) until the normal checkout grace
   expires. It never renders door or WiFi credentials. Its weather and global
@@ -120,7 +135,8 @@ incomplete change.
   fingerprints. Do not add credential-bearing `restore_value` globals.
 - Empty-room guest names, dates, and internal reservation notes are also
   sensitive RAM-only content. They use the display lease and must never be
-  added to `restore_value` globals or log messages.
+  added to `restore_value` globals, a Home Assistant disk cache, or log
+  messages. The five-booking Home Assistant snapshot is process-memory only.
 - Home Assistant diagnostics may report flags, listing names, entity IDs,
   weather configuration, and lease timestamps, but never guest names, codes,
   SSIDs, or passwords. The device's displayed-booking text sensor is the one
@@ -211,6 +227,15 @@ incomplete change.
 
 ## Home Assistant and ESPHome compatibility
 
+- Query every distinct mapped listing once per coordinator refresh, then build
+  one independent payload per endpoint. Multiple displays may share a listing
+  while retaining different language, copy, date/time format, visibility, and
+  weather options. Reservations, credentials, and notes from different listing
+  IDs must never cross into another endpoint's payload.
+- One physical ESPHome endpoint may be owned by only one Guesty config entry.
+  Continue blocking legacy duplicate mappings at setup and in the options flow.
+  Entry removal must not clear an endpoint that remains mapped by another
+  Guesty entry.
 - The endpoint entity is discovered by original name `GuestyTerminal Endpoint`
   or the `_guesty_terminal_endpoint` suffix. Its state is the exact ESPHome
   action name, not a status value.
