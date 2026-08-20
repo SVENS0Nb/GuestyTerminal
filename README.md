@@ -457,6 +457,17 @@ ein Aufwachen über die grüne Taste auf Akku nach dem kurzen Abgleich wieder in
 den Deep Sleep zurückkehrt. Nach dem HACS-Update muss die Display-Firmware für
 diese Energie-Korrekturen einmalig auf 0.3.24 aktualisiert werden.
 
+Version **0.3.25** verhindert OTA-Rollbacks bei akkubetriebenen Displays, die
+nach einer erfolgreichen Synchronisierung vor ESPHomes standardmäßigem
+60-Sekunden-Bestätigungsfenster in den Deep Sleep wechseln. Jeder geordnete
+Deep-Sleep-Eintritt bestätigt den erfolgreichen Firmwarestart nun explizit.
+Zusätzlich wiederholt die Home-Assistant-Integration die Datenzustellung nach
+einer ESPHome-Wiederverbindung kurz und begrenzt, falls die benutzerdefinierte
+Display-Aktion beim ersten Versuch noch nicht registriert ist. Dadurch wird
+eine bereits korrekt ausgewählte Buchung nach Firmwareupdate, Neustart oder
+Aufwachen zuverlässig als Willkommensseite zugestellt. Nach dem HACS-Update
+muss die Display-Firmware einmalig auf 0.3.25 aktualisiert werden.
+
 ## Datenschutz
 
 Die von der Integration angelegten Statussensoren enthalten weder Gastnamen
