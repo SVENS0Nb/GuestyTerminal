@@ -64,9 +64,10 @@ esphome:
 
 api:
   reboot_timeout: 0s
-  # A fast restart can be shorter than Home Assistant's offline detection
-  # window. Pulse the endpoint after Home Assistant connects so the integration
-  # reliably resends its cached payload on every wake cycle.
+  # Authentication finishes before Home Assistant has subscribed to entity
+  # states. Wait for that subscription before pulsing the endpoint; otherwise
+  # both this pulse and the restored action state can be lost during a short
+  # battery wake or a noisy reconnect.
   on_client_connected:
     then:
       - if:
@@ -75,11 +76,21 @@ api:
               return client_info.find("Home Assistant")
                   != std::string::npos;
           then:
-            - text_sensor.template.publish:
-                id: guesty_terminal_endpoint
-                state: "__guesty_reconnecting__"
-            - delay: 1s
-            - component.update: guesty_terminal_endpoint
+            - wait_until:
+                condition:
+                  api.connected:
+                    state_subscription_only: true
+                timeout: 20s
+            - if:
+                condition:
+                  api.connected:
+                    state_subscription_only: true
+                then:
+                  - text_sensor.template.publish:
+                      id: guesty_terminal_endpoint
+                      state: "__guesty_reconnecting__"
+                  - delay: 1s
+                  - component.update: guesty_terminal_endpoint
   actions:
     - action: guesty_terminal_update_display_v9
       variables:
@@ -288,6 +299,13 @@ api:
               # safe-mode window does not roll back working firmware.
               - safe_mode.mark_successful
               - deep_sleep.enter: guesty_deep_sleep
+
+# Deep-sleep displays must validate a freshly installed OTA image before a
+# later network or wake-pin reset can trigger the ESP32 bootloader rollback.
+# Ten seconds still preserves rollback for immediate boot failures while
+# completing well before the shortest supported awake window (30 seconds).
+safe_mode:
+  boot_is_good_after: 10s
 
 globals:
   - id: guesty_mode
