@@ -468,6 +468,15 @@ eine bereits korrekt ausgewählte Buchung nach Firmwareupdate, Neustart oder
 Aufwachen zuverlässig als Willkommensseite zugestellt. Nach dem HACS-Update
 muss die Display-Firmware einmalig auf 0.3.25 aktualisiert werden.
 
+Version **0.3.26** wartet bei jeder ESPHome-Verbindung, bis Home Assistant die
+Gerätezustände tatsächlich abonniert hat, bevor der Display-Endpunkt seine
+erneute Datenanforderung signalisiert. Dadurch erreicht die bereits korrekt
+ausgewählte Buchung das E-Paper auch nach Firmwareupdate, Neustart und kurzen
+oder instabilen API-Verbindungen. Die Integration reagiert sowohl auf den
+Reconnect-Impuls als auch auf den wiederhergestellten Aktionsnamen und versucht
+die Zustellung innerhalb eines begrenzten Zeitfensters erneut. Nach dem
+HACS-Update muss die Display-Firmware einmalig auf 0.3.26 aktualisiert werden.
+
 ## Datenschutz
 
 Die von der Integration angelegten Statussensoren enthalten weder Gastnamen

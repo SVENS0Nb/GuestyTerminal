@@ -695,6 +695,29 @@ def test_reconnect_push_retries_until_esphome_action_is_registered(
     assert ENDPOINT not in runtime._pending_endpoint_pushes
 
 
+def test_reconnect_push_spans_slow_esphome_action_registration(monkeypatch) -> None:
+    runtime, _hass, _coordinator = _runtime(state=ACTION_V9)
+    attempts = 0
+    delays = []
+
+    async def push(_runtime, _endpoint):
+        nonlocal attempts
+        attempts += 1
+        return attempts == 6
+
+    async def no_wait(delay):
+        delays.append(delay)
+
+    monkeypatch.setattr(GuestyTerminalRuntime, "async_push_endpoint", push)
+    monkeypatch.setattr(asyncio, "sleep", no_wait)
+    runtime._pending_endpoint_pushes.add(ENDPOINT)
+
+    assert asyncio.run(runtime._async_push_endpoint_with_retry(ENDPOINT))
+    assert attempts == 6
+    assert delays == [1.0, 2.0, 4.0, 8.0, 8.0]
+    assert ENDPOINT not in runtime._pending_endpoint_pushes
+
+
 def test_reconnect_push_stops_when_forced_sync_takes_ownership(monkeypatch) -> None:
     runtime, _hass, _coordinator = _runtime(state=ACTION_V9)
     attempts = 0
@@ -836,20 +859,33 @@ def test_device_refresh_pulse_is_deduplicated_and_suppresses_restore_event() -> 
     assert len(hass.tasks) == 1
 
 
-def test_reconnect_discovery_pulse_does_not_schedule_an_invalid_push() -> None:
+def test_reconnect_discovery_pulse_schedules_one_deduplicated_retry(
+    monkeypatch,
+) -> None:
+    callbacks = {}
+
+    def call_later(_hass, delay, callback):
+        callbacks["delay"] = delay
+        callbacks["later"] = callback
+        return lambda: None
+
+    runtime_module = sys.modules[GuestyTerminalRuntime.__module__]
+    monkeypatch.setattr(runtime_module, "async_call_later", call_later)
     runtime, hass, _coordinator = _runtime(state=ACTION_V9)
 
-    runtime._handle_endpoint_state(
-        SimpleNamespace(
-            data={
-                "new_state": SimpleNamespace(state=DISPLAY_RECONNECT_STATE),
-                "entity_id": ENDPOINT,
-            }
-        )
+    pulse = SimpleNamespace(
+        data={
+            "new_state": SimpleNamespace(state=DISPLAY_RECONNECT_STATE),
+            "entity_id": ENDPOINT,
+        }
     )
+    runtime._handle_endpoint_state(pulse)
+    runtime._handle_endpoint_state(pulse)
 
     assert hass.tasks == []
-    assert runtime._unsubscribers == []
+    assert callbacks["delay"] == 2
+    assert ENDPOINT in runtime._pending_endpoint_pushes
+    assert len(runtime._unsubscribers) == 1
 
 
 def test_start_without_mappings_only_registers_coordinator_listener() -> None:

@@ -40,7 +40,7 @@ from .models import DisplayPayload, Listing, MappingOptions
 
 _LOGGER = logging.getLogger(__name__)
 _ACTION_PATTERN = re.compile(r"^[a-z0-9_]+$")
-_ENDPOINT_RETRY_DELAYS = (0.0, 1.0, 2.0, 4.0)
+_ENDPOINT_RETRY_DELAYS = (0.0, 1.0, 2.0, 4.0, 8.0, 8.0)
 
 
 def _logo_aware_content_id(content_id: str, logo_data: str) -> str:
@@ -314,9 +314,11 @@ class GuestyTerminalRuntime:
         if not endpoint:
             return
         if new_state.state == DISPLAY_RECONNECT_STATE:
-            # The firmware emits this short-lived discovery pulse before
-            # restoring the actual ESPHome action. Wait for that real state
-            # instead of scheduling a guaranteed invalid service call.
+            # Current firmware emits this pulse only after Home Assistant has
+            # subscribed to device states, then restores the actual action.
+            # Schedule from both states for legacy firmware and for reconnects
+            # where one of the two events is coalesced.
+            self._schedule_endpoint_push(endpoint)
             return
         if new_state.state == DISPLAY_REFRESH_REQUEST_STATE:
             if endpoint in self._sync_requests:
@@ -329,6 +331,10 @@ class GuestyTerminalRuntime:
             # publishing its one-shot sync request. The request task performs
             # the authoritative push after Guesty has been refreshed.
             return
+        self._schedule_endpoint_push(endpoint)
+
+    def _schedule_endpoint_push(self, endpoint: str) -> None:
+        """Schedule one bounded delivery sequence for an awake endpoint."""
         if endpoint in self._pending_endpoint_pushes:
             # One reconnect can publish the endpoint more than once while
             # ESPHome finishes registering its user-defined action. Keep one
@@ -342,8 +348,9 @@ class GuestyTerminalRuntime:
                 self._unsubscribers.remove(cancel)
             self._create_task(self._async_push_endpoint_with_retry(endpoint))
 
-        # ESPHome publishes the endpoint entity just before its user-defined
-        # action is registered. A short delay removes that connection race.
+        # The service is normally registered before the subscribed reconnect
+        # pulse arrives. Keep retries for legacy firmware, slow connections and
+        # brief ESPHome API interruptions during battery wakes.
         self._pending_endpoint_pushes.add(endpoint)
         cancel: Callable[[], None] = async_call_later(self.hass, 2, _delayed_push)
         self._unsubscribers.append(cancel)
