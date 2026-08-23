@@ -65,7 +65,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.27") == 2
+    assert rendered.count("ref: v0.3.28") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
@@ -76,7 +76,7 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
 
     assert package.count("bpp: 2") == 12
     assert "lut_mode: ${gray_lut_mode}" in package
-    assert "id(guesty_render_revision) == 20" in package
+    assert "id(guesty_render_revision) == 21" in package
     assert "guesty_terminal_update_display_v9" in package
     assert '"Bei Fragen sind wir für dich da."' not in package
     assert "id(guesty_logo_data).size() == logo_hex_length" in package
@@ -196,6 +196,26 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert subscribed_wait < reconnect_pulse < restore_action
     assert "id: guesty_battery_level" in package
     assert "accuracy_decimals: 0" in package
+    battery_voltage_start = package.index("    id: guesty_battery_voltage\n")
+    battery_voltage_end = package.index(
+        "  - platform: template\n    id: guesty_battery_level\n",
+        battery_voltage_start,
+    )
+    battery_voltage = package[battery_voltage_start:battery_voltage_end]
+    assert "samples: 16" in battery_voltage
+    assert "sampling_mode: avg" in battery_voltage
+    battery_level_end = package.index(
+        "  - platform: template\n    id: guesty_awake_duration\n",
+        battery_voltage_end,
+    )
+    battery_level = package[battery_voltage_end:battery_level_end]
+    assert "method: exact" in battery_level
+    assert "datapoints:" in battery_level
+    assert battery_level.index("3.27 -> 0.0") < battery_level.index("4.15 -> 100.0")
+    assert "id: guesty_awake_duration" in package
+    assert "lambda: return millis() / 1000.0f;" in package
+    assert "id: guesty_wake_reason" in package
+    assert "esp_sleep_get_wakeup_cause()" in package
     assert "id: guesty_refresh_display" in package
     assert "name: Display aktualisieren" in package
     refresh_start = package.index("    id: guesty_refresh_display\n")
@@ -218,17 +238,22 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "last_update_successful()" in package
     assert 'state: "Keine aktive Buchung"' not in package
     assert "usb_power_probe_interval" not in package
-    assert "guesty_enter_battery_sleep" not in package
+    assert "id: guesty_enter_battery_sleep" in package
     assert "guesty_power_wake" not in package
-    assert package.count("deep_sleep.enter: guesty_deep_sleep") == 2
-    assert package.count("safe_mode.mark_successful") == 2
+    assert package.count("script.execute: guesty_enter_battery_sleep") == 2
+    assert package.count("deep_sleep.enter: guesty_deep_sleep") == 1
+    assert package.count("safe_mode.mark_successful") == 1
     assert "safe_mode:\n  boot_is_good_after: 10s" in package
-    search_from = 0
-    for _ in range(2):
-        mark_success = package.index("- safe_mode.mark_successful", search_from)
-        sleep = package.index("- deep_sleep.enter: guesty_deep_sleep", mark_success)
-        assert sleep - mark_success < 100
-        search_from = sleep + 1
+    sleep_script_start = package.index("  - id: guesty_enter_battery_sleep\n")
+    sleep_script_end = package.index(
+        "  - id: guesty_read_external_power\n", sleep_script_start
+    )
+    sleep_script = package[sleep_script_start:sleep_script_end]
+    assert "output.turn_off: guesty_battery_enable" in sleep_script
+    assert "component.update: guesty_awake_duration" in sleep_script
+    assert sleep_script.index("safe_mode.mark_successful") < sleep_script.index(
+        "deep_sleep.enter: guesty_deep_sleep"
+    )
     assert "sleep_duration: ${battery_sleep_duration}" in package
     assert "id: guesty_read_external_power" in package
     assert "id(guesty_external_power).publish_state(true)" in package
@@ -353,7 +378,10 @@ def test_privacy_state_changes_only_after_a_successful_physical_refresh() -> Non
         "id(guesty_screen_sensitive) = false;"
         not in interval[battery_clear:battery_update]
     )
-    assert "lambda: return !id(guesty_screen_sensitive);" in interval
+    assert "return !id(guesty_screen_sensitive)" in interval
+    assert "id(guesty_update_received_this_boot)" in interval
+    assert 'id(guesty_mode) != "idle"' in interval
+    assert "!id(guesty_privacy_clear_pending)" in interval
     assert "Privacy clear failed; keeping the device awake" in interval
 
     mains_clear = interval.index('id(guesty_mode) = "idle";', battery_commit)
@@ -448,7 +476,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.27", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.28", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -460,8 +488,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.27") == 2
-    assert 'version: "0.3.27"' in updated
+    assert updated.count("ref: v0.3.28") == 2
+    assert 'version: "0.3.28"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -492,7 +520,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
 def test_update_managed_firmware_configs_rejects_invalid_credentials(
     tmp_path, broken_line
 ) -> None:
-    valid = render_firmware_config(_options()).replace("0.3.27", "0.3.10")
+    valid = render_firmware_config(_options()).replace("0.3.28", "0.3.10")
     if "key:" in broken_line:
         invalid = valid.replace(
             next(line for line in valid.splitlines() if "key:" in line), broken_line
@@ -529,14 +557,14 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.27", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.28", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     future.chmod(0o600)
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.27", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.28", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")

@@ -334,13 +334,22 @@ Symbol folgt ihm in Zehn-Prozent-Stufen.
   Teilupdate nicht sicher ausgeführt werden, fällt der Treiber automatisch auf
   einen vollständigen Refresh zurück. Unveränderte Wetterdaten lösen weiterhin
   überhaupt keine E-Paper-Aktualisierung aus.
-- Jedes Display stellt in Home Assistant seinen Batteriestand sowie die Buttons
+- Jedes Display stellt in Home Assistant Batteriespannung, geschätzten
+  Batteriestand, **Wake-up reason** und **Awake duration** sowie die Buttons
   **Display aktualisieren** und **Neustart** bereit. Der Aktualisieren-Button
   stößt zuerst einen sofortigen Guesty-Abgleich an, übernimmt den danach
   ermittelten Seitenmodus und zeichnet anschließend genau dieses aktuelle Bild
   neu. Im Deep Sleep sind die beiden Buttons bis zum nächsten Aufwachen nicht
   erreichbar. Der Batteriestand wird bei jedem Aufwachen und bei USB-Betrieb
-  alle fünf Minuten neu gemessen.
+  alle fünf Minuten aus 16 gemittelten Spannungsmessungen neu geschätzt. Die
+  Prozentanzeige basiert nicht auf einem Coulomb-Counter, sondern auf einer
+  stückweisen Li-Ion-Spannungskennlinie und kann deshalb unter Last schwanken.
+- Für die Akkudiagnose sollte **Wake-up reason** beim regulären Zyklus `timer`
+  melden. **Awake duration** zeigt die Dauer des letzten Wachfensters vor dem
+  Schlafen; bei schneller Home-Assistant-Zustellung liegt sie deutlich unter
+  dem konfigurierten Maximum von standardmäßig 90 Sekunden. Wiederholte
+  `button`-Wakeups oder häufig ausgeschöpfte Wachfenster erklären einen hohen
+  Verbrauch und lassen sich mit diesen beiden Entitäten im Verlauf erkennen.
 - Die Diagnose-Entität **Angezeigte Buchung** nennt Gastname und Zeitraum der
   Buchung, deren Bild das E-Paper zuletzt erfolgreich bestätigt hat. Sie wird
   erst nach einem abgeschlossenen BUSY-Zyklus aktualisiert. Nach einem normalen
@@ -484,6 +493,13 @@ oder instabilen API-Verbindungen. Die Integration reagiert sowohl auf den
 Reconnect-Impuls als auch auf den wiederhergestellten Aktionsnamen und versucht
 die Zustellung innerhalb eines begrenzten Zeitfensters erneut. Nach dem
 HACS-Update muss die Display-Firmware einmalig auf 0.3.26 aktualisiert werden.
+
+Version **0.3.28** korrigiert die Akkuanzeige und härtet den Energiesparpfad.
+Die nichtlineare Spannungskennlinie wird nun wirklich stückweise ausgewertet und
+aus 16 ADC-Messungen gemittelt. Einheitliche Deep-Sleep-Pfade sowie die neuen
+Diagnose-Entitäten **Wake-up reason** und **Awake duration** helfen dabei,
+Wake-Schleifen und lange Verbindungsfenster zu erkennen. Nach dem HACS-Update
+muss die Display-Firmware einmalig auf 0.3.28 aktualisiert werden.
 
 Version **0.3.27** härtet Datenschutz, Zustellung und Wartung systematisch.
 Ein sensibler Bildschirm gilt erst nach einem bestätigten physischen Refresh

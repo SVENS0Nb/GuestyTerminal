@@ -59,6 +59,7 @@ esphome:
         - script.wait: guesty_read_external_power
     - priority: -100
       then:
+        - component.update: guesty_wake_reason
         - delay: 500ms
         - component.update: guesty_terminal_endpoint
 
@@ -131,7 +132,7 @@ api:
       then:
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            const bool renderer_current = id(guesty_render_revision) == 20;
+            const bool renderer_current = id(guesty_render_revision) == 21;
             int battery_percent = -1;
             if (id(guesty_battery_level).has_state()
                 && std::isfinite(id(guesty_battery_level).state)) {
@@ -254,7 +255,7 @@ api:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
-                        id(guesty_render_revision) = 20;
+                        id(guesty_render_revision) = 21;
                         id(guesty_screen_sensitive) = mode != "idle";
                         id(guesty_valid_until_epoch) =
                             mode == "idle" ? 0 : valid_until_epoch;
@@ -304,12 +305,7 @@ api:
                     && !(id(guesty_privacy_clear_pending)
                         && id(guesty_screen_sensitive));
             then:
-              # ESPHome 2026.7 and earlier do not count an orderly deep-sleep
-              # entry as a successful OTA boot. Mark it explicitly so a
-              # battery device that synchronizes in under the default 60s
-              # safe-mode window does not roll back working firmware.
-              - safe_mode.mark_successful
-              - deep_sleep.enter: guesty_deep_sleep
+              - script.execute: guesty_enter_battery_sleep
 
 # Deep-sleep displays must validate a freshly installed OTA image before a
 # later network or wake-pin reset can trigger the ESP32 bootloader rollback.
@@ -494,6 +490,23 @@ globals:
     initial_value: "0"
 
 script:
+  # Keep every battery sleep entry identical. Publishing the actual awake time
+  # before shutdown makes failed delivery, wake loops and exhausted timeout
+  # windows visible in Home Assistant without retaining another flash value.
+  - id: guesty_enter_battery_sleep
+    mode: single
+    then:
+      - output.turn_off: guesty_battery_enable
+      - output.turn_off: guesty_status_led
+      - output.turn_off: guesty_buzzer
+      - output.turn_off: guesty_microphone_power
+      - component.update: guesty_awake_duration
+      - delay: 300ms
+      # ESPHome 2026.7 and earlier do not count an orderly deep-sleep entry as
+      # a successful OTA boot. Mark it explicitly so short battery wake cycles
+      # do not roll back working firmware.
+      - safe_mode.mark_successful
+      - deep_sleep.enter: guesty_deep_sleep
   - id: guesty_read_external_power
     mode: restart
     then:
@@ -703,6 +716,8 @@ sensor:
     entity_category: diagnostic
     update_interval: never
     attenuation: 12db
+    samples: 16
+    sampling_mode: avg
     filters:
       - multiply: 2.0
   - platform: template
@@ -718,21 +733,36 @@ sensor:
     lambda: return id(guesty_battery_voltage).state;
     filters:
       - calibrate_linear:
-          - 4.15 -> 100.0
-          - 3.96 -> 90.0
-          - 3.91 -> 80.0
-          - 3.85 -> 70.0
-          - 3.80 -> 60.0
-          - 3.75 -> 50.0
-          - 3.68 -> 40.0
-          - 3.58 -> 30.0
-          - 3.49 -> 20.0
-          - 3.41 -> 10.0
-          - 3.30 -> 5.0
-          - 3.27 -> 0.0
+          # Battery voltage is deliberately non-linear. ESPHome otherwise
+          # defaults to one least-squares line and ignores these points as a
+          # piecewise discharge curve.
+          method: exact
+          datapoints:
+            - 3.27 -> 0.0
+            - 3.30 -> 5.0
+            - 3.41 -> 10.0
+            - 3.49 -> 20.0
+            - 3.58 -> 30.0
+            - 3.68 -> 40.0
+            - 3.75 -> 50.0
+            - 3.80 -> 60.0
+            - 3.85 -> 70.0
+            - 3.91 -> 80.0
+            - 3.96 -> 90.0
+            - 4.15 -> 100.0
       - clamp:
           min_value: 0
           max_value: 100
+  - platform: template
+    id: guesty_awake_duration
+    name: Awake duration
+    unit_of_measurement: s
+    accuracy_decimals: 0
+    icon: mdi:timer-outline
+    state_class: measurement
+    entity_category: diagnostic
+    update_interval: never
+    lambda: return millis() / 1000.0f;
   - platform: sht4x
     id: guesty_environment
     i2c_id: guesty_i2c
@@ -745,6 +775,27 @@ sensor:
     update_interval: never
 
 text_sensor:
+  # This state is evaluated once per boot and lets Home Assistant distinguish
+  # the intended 30-minute timer from an accidental button/wake-pin loop.
+  - platform: template
+    id: guesty_wake_reason
+    name: Wake-up reason
+    icon: mdi:power-sleep
+    entity_category: diagnostic
+    update_interval: never
+    lambda: |-
+      switch (esp_sleep_get_wakeup_cause()) {
+        case ESP_SLEEP_WAKEUP_TIMER:
+          return {"timer"};
+        case ESP_SLEEP_WAKEUP_EXT0:
+        case ESP_SLEEP_WAKEUP_EXT1:
+        case ESP_SLEEP_WAKEUP_GPIO:
+          return {"button"};
+        case ESP_SLEEP_WAKEUP_UNDEFINED:
+          return {"cold_boot"};
+        default:
+          return {"other"};
+      }
   # This diagnostic state is published only after a successful physical panel
   # refresh, or when a matching successful content ID is restored after wake.
   - platform: template
@@ -1445,12 +1496,19 @@ interval:
             # This timeout path can also finish before ESPHome's default 60s
             # OTA validation window when awake_duration_seconds is configured
             # near its 30-second minimum.
+            # The first action normally starts this script immediately. This
+            # second condition is a watchdog for a cancelled/deferred action:
+            # a successfully received sensitive payload is safe to retain on
+            # the panel, while an unconfirmed privacy clear must stay awake.
             - if:
                 condition:
-                  lambda: return !id(guesty_screen_sensitive);
+                  lambda: |-
+                    return !id(guesty_screen_sensitive)
+                        || (id(guesty_update_received_this_boot)
+                            && id(guesty_mode) != "idle"
+                            && !id(guesty_privacy_clear_pending));
                 then:
-                  - safe_mode.mark_successful
-                  - deep_sleep.enter: guesty_deep_sleep
+                  - script.execute: guesty_enter_battery_sleep
       # On permanent power there is no next wake-up cycle. Enforce the payload
       # lease continuously so stale access data still disappears locally.
       - if:

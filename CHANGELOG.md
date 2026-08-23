@@ -7,6 +7,22 @@ unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
 
 Noch keine Änderungen.
 
+## 0.3.28 – 2026-08-23
+
+### Akku und Energie
+
+- Die nichtlineare Akku-Kennlinie wird nun ausdrücklich stückweise ausgewertet,
+  statt versehentlich durch eine einzige Ausgleichsgerade ersetzt zu werden.
+  Sechzehn gemittelte ADC-Messungen stabilisieren zusätzlich die angezeigte
+  Spannung und Prozentzahl.
+- Alle regulären Akku-Schlafpfade verwenden dieselbe Abschaltsequenz. Ein
+  zusätzlicher Watchdog beendet auch einen verzögerten Wachzyklus nach einer
+  erfolgreich empfangenen Anzeige, ohne fehlgeschlagene Datenschutz-Löschungen
+  fälschlich zu bestätigen.
+- Die neuen Diagnose-Entitäten **Wake-up reason** und **Awake duration** machen
+  Tasten-Wakeups, Wake-Schleifen und ausgeschöpfte 90-Sekunden-Fenster in Home
+  Assistant sichtbar.
+
 ## 0.3.27 – 2026-08-23
 
 ### Sicherheit und Datenschutz
