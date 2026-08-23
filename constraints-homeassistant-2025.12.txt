@@ -2,4 +2,4 @@
 # compatible with its pinned aiohttp and aiodns releases. Keep the minimum
 # supported environment reproducible on Python 3.13.
 litellm==1.94.3
-pycares<5
+pycares<6
