@@ -1,2 +1,2 @@
 -r requirements-test-tools.txt
-homeassistant==2026.2.3
+homeassistant==2026.8.2
