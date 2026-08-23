@@ -7,6 +7,15 @@ unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
 
 Noch keine Änderungen.
 
+## 0.3.29 – 2026-08-23
+
+### Energie
+
+- Die automatische Netzstromerkennung verwendet nun das dedizierte
+  `REG0A.BUS_GD`-Signal des SY6974B. Damit bleiben Displays auch an CDP-,
+  unbekannten und nicht standardisierten USB-Netzteilen zuverlässig online,
+  statt diese Quellen fälschlich als Akkubetrieb einzustufen.
+
 ## 0.3.28 – 2026-08-23
 
 ### Akku und Energie

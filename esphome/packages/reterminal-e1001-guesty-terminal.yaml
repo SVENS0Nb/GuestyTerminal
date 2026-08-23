@@ -478,7 +478,7 @@ globals:
     type: bool
     initial_value: "false"
   # Volatile confidence counter for the charger status. External power is
-  # accepted only after three complete, consistent REG08 samples.
+  # accepted only after three complete, consistent REG0A.BUS_GD samples.
   - id: guesty_external_power_valid_reads
     type: uint8_t
     initial_value: "0"
@@ -515,7 +515,11 @@ script:
           count: 3
           then:
             - lambda: |-
-                uint8_t reg = 0x08;
+                // REG0A.BUS_GD is the SY6974B's dedicated indication that an
+                // external BUS input is attached. Unlike REG08.BUS_STAT it is
+                // independent of whether BC1.2 classified the source as SDP,
+                // CDP, DCP, unknown or non-standard.
+                uint8_t reg = 0x0A;
                 uint8_t status = 0;
                 const auto error = id(guesty_power_i2c)->write_readv(
                     0x6B, &reg, 1, &status, 1);
@@ -523,12 +527,8 @@ script:
                   return;
                 }
 
-                // PG_STAT alone is not sufficient: BUS_STAT must also name
-                // a real external input. 001 is a USB host and 011 an
-                // adapter; 000 is no input and 111 is battery-powered OTG.
-                const bool power_good = (status & 0x04) != 0;
-                const uint8_t bus_status = (status >> 5) & 0x07;
-                if (power_good && (bus_status == 0x01 || bus_status == 0x03)) {
+                const bool bus_good = (status & 0x80) != 0;
+                if (bus_good) {
                   id(guesty_external_power_valid_reads)++;
                 }
             - delay: 25ms
@@ -549,9 +549,9 @@ script:
               && id(guesty_external_power).state;
           if (!was_confirmed
               || id(guesty_external_power_invalid_batches) >= 2) {
-            // Failed, inconsistent or unsupported charger responses fail
-            // safe to battery behavior. A confirmed cable gets one retry so
-            // a single I2C glitch cannot put a USB-powered device to sleep.
+            // Failed or inconsistent charger responses fail safe to battery
+            // behavior. A confirmed cable gets one retry so a single I2C
+            // glitch cannot put a USB-powered device to sleep.
             id(guesty_external_power).publish_state(false);
           }
 
@@ -685,7 +685,7 @@ i2c:
     scl: GPIO20
     sda: GPIO19
   # The E1001 power schematic connects the SY6974B charger at 0x6B to this
-  # separate bus. REG08.PG_STAT and BUS_STAT together identify USB/VBUS.
+  # separate bus. REG0A.BUS_GD identifies an attached USB/VBUS input.
   - id: guesty_power_i2c
     scl: GPIO40
     sda: GPIO39

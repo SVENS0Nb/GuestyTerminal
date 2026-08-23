@@ -286,10 +286,11 @@ Symbol folgt ihm in Zehn-Prozent-Stufen.
   RAM-Cache entfernt; die sichtbare Nachlaufzeit des Displays bleibt davon
   unabhängig standardmäßig bei 30 Minuten.
 - Im empfohlenen Modus **Automatisch** bestätigt die Firmware USB-Strom durch
-  drei konsistente Power-Good- und USB-/Adapterstatus-Messungen des
-  E1001-v1.2-Ladecontrollers. Fehlerhafte, widersprüchliche oder nicht
-  unterstützte Antworten werden sicher als Akkubetrieb behandelt. Auf Akku
-  schläft das Gerät 30 Minuten und bleibt nach dem Aufwachen höchstens 90
+  drei konsistente BUS-Good-Messungen des E1001-v1.2-Ladecontrollers. Dadurch
+  werden USB-Hosts, CDP-/DCP-Netzteile sowie unbekannte und nicht standardisierte
+  Adapter unabhängig von ihrer Ladequellenklassifizierung erkannt. Fehlerhafte
+  oder widersprüchliche Antworten werden sicher als Akkubetrieb behandelt. Auf
+  Akku schläft das Gerät 30 Minuten und bleibt nach dem Aufwachen höchstens 90
   Sekunden aktiv. Sobald Home Assistant die aktuellen Daten geliefert hat,
   schläft es früher wieder ein. Falls ein älterer Hardwarestand USB-Strom nicht
   erkennt, kann im Assistenten **Immer online** ausgewählt werden.
@@ -493,6 +494,13 @@ oder instabilen API-Verbindungen. Die Integration reagiert sowohl auf den
 Reconnect-Impuls als auch auf den wiederhergestellten Aktionsnamen und versucht
 die Zustellung innerhalb eines begrenzten Zeitfensters erneut. Nach dem
 HACS-Update muss die Display-Firmware einmalig auf 0.3.26 aktualisiert werden.
+
+Version **0.3.29** korrigiert die automatische Netzstromerkennung. Die Firmware
+verwendet jetzt das dedizierte `REG0A.BUS_GD`-Signal des SY6974B und erkennt
+dadurch auch CDP-, unbekannte und nicht standardisierte USB-Netzteile korrekt.
+Ein angeschlossenes Display bleibt damit im Modus **Automatisch** zuverlässig
+online. Nach dem HACS-Update muss die Display-Firmware einmalig auf 0.3.29
+aktualisiert werden.
 
 Version **0.3.28** korrigiert die Akkuanzeige und härtet den Energiesparpfad.
 Die nichtlineare Spannungskennlinie wird nun wirklich stückweise ausgewertet und
