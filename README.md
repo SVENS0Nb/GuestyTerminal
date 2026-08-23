@@ -364,6 +364,10 @@ Die Aktion `guesty_terminal.force_redraw` zeichnet den bereits geladenen Inhalt
 einmal neu. Sie fragt Guesty nicht erneut ab und ist für die Wiederherstellung
 nach einem Treiber- oder Firmwarewechsel gedacht. Im normalen Betrieb bleibt
 die automatische Unterdrückung identischer E-Paper-Aktualisierungen aktiv.
+Manuell gestartete Aktionen melden einen Guesty-Fehler beziehungsweise einen
+vollständigen Zustellfehler sichtbar in Home Assistant, statt still erfolgreich
+zu erscheinen. Schlafende Displays bleiben beim regulären Hintergrundabgleich
+weiterhin ein erwarteter Zustand.
 
 Die Konfigurationsentität **Alle Display-Firmwares aktualisieren** hebt zuerst
 alle durch den Firmware-Assistenten erzeugten YAML-Dateien auf die aktuelle
@@ -377,6 +381,10 @@ Für schlafende Akku-Displays merkt der Device Builder den Auftrag vor und
 installiert ihn beim nächsten Aufwachen. Während des eigentlichen Flashens darf
 das Gerät nicht ausgeschaltet werden. Fortschritt und mögliche Fehler sind im
 ESPHome Device Builder sichtbar.
+
+Die kompakte, fortlaufende Änderungshistorie steht in
+[`CHANGELOG.md`](CHANGELOG.md). Die folgenden Hinweise erklären zusätzlich die
+Firmwareanforderungen älterer Installationen.
 
 Das Design mit den zwei grauen Zugangsfeldern wird auf dem E1001 gerendert und
 benötigt Firmware **0.3.11** oder neuer. Die MDI-Wettersymbole und der hybride
@@ -477,12 +485,37 @@ Reconnect-Impuls als auch auf den wiederhergestellten Aktionsnamen und versucht
 die Zustellung innerhalb eines begrenzten Zeitfensters erneut. Nach dem
 HACS-Update muss die Display-Firmware einmalig auf 0.3.26 aktualisiert werden.
 
+Version **0.3.27** härtet Datenschutz, Zustellung und Wartung systematisch.
+Ein sensibler Bildschirm gilt erst nach einem bestätigten physischen Refresh
+als gelöscht; fehlgeschlagene Löschungen werden erneut versucht. Manuelle
+Aktualisierungen melden Guesty- und Zustellfehler zuverlässig, Display-Mappings
+bleiben auch bei Entity-Umbenennungen stabil, Diagnose-Downloads verwenden eine
+strikte Positivliste und Firmwaredateien werden sicher atomar geschrieben.
+Abfragen mehrerer Listings laufen begrenzt parallel, ungültige Zeitdaten werden
+robust verworfen und CI prüft beide unterstützten Home-Assistant-Baselines sowie
+ESPHome. Nach dem HACS-Update muss die Display-Firmware einmalig auf 0.3.27
+aktualisiert werden.
+
 ## Datenschutz
 
 Die von der Integration angelegten Statussensoren enthalten weder Gastnamen
 noch Tür- oder WiFi-Codes. In den Attributen steht lediglich, ob der aktuelle
 Bildschirm solche Daten enthält. Fehlerprotokolle geben ebenfalls keine
 Zugangsdaten aus.
+
+Über Home Assistants Download-Diagnose kann zusätzlich ein strikt erlaubnisbasiertes
+Abbild mit Listingnamen, Entity-IDs, Protokollversionen, Anzeigearten und
+Lease-Zeitpunkten erzeugt werden. Gastnamen, SSIDs, Passwörter, Türcodes,
+Guesty-Zugangsdaten und Fehlermeldungstexte werden dort nicht ausgegeben.
+
+Der dauerhaft gespeicherte Datenschutzstatus wird erst nach einem erfolgreich
+bestätigten physischen E-Paper-Refresh geändert. Schlägt das Löschen eines
+sensitiven Bildschirms fehl, bleibt das Gerät als sensitiv markiert und versucht
+den neutralen Bildschirm erneut zu zeichnen. Auf Akku bleibt es in diesem
+Fehlerfall wach, statt einen nicht erfolgten Löschvorgang zu bestätigen.
+Der häufig erneuerte Lease-Zeitpunkt bleibt dagegen im flüchtigen Speicher;
+fehlt er nach einem Neustart, behandelt die Firmware den sensitiven Bildschirm
+vorsorglich als abgelaufen.
 
 Für Teilupdates behält der RTC-Speicher ausschließlich ein monochromes Abbild
 des kleinen Wetterfensters und die Anzahl der Teilupdates. Zusätzlich werden
@@ -499,8 +532,19 @@ Entität in den Recorder-Einstellungen ausschließen.
 
 ```bash
 python3 -m pip install -r requirements-test.txt
+ruff check .
+ruff format --check .
+mypy custom_components/guesty_terminal
 pytest
 python3 -m compileall custom_components
+```
+
+Für einen lokalen Lauf gegen die minimale Home-Assistant-Version werden die
+historisch kompatiblen Transitivabhängigkeiten zusätzlich festgesetzt:
+
+```bash
+python3 -m pip install -r requirements-test-tools.txt \
+  -c constraints-homeassistant-2025.12.txt homeassistant==2025.12.0
 ```
 
 `pytest` misst automatisch die Zeilen- und Branch-Coverage der vollständigen
@@ -511,3 +555,8 @@ ausgegeben und zeigt nicht abgedeckte Zeilen an.
 Vor dem ersten produktiven Einsatz sollte mit einer Testreservierung geprüft
 werden, ob das konkrete Guesty-Konto `keycode`, `wifiName` und `wifiPassword` in
 den erwarteten API-Antworten bereitstellt.
+
+Hinweise für Beiträge und Sicherheitsmeldungen stehen in
+[`CONTRIBUTING.md`](CONTRIBUTING.md) und [`SECURITY.md`](SECURITY.md). Der
+aktuelle rechtliche Lizenzstatus ist in
+[`LICENSE_STATUS.md`](LICENSE_STATUS.md) ausdrücklich dokumentiert.

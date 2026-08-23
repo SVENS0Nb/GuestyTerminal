@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
@@ -21,7 +22,7 @@ from .firmware_update import (
 
 async def async_setup_entry(
     _hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: ConfigEntry[Any],
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the central firmware-update button for one Guesty account."""

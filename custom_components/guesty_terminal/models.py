@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .const import (
     ACTIVE_RESERVATION_STATUSES,
+    CONF_ENDPOINT_ID,
     DATE_TIME_FORMAT_US,
     DATE_TIME_FORMATS,
     DEFAULT_CHECKOUT_INSTRUCTIONS_FALLBACK,
@@ -364,7 +365,7 @@ def _parse_time(value: Any, fallback: time) -> time:
 def _timezone(name: str) -> ZoneInfo:
     try:
         return ZoneInfo(name or "UTC")
-    except ZoneInfoNotFoundError:
+    except (ValueError, ZoneInfoNotFoundError):
         return ZoneInfo("UTC")
 
 
@@ -442,6 +443,7 @@ class Reservation:
             else {}
         )
 
+        check_in: datetime | None
         check_in_date = _parse_date(
             data.get("checkInDateLocalized") or stay_segment.get("checkInDateLocalized")
         )
@@ -473,6 +475,7 @@ class Reservation:
                     or stay_segment.get("eta")
                 )
 
+        check_out: datetime | None
         check_out_date = _parse_date(
             data.get("checkOutDateLocalized")
             or stay_segment.get("checkOutDateLocalized")
@@ -512,6 +515,8 @@ class Reservation:
             check_in = check_in.replace(tzinfo=zone)
         if check_out.tzinfo is None:
             check_out = check_out.replace(tzinfo=zone)
+        if check_out <= check_in:
+            return None
 
         guest = data.get("guest")
         if not isinstance(guest, Mapping):
@@ -551,6 +556,7 @@ class MappingOptions:
 
     endpoint_entity: str
     listing_id: str
+    endpoint_id: str = ""
     display_language: str = DEFAULT_DISPLAY_LANGUAGE
     welcome_title: str = DEFAULT_WELCOME_TITLE
     welcome_text: str = DEFAULT_WELCOME_TEXT
@@ -596,6 +602,9 @@ class MappingOptions:
         return cls(
             endpoint_entity=endpoint,
             listing_id=_string(data.get("listing_id")),
+            endpoint_id=(
+                _string(data.get(CONF_ENDPOINT_ID)) or endpoint_stable_id(endpoint)
+            ),
             display_language=language,
             welcome_title=(
                 _string(data.get("welcome_title")) or defaults.welcome_title
@@ -666,6 +675,8 @@ class MappingOptions:
         """Serialize options for a config entry."""
         return {
             "listing_id": self.listing_id,
+            CONF_ENDPOINT_ID: self.endpoint_id
+            or endpoint_stable_id(self.endpoint_entity),
             "display_language": self.display_language,
             "welcome_title": self.welcome_title,
             "welcome_text": self.welcome_text,
@@ -691,6 +702,11 @@ class MappingOptions:
             "show_wifi": self.show_wifi,
             "weather_entity": self.weather_entity,
         }
+
+
+def endpoint_stable_id(endpoint_entity: str) -> str:
+    """Return the legacy-compatible stable identifier for one display mapping."""
+    return hashlib.sha256(endpoint_entity.encode()).hexdigest()[:12]
 
 
 class _FormatValues(dict[str, str]):

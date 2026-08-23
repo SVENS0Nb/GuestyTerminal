@@ -23,4 +23,15 @@ line-length = 88
 target-version = "py313"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
+select = ["B", "E", "F", "I", "RUF", "SIM", "UP"]
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.mypy]
+python_version = "3.13"
+check_untyped_defs = true
+ignore_missing_imports = true
+no_implicit_optional = true
+no_warn_return_any = true
+warn_redundant_casts = true
+warn_unreachable = true
+warn_unused_ignores = true

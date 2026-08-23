@@ -7,17 +7,20 @@ import hashlib
 import logging
 import re
 from collections.abc import Callable, Coroutine
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 
 from .api import GuestyClient
 from .const import (
+    CONF_ENDPOINT_ID,
     CONF_LOGO_DATA,
     CONF_MAPPINGS,
     DISPLAY_ACTION_SUFFIX,
@@ -193,7 +196,7 @@ async def async_send_display_payload(
 
 
 async def async_clear_configured_displays(
-    hass: HomeAssistant, entry: ConfigEntry
+    hass: HomeAssistant, entry: ConfigEntry[Any]
 ) -> None:
     """Best-effort clear when a GuestyTerminal entry is permanently removed."""
     raw_mappings = entry.options.get(CONF_MAPPINGS, {})
@@ -239,12 +242,38 @@ async def async_clear_configured_displays(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class DisplayDeliveryResult:
+    """Non-sensitive aggregate for one multi-display delivery attempt."""
+
+    attempted: int
+    succeeded: int
+
+    @property
+    def failed(self) -> int:
+        """Return the number of displays that did not accept the payload."""
+        return self.attempted - self.succeeded
+
+
+async def _async_delivery_result(
+    deliveries: list[Coroutine[Any, Any, bool]],
+) -> DisplayDeliveryResult:
+    """Run independent deliveries and reduce their results without identifiers."""
+    if not deliveries:
+        return DisplayDeliveryResult(0, 0)
+    results = await asyncio.gather(*deliveries, return_exceptions=True)
+    return DisplayDeliveryResult(
+        attempted=len(results),
+        succeeded=sum(result is True for result in results),
+    )
+
+
 @dataclass(slots=True)
 class GuestyTerminalRuntime:
     """Hold entry objects and push payloads while displays are awake."""
 
     hass: HomeAssistant
-    entry: ConfigEntry
+    entry: ConfigEntry[GuestyTerminalRuntime]
     client: GuestyClient
     coordinator: GuestyTerminalCoordinator
     _unsubscribers: list[Callable[[], None]] = field(default_factory=list)
@@ -252,6 +281,7 @@ class GuestyTerminalRuntime:
     _sync_requests: set[str] = field(default_factory=set)
     _pending_endpoint_pushes: set[str] = field(default_factory=set)
     _tasks: set[asyncio.Future[Any]] = field(default_factory=set)
+    _manual_refresh_requests: int = 0
     _stopped: bool = False
 
     def _create_task(self, coroutine: Coroutine[Any, Any, Any]) -> None:
@@ -267,6 +297,15 @@ class GuestyTerminalRuntime:
     async def async_start(self) -> None:
         """Start endpoint and coordinator listeners."""
         self._stopped = False
+        bus = getattr(self.hass, "bus", None)
+        async_listen = getattr(bus, "async_listen", None)
+        if callable(async_listen):
+            self._unsubscribers.append(
+                async_listen(
+                    er.EVENT_ENTITY_REGISTRY_UPDATED,
+                    self._handle_entity_registry_update,
+                )
+            )
         mappings = self.coordinator.mapping_options()
         endpoints = [item.endpoint_entity for item in mappings]
         if endpoints:
@@ -290,6 +329,52 @@ class GuestyTerminalRuntime:
         )
         await self.async_push_all()
 
+    @callback
+    def _handle_entity_registry_update(self, event: Event) -> None:
+        """Move a mapping when Home Assistant renames its endpoint entity."""
+        if event.data.get("action") != "update":
+            return
+        old_endpoint = str(event.data.get("old_entity_id") or "")
+        new_endpoint = str(event.data.get("entity_id") or "")
+        if not old_endpoint or not new_endpoint or old_endpoint == new_endpoint:
+            return
+
+        raw_mappings = self.entry.options.get(CONF_MAPPINGS, {})
+        if not isinstance(raw_mappings, dict) or old_endpoint not in raw_mappings:
+            return
+        if new_endpoint in raw_mappings:
+            _LOGGER.error(
+                "Cannot migrate a renamed GuestyTerminal endpoint because the "
+                "new entity ID is already mapped"
+            )
+            return
+
+        async_entries = getattr(self.hass.config_entries, "async_entries", None)
+        if callable(async_entries):
+            for configured_entry in async_entries(DOMAIN):
+                if configured_entry is self.entry:
+                    continue
+                other_mappings = configured_entry.options.get(CONF_MAPPINGS, {})
+                if isinstance(other_mappings, dict) and new_endpoint in other_mappings:
+                    _LOGGER.error(
+                        "Cannot migrate a renamed GuestyTerminal endpoint because "
+                        "another config entry already owns it"
+                    )
+                    return
+
+        options = deepcopy(dict(self.entry.options))
+        mappings = deepcopy(raw_mappings)
+        raw_mapping = mappings.pop(old_endpoint)
+        if isinstance(raw_mapping, dict):
+            raw_mapping.setdefault(
+                CONF_ENDPOINT_ID,
+                hashlib.sha256(old_endpoint.encode()).hexdigest()[:12],
+            )
+        mappings[new_endpoint] = raw_mapping
+        options[CONF_MAPPINGS] = mappings
+        self.hass.config_entries.async_update_entry(self.entry, options=options)
+        self.hass.config_entries.async_schedule_reload(self.entry.entry_id)
+
     async def async_stop(self) -> None:
         """Stop all registered listeners."""
         self._stopped = True
@@ -306,7 +391,7 @@ class GuestyTerminalRuntime:
         self._pending_endpoint_pushes.clear()
 
     @callback
-    def _handle_endpoint_state(self, event: Event) -> None:
+    def _handle_endpoint_state(self, event: Event[EventStateChangedData]) -> None:
         new_state = event.data.get("new_state")
         if new_state is None or new_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
             return
@@ -377,10 +462,12 @@ class GuestyTerminalRuntime:
 
     @callback
     def _handle_coordinator_update(self) -> None:
+        if self._manual_refresh_requests:
+            return
         self._create_task(self.async_push_all(exclude=frozenset(self._sync_requests)))
 
     @callback
-    def _handle_weather_state(self, event: Event) -> None:
+    def _handle_weather_state(self, event: Event[EventStateChangedData]) -> None:
         """Push live weather to displays mapped to the changed entity."""
         weather_entity = str(event.data.get("entity_id") or "")
         endpoints = {
@@ -406,18 +493,31 @@ class GuestyTerminalRuntime:
                 continue
             self._create_task(self.async_push_endpoint(endpoint))
 
-    async def async_push_all(self, *, exclude: frozenset[str] = frozenset()) -> None:
+    async def async_push_all(
+        self, *, exclude: frozenset[str] = frozenset()
+    ) -> DisplayDeliveryResult:
         """Push current payloads to every display that is online."""
-        if self.coordinator.data is None:
-            return
-        await asyncio.gather(
-            *(
+        data = getattr(self.coordinator, "data", None)
+        if data is None:
+            return DisplayDeliveryResult(0, 0)
+        return await _async_delivery_result(
+            [
                 self.async_push_endpoint(endpoint)
-                for endpoint in self.coordinator.data.payloads
+                for endpoint in data.payloads
                 if endpoint not in exclude
-            ),
-            return_exceptions=True,
+            ]
         )
+
+    async def async_refresh_and_push(self) -> DisplayDeliveryResult:
+        """Refresh Guesty and synchronously report the resulting deliveries."""
+        self._manual_refresh_requests += 1
+        try:
+            await self.coordinator.async_request_refresh()
+        finally:
+            self._manual_refresh_requests -= 1
+        if not self.coordinator.last_update_success:
+            return DisplayDeliveryResult(0, 0)
+        return await self.async_push_all()
 
     async def _async_sync_and_force_redraw_endpoint(self, endpoint: str) -> None:
         """Refresh Guesty, then redraw the requesting display once."""
@@ -450,16 +550,13 @@ class GuestyTerminalRuntime:
             return False
         return await self._async_send_payload(endpoint_entity, payload)
 
-    async def async_force_redraw_all(self) -> None:
+    async def async_force_redraw_all(self) -> DisplayDeliveryResult:
         """Redraw configured displays once using cached payloads."""
-        if self.coordinator.data is None:
-            return
-        await asyncio.gather(
-            *(
-                self.async_force_redraw_endpoint(endpoint)
-                for endpoint in self.coordinator.data.payloads
-            ),
-            return_exceptions=True,
+        data = getattr(self.coordinator, "data", None)
+        if data is None:
+            return DisplayDeliveryResult(0, 0)
+        return await _async_delivery_result(
+            [self.async_force_redraw_endpoint(endpoint) for endpoint in data.payloads]
         )
 
     async def async_force_redraw_endpoint(self, endpoint_entity: str) -> bool:
@@ -473,9 +570,10 @@ class GuestyTerminalRuntime:
 
     def _safe_payload_for_endpoint(self, endpoint_entity: str) -> DisplayPayload | None:
         """Return cached content, replacing an expired guest screen with idle."""
-        if self.coordinator.data is None:
+        data = getattr(self.coordinator, "data", None)
+        if data is None:
             return None
-        payload = self.coordinator.data.payloads.get(endpoint_entity)
+        payload = data.payloads.get(endpoint_entity)
         if payload is None:
             return payload
         mapping = next(
@@ -490,11 +588,7 @@ class GuestyTerminalRuntime:
             return self.coordinator.payload_with_current_weather(
                 endpoint_entity, payload
             )
-        listing = (
-            self.coordinator.data.listings.get(mapping.listing_id)
-            if mapping is not None
-            else None
-        )
+        listing = data.listings.get(mapping.listing_id) if mapping is not None else None
         return DisplayPayload.idle(
             listing or Listing("", payload.property_name or "Unterkunft"), mapping
         )
@@ -519,14 +613,13 @@ class GuestyTerminalRuntime:
             DisplayPayload.idle(Listing("", property_name), mapping),
         )
 
-    async def async_clear_all(self) -> None:
+    async def async_clear_all(self) -> DisplayDeliveryResult:
         """Best-effort clear of every display configured for this account."""
-        await asyncio.gather(
-            *(
+        return await _async_delivery_result(
+            [
                 self.async_clear_endpoint(mapping.endpoint_entity)
                 for mapping in self.coordinator.mapping_options()
-            ),
-            return_exceptions=True,
+            ]
         )
 
     async def _async_send_payload(
@@ -546,3 +639,6 @@ class GuestyTerminalRuntime:
             force_redraw=force_redraw,
             logo_data=valid_logo_data(self.entry.options.get(CONF_LOGO_DATA)),
         )
+
+
+type GuestyTerminalConfigEntry = ConfigEntry[GuestyTerminalRuntime]

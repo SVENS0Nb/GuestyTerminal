@@ -180,6 +180,8 @@
     }
   },
   "exceptions": {
+    "data_refresh_failed": {"message": "No se pudieron actualizar los datos de Guesty para {failed} de las {total} cuentas configuradas. Se conservaron los datos existentes de las pantallas."},
+    "display_delivery_failed": {"message": "Las {failed} pantallas configuradas de un total de {total} rechazaron la actualización. Activa las pantallas y comprueba su conexión ESPHome."},
     "firmware_no_managed_configs": {"message": "No se encontró ninguna configuración ESPHome administrada por GuestyTerminal."},
     "firmware_config_update_failed": {"message": "No se pudieron actualizar de forma segura las configuraciones ESPHome administradas."},
     "firmware_builder_unavailable": {"message": "ESPHome Device Builder no está disponible o no está conectado a Home Assistant."},

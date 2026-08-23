@@ -180,6 +180,12 @@
     }
   },
   "exceptions": {
+    "data_refresh_failed": {
+      "message": "Guesty data could not be refreshed for {failed} of {total} configured accounts. Existing display data was retained."
+    },
+    "display_delivery_failed": {
+      "message": "All {failed} of {total} configured displays rejected the update. Wake the displays and verify their ESPHome connection."
+    },
     "firmware_no_managed_configs": {
       "message": "No GuestyTerminal-managed ESPHome configurations were found. Create the display firmware through GuestyTerminal setup first."
     },

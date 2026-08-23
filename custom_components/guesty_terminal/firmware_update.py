@@ -42,7 +42,7 @@ def _translated_error(key: str) -> HomeAssistantError:
 def _get_esphome_dashboard(hass: HomeAssistant):
     """Resolve Home Assistant's optional ESPHome dashboard connection lazily."""
     try:
-        from homeassistant.components.esphome.dashboard import (  # noqa: PLC0415
+        from homeassistant.components.esphome.dashboard import (
             async_get_dashboard,
         )
     except ImportError:

@@ -65,7 +65,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.26") == 2
+    assert rendered.count("ref: v0.3.27") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
@@ -321,6 +321,60 @@ def test_battery_wake_cycle_requires_confirmed_vbus_and_cannot_wake_loop() -> No
     assert "static_cast<uint32_t>(${awake_duration_seconds})" in interval
 
 
+def test_privacy_state_changes_only_after_a_successful_physical_refresh() -> None:
+    package = PACKAGE_FILE.read_text(encoding="utf-8")
+
+    action_start = package.index("    - action: guesty_terminal_update_display_v9\n")
+    globals_start = package.index("\nglobals:\n", action_start)
+    action = package[action_start:globals_start]
+    first_update = action.index("              - component.update: guesty_epaper\n")
+    success_check = action.index("last_update_successful()", first_update)
+    privacy_commit = action.index(
+        'id(guesty_screen_sensitive) = mode != "idle";', first_update
+    )
+    assert success_check < privacy_commit
+    assert 'id(guesty_screen_sensitive) = mode != "idle";' not in action[:first_update]
+    assert "&& !(id(guesty_privacy_clear_pending)" in action
+
+    interval_start = package.index("\ninterval:\n", globals_start)
+    interval = package[interval_start:]
+    battery_clear = interval.index(
+        'id(guesty_mode) = "idle";\n',
+    )
+    battery_update = interval.index(
+        "                  - component.update: guesty_epaper\n", battery_clear
+    )
+    battery_success = interval.index("last_update_successful()", battery_update)
+    battery_commit = interval.index(
+        "id(guesty_screen_sensitive) = false;", battery_success
+    )
+    assert battery_update < battery_success < battery_commit
+    assert (
+        "id(guesty_screen_sensitive) = false;"
+        not in interval[battery_clear:battery_update]
+    )
+    assert "lambda: return !id(guesty_screen_sensitive);" in interval
+    assert "Privacy clear failed; keeping the device awake" in interval
+
+    mains_clear = interval.index('id(guesty_mode) = "idle";', battery_commit)
+    mains_update = interval.index(
+        "            - component.update: guesty_epaper\n", mains_clear
+    )
+    mains_success = interval.index("last_update_successful()", mains_update)
+    mains_commit = interval.index("id(guesty_screen_sensitive) = false;", mains_success)
+    assert mains_update < mains_success < mains_commit
+    assert (
+        "id(guesty_screen_sensitive) = false;" not in interval[mains_clear:mains_update]
+    )
+    assert "Privacy clear failed; retrying while external power" in interval
+    assert "&& (id(guesty_privacy_clear_pending)" in interval
+    assert "id: guesty_privacy_clear_pending" in package
+    lease_start = package.index("  - id: guesty_valid_until_epoch\n")
+    lease_end = package.index("\n  - id:", lease_start + 1)
+    assert "restore_value: true" not in package[lease_start:lease_end]
+    assert "|| id(guesty_valid_until_epoch) == 0" in interval
+
+
 def test_partial_refresh_rehydrates_both_complete_controller_planes() -> None:
     driver_path = (
         Path(__file__).parents[1]
@@ -394,7 +448,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.26", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.27", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -406,8 +460,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.26") == 2
-    assert 'version: "0.3.26"' in updated
+    assert updated.count("ref: v0.3.27") == 2
+    assert 'version: "0.3.27"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -419,18 +473,70 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", False)
     ]
 
+    managed.chmod(0o644)
+    secured = update_managed_firmware_configs(tmp_path)
+    assert [(item.path.name, item.changed) for item in secured] == [
+        ("display.yaml", True)
+    ]
+    assert stat.S_IMODE(managed.stat().st_mode) == 0o600
+
+
+@pytest.mark.parametrize(
+    "broken_line",
+    (
+        '    key: "not-a-valid-api-key"',
+        '    password: "short"',
+        '    password: "tiny"',
+    ),
+)
+def test_update_managed_firmware_configs_rejects_invalid_credentials(
+    tmp_path, broken_line
+) -> None:
+    valid = render_firmware_config(_options()).replace("0.3.27", "0.3.10")
+    if "key:" in broken_line:
+        invalid = valid.replace(
+            next(line for line in valid.splitlines() if "key:" in line), broken_line
+        )
+    elif "short" in broken_line:
+        invalid = valid.replace(
+            next(
+                line
+                for line in valid.splitlines()
+                if line.strip().startswith("password:") and "!secret" not in line
+            ),
+            broken_line,
+            1,
+        )
+    else:
+        invalid = valid.replace(
+            next(
+                line
+                for line in reversed(valid.splitlines())
+                if line.strip().startswith("password:")
+            ),
+            broken_line,
+            1,
+        )
+    managed = tmp_path / "display.yaml"
+    managed.write_text(invalid, encoding="utf-8")
+
+    with pytest.raises(FirmwareConfigError, match="invalid credentials"):
+        update_managed_firmware_configs(tmp_path)
+    assert managed.read_text(encoding="utf-8") == invalid
+
 
 def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.26", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.27", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
+    future.chmod(0o600)
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.26", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.27", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")

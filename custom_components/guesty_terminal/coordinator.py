@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import time
@@ -50,6 +51,8 @@ _GUEST_CACHE_SECONDS = DEFAULT_POLL_MINUTES * 60
 _COMPLETED_RESERVATION_RETENTION = timedelta(hours=COMPLETED_RESERVATION_CACHE_HOURS)
 _MAX_KEYCODE_CACHE_ITEMS = 512
 _MAX_GUEST_CACHE_ITEMS = 256
+_MAX_CONCURRENT_GUESTY_REQUESTS = 4
+_CUSTOM_FIELD_DEFINITION_CACHE_SECONDS = 60 * 60
 
 
 def _bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:
@@ -83,7 +86,7 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
     def __init__(
         self,
         hass: HomeAssistant,
-        entry: ConfigEntry,
+        entry: ConfigEntry[Any],
         client: GuestyClient,
     ) -> None:
         poll_minutes = _bounded_int(
@@ -103,7 +106,7 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
         self.entry = entry
         self.client = client
         self._keycode_cache: dict[tuple[str, str], str] = {}
-        self._custom_field_definitions: dict[str, Any] = {}
+        self._custom_field_definitions: dict[str, tuple[float, Any]] = {}
         self._guest_cache: dict[str, tuple[float, dict[str, Any]]] = {}
         self._listing_detail_cache: dict[str, tuple[float, Listing]] = {}
         self._reservation_snapshot_cache: dict[str, tuple[Reservation, ...]] = {}
@@ -150,6 +153,8 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
         if not isinstance(attributes, Mapping):
             return condition, ""
         temperature = attributes.get("temperature")
+        if temperature is None:
+            return condition, ""
         try:
             numeric_temperature = float(temperature)
         except (TypeError, ValueError):
@@ -263,21 +268,31 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                 self._account_id = account_id or None
         definitions: Any = []
         if account_id:
-            if account_id not in self._custom_field_definitions:
+            cached_definitions = self._custom_field_definitions.get(account_id)
+            if (
+                cached_definitions is not None
+                and time.monotonic() - cached_definitions[0]
+                < _CUSTOM_FIELD_DEFINITION_CACHE_SECONDS
+            ):
+                definitions = cached_definitions[1]
+            else:
                 try:
-                    self._custom_field_definitions[
+                    definitions = await self.client.async_get_account_custom_fields(
                         account_id
-                    ] = await self.client.async_get_account_custom_fields(account_id)
+                    )
                 except (GuestyAuthenticationError, GuestyRateLimitError):
                     raise
                 except GuestyError as err:
                     _LOGGER.debug(
                         "Could not load Guesty custom-field definitions: %s", err
                     )
+                    if cached_definitions is not None:
+                        definitions = cached_definitions[1]
                 else:
-                    definitions = self._custom_field_definitions[account_id]
-            else:
-                definitions = self._custom_field_definitions[account_id]
+                    self._custom_field_definitions[account_id] = (
+                        time.monotonic(),
+                        definitions,
+                    )
 
         keycode = extract_keycode_from_custom_fields(populated, definitions)
         if keycode and cache_key is not None:
@@ -298,9 +313,8 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
         if not guest_id:
             return {}
         cached = self._guest_cache.get(guest_id)
-        if cached is not None:
-            if time.monotonic() - cached[0] < _GUEST_CACHE_SECONDS:
-                return cached[1]
+        if cached is not None and time.monotonic() - cached[0] < _GUEST_CACHE_SECONDS:
+            return cached[1]
         try:
             guest = await self.client.async_get_guest(guest_id)
         except (GuestyAuthenticationError, GuestyRateLimitError):
@@ -423,18 +437,16 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
             detail_cache = getattr(self, "_listing_detail_cache", None)
             if detail_cache is None:
                 detail_cache = self._listing_detail_cache = {}
-            for listing_id in mapped_listing_ids:
+            api_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_GUESTY_REQUESTS)
+
+            async def _listing_details(
+                listing_id: str,
+            ) -> tuple[str, Listing | None, bool]:
                 listing = listings.get(listing_id)
-                if (
-                    listing is not None
-                    and listing.wifi_name
-                    and listing.wifi_password
-                    and listing.checkout_instructions
-                ):
-                    continue
                 cached = detail_cache.get(listing_id)
                 try:
-                    full = await self.client.async_get_listing(listing_id)
+                    async with api_semaphore:
+                        full = await self.client.async_get_listing(listing_id)
                 except (GuestyAuthenticationError, GuestyRateLimitError):
                     raise
                 except GuestyError as err:
@@ -447,22 +459,27 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                     # unrelated displays. Retain an older detail record only
                     # when the active listing still exists in the collection.
                     if listing is not None and cached is not None:
-                        listings[listing_id] = cached[1]
-                    continue
+                        return listing_id, cached[1], False
+                    return listing_id, listing, False
                 if full and (full_listing := Listing.from_api(full)).listing_id:
                     if cached is not None and cached[1] == full_listing:
-                        listings[listing_id] = cached[1]
-                    else:
-                        listings[listing_id] = full_listing
-                        detail_cache[listing_id] = (
-                            time.monotonic(),
-                            full_listing,
-                        )
+                        return listing_id, cached[1], False
+                    return listing_id, full_listing, True
                 elif listing is not None:
                     if cached is not None:
-                        listings[listing_id] = cached[1]
-                    else:
-                        detail_cache[listing_id] = (time.monotonic(), listing)
+                        return listing_id, cached[1], False
+                    return listing_id, listing, True
+                return listing_id, None, False
+
+            detail_results = await asyncio.gather(
+                *(_listing_details(listing_id) for listing_id in mapped_listing_ids)
+            )
+            for listing_id, resolved_listing, update_cache in detail_results:
+                if resolved_listing is None:
+                    continue
+                listings[listing_id] = resolved_listing
+                if update_cache:
+                    detail_cache[listing_id] = (time.monotonic(), resolved_listing)
 
             available_listing_ids = [
                 listing_id
@@ -493,11 +510,23 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
             # reconciliation layer separately retains completed stays for
             # twelve hours. The short collection above remains responsible for
             # a current or just-ended stay and its access code.
-            for listing_id in available_listing_ids:
-                upcoming = await self.client.async_get_upcoming_reservations(
-                    listing_id,
-                    limit=UPCOMING_RESERVATIONS_PER_LISTING,
+            async def _upcoming_reservations(
+                listing_id: str,
+            ) -> tuple[str, list[dict[str, Any]]]:
+                async with api_semaphore:
+                    upcoming = await self.client.async_get_upcoming_reservations(
+                        listing_id,
+                        limit=UPCOMING_RESERVATIONS_PER_LISTING,
+                    )
+                return listing_id, upcoming
+
+            upcoming_results = await asyncio.gather(
+                *(
+                    _upcoming_reservations(listing_id)
+                    for listing_id in available_listing_ids
                 )
+            )
+            for listing_id, upcoming in upcoming_results:
                 for raw in upcoming:
                     reservation_id = first_present(raw, "reservationId", "_id", "id")
                     if reservation_id and reservation_id in known_ids[listing_id]:
@@ -506,20 +535,22 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                         known_ids[listing_id].add(reservation_id)
                     raw_by_listing[listing_id].append((raw, False))
 
-            fresh_snapshots: dict[str, tuple[Reservation, ...]] = {}
-            for listing_id in mapped_listing_ids:
+            async def _normalized_listing(
+                listing_id: str,
+            ) -> tuple[str, tuple[Reservation, ...]]:
                 listing = listings.get(listing_id)
                 if listing is None:
-                    continue
+                    return listing_id, ()
                 normalized: list[Reservation] = []
-                for raw, include_keycode in raw_by_listing[listing_id]:
-                    reservation = await self._async_normalize_reservation(
-                        raw,
-                        listing,
-                        include_keycode=include_keycode,
-                    )
-                    if reservation is not None:
-                        normalized.append(reservation)
+                async with api_semaphore:
+                    for raw, include_keycode in raw_by_listing[listing_id]:
+                        reservation = await self._async_normalize_reservation(
+                            raw,
+                            listing,
+                            include_keycode=include_keycode,
+                        )
+                        if reservation is not None:
+                            normalized.append(reservation)
                 normalized.sort(
                     key=lambda reservation: (
                         reservation.check_in,
@@ -536,7 +567,16 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                     for reservation in normalized
                     if reservation.check_in > current
                 ][:UPCOMING_RESERVATIONS_PER_LISTING]
-                fresh_snapshots[listing_id] = tuple(current_or_recent + upcoming)
+                return listing_id, tuple(current_or_recent + upcoming)
+
+            normalized_results = await asyncio.gather(
+                *(
+                    _normalized_listing(listing_id)
+                    for listing_id in mapped_listing_ids
+                    if listing_id in listings
+                )
+            )
+            fresh_snapshots = dict(normalized_results)
 
             self._reconcile_reservation_snapshots(
                 fresh_snapshots,
@@ -560,12 +600,12 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
 
             payloads: dict[str, DisplayPayload] = {}
             for mapping in mappings:
-                listing = listings.get(mapping.listing_id)
-                if listing is None:
+                mapped_listing = listings.get(mapping.listing_id)
+                if mapped_listing is None:
                     continue
                 weather_condition, weather_temperature = self._weather_values(mapping)
                 payloads[mapping.endpoint_entity] = build_display_payload(
-                    listing,
+                    mapped_listing,
                     reservations,
                     mapping,
                     weather_condition=weather_condition,

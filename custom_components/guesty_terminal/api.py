@@ -10,7 +10,7 @@ from email.utils import parsedate_to_datetime
 from math import ceil, isfinite
 from typing import Any
 
-from aiohttp import ClientError, ClientResponse, ClientSession
+from aiohttp import ClientError, ClientResponse, ClientSession, ClientTimeout
 
 from .const import (
     ACTIVE_RESERVATION_STATUSES,
@@ -134,7 +134,7 @@ class GuestyClient:
                         "client_secret": self._client_secret,
                     },
                     headers={"Accept": "application/json"},
-                    timeout=20,
+                    timeout=ClientTimeout(total=20),
                 ) as response:
                     data = await self._decode_response(response)
             except (TimeoutError, ClientError) as err:
@@ -182,7 +182,7 @@ class GuestyClient:
                     "Accept": "application/json",
                     "Authorization": f"Bearer {token}",
                 },
-                timeout=30,
+                timeout=ClientTimeout(total=30),
             ) as response:
                 data = await self._decode_response(response)
                 if response.status == 401 and retry_auth:

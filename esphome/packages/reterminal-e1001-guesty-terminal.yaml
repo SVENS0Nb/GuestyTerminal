@@ -160,6 +160,8 @@ api:
                 && renderer_current
                 && !content_id.empty()
                 && content_id == id(guesty_content_id);
+            id(guesty_privacy_clear_pending) =
+                mode == "idle" && id(guesty_content_changed);
             id(guesty_display_battery_percent) = battery_percent;
             id(guesty_mode) = mode;
             id(guesty_property_name) = property_name;
@@ -190,8 +192,6 @@ api:
             id(guesty_logo_data) = logo_data;
             id(guesty_weather_condition) = weather_condition;
             id(guesty_weather_temperature) = weather_temperature;
-            id(guesty_valid_until_epoch) = valid_until_epoch;
-            id(guesty_screen_sensitive) = mode != "idle";
             id(guesty_has_wifi) =
                 mode == "welcome" && !wifi_name.empty();
             id(guesty_has_weather) =
@@ -255,6 +255,10 @@ api:
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
                         id(guesty_render_revision) = 20;
+                        id(guesty_screen_sensitive) = mode != "idle";
+                        id(guesty_valid_until_epoch) =
+                            mode == "idle" ? 0 : valid_until_epoch;
+                        id(guesty_privacy_clear_pending) = false;
                         if (mode != "welcome" && mode != "checkout"
                             && id(guesty_display_battery_percent) >= 0) {
                           id(guesty_rendered_battery_percent) =
@@ -278,6 +282,11 @@ api:
                   id: guesty_last_booking
                   state: !lambda |-
                     return booking_summary;
+              - lambda: |-
+                  id(guesty_screen_sensitive) = mode != "idle";
+                  id(guesty_valid_until_epoch) =
+                      mode == "idle" ? 0 : valid_until_epoch;
+                  id(guesty_privacy_clear_pending) = false;
               - delay: 1200ms
         # Re-read VBUS immediately before deciding the post-sync power state.
         # This keeps a newly connected cable online and sends a just-unplugged
@@ -288,10 +297,12 @@ api:
             condition:
               lambda: |-
                 const std::string profile = "${power_mode}";
-                return profile == "battery"
+                return (profile == "battery"
                     || (profile != "mains"
                         && (!id(guesty_external_power).has_state()
-                            || !id(guesty_external_power).state));
+                            || !id(guesty_external_power).state)))
+                    && !(id(guesty_privacy_clear_pending)
+                        && id(guesty_screen_sensitive));
             then:
               # ESPHome 2026.7 and earlier do not count an orderly deep-sleep
               # entry as a successful OTA boot. Mark it explicitly so a
@@ -449,15 +460,23 @@ globals:
     type: int
     restore_value: true
     initial_value: "-1"
-  # Only privacy state, opaque fingerprints and non-sensitive header status
-  # survive deep sleep. Door and WiFi credentials are never written to flash.
+  # The renewable epoch changes on every Home Assistant poll and therefore
+  # remains volatile to avoid periodic NVS writes. A reboot with a physically
+  # sensitive screen and no renewed epoch is treated as an expired lease.
   - id: guesty_valid_until_epoch
     type: uint32_t
-    restore_value: true
     initial_value: "0"
+  # Only the conservative physical-screen flag, opaque fingerprints and
+  # non-sensitive header status survive deep sleep. Door and WiFi credentials
+  # are never written to flash.
   - id: guesty_screen_sensitive
     type: bool
     restore_value: true
+    initial_value: "false"
+  # Volatile distinction between the boot-time idle default and an idle image
+  # that was requested but not yet confirmed by the physical panel.
+  - id: guesty_privacy_clear_pending
+    type: bool
     initial_value: "false"
   - id: guesty_update_received_this_boot
     type: bool
@@ -1379,7 +1398,8 @@ interval:
                 condition:
                   lambda: |-
                     return id(guesty_screen_sensitive)
-                        && !id(guesty_update_received_this_boot);
+                        && (!id(guesty_update_received_this_boot)
+                            || id(guesty_mode) == "idle");
                 then:
                   - lambda: |-
                       id(guesty_mode) = "idle";
@@ -1400,10 +1420,7 @@ interval:
                       id(guesty_special_requests).clear();
                       id(guesty_has_wifi) = false;
                       id(guesty_has_weather) = false;
-                      id(guesty_screen_sensitive) = false;
-                      id(guesty_valid_until_epoch) = 0;
-                      id(guesty_content_id).clear();
-                      id(guesty_base_content_id).clear();
+                      id(guesty_privacy_clear_pending) = true;
                   - display.page.show: guesty_idle_page
                   - component.update: guesty_epaper
                   - delay: 7s
@@ -1411,15 +1428,29 @@ interval:
                       condition:
                         lambda: return id(guesty_epaper).last_update_successful();
                       then:
+                        - lambda: |-
+                            id(guesty_screen_sensitive) = false;
+                            id(guesty_valid_until_epoch) = 0;
+                            id(guesty_content_id).clear();
+                            id(guesty_base_content_id).clear();
+                            id(guesty_privacy_clear_pending) = false;
                         - text_sensor.template.publish:
                             id: guesty_last_booking
                             state: !lambda |-
                               return id(guesty_no_active_booking_label);
+                      else:
+                        - logger.log:
+                            level: ERROR
+                            format: "Privacy clear failed; keeping the device awake for another attempt"
             # This timeout path can also finish before ESPHome's default 60s
             # OTA validation window when awake_duration_seconds is configured
             # near its 30-second minimum.
-            - safe_mode.mark_successful
-            - deep_sleep.enter: guesty_deep_sleep
+            - if:
+                condition:
+                  lambda: return !id(guesty_screen_sensitive);
+                then:
+                  - safe_mode.mark_successful
+                  - deep_sleep.enter: guesty_deep_sleep
       # On permanent power there is no next wake-up cycle. Enforce the payload
       # lease continuously so stale access data still disappears locally.
       - if:
@@ -1433,8 +1464,9 @@ interval:
               const auto now = id(guesty_rtc).now();
               return stay_online
                   && id(guesty_screen_sensitive)
-                  && id(guesty_valid_until_epoch) > 0
-                  && (!now.is_valid()
+                  && (id(guesty_privacy_clear_pending)
+                      || id(guesty_valid_until_epoch) == 0
+                      || !now.is_valid()
                       || now.timestamp >= id(guesty_valid_until_epoch));
           then:
             - lambda: |-
@@ -1456,10 +1488,7 @@ interval:
                 id(guesty_special_requests).clear();
                 id(guesty_has_wifi) = false;
                 id(guesty_has_weather) = false;
-                id(guesty_screen_sensitive) = false;
-                id(guesty_valid_until_epoch) = 0;
-                id(guesty_content_id).clear();
-                id(guesty_base_content_id).clear();
+                id(guesty_privacy_clear_pending) = true;
             - display.page.show: guesty_idle_page
             - component.update: guesty_epaper
             - delay: 7s
@@ -1467,7 +1496,17 @@ interval:
                 condition:
                   lambda: return id(guesty_epaper).last_update_successful();
                 then:
+                  - lambda: |-
+                      id(guesty_screen_sensitive) = false;
+                      id(guesty_valid_until_epoch) = 0;
+                      id(guesty_content_id).clear();
+                      id(guesty_base_content_id).clear();
+                      id(guesty_privacy_clear_pending) = false;
                   - text_sensor.template.publish:
                       id: guesty_last_booking
                       state: !lambda |-
                         return id(guesty_no_active_booking_label);
+                else:
+                  - logger.log:
+                      level: ERROR
+                      format: "Privacy clear failed; retrying while external power is available"

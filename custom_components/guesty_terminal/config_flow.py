@@ -102,7 +102,7 @@ from .firmware import (
 )
 from .localization import display_text_defaults, normalize_display_language
 from .logo import LogoError, encode_logo, valid_logo_data
-from .models import MappingOptions
+from .models import MappingOptions, endpoint_stable_id
 from .runtime import GuestyTerminalRuntime
 
 
@@ -188,6 +188,7 @@ class GuestyTerminalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Validate and store replacement credentials."""
+        assert self._reauth_entry is not None
         errors: dict[str, str] = {}
         if user_input is not None:
             client_id = user_input[CONF_CLIENT_ID].strip()
@@ -324,12 +325,13 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
 
     def _listing_choices(self) -> list[SelectOptionDict]:
         runtime = self._runtime()
-        if runtime.coordinator.data is None:
+        data = getattr(runtime.coordinator, "data", None)
+        if data is None:
             return []
         return [
             SelectOptionDict(value=listing.listing_id, label=listing.display_name)
             for listing in sorted(
-                runtime.coordinator.data.listings.values(),
+                data.listings.values(),
                 key=lambda item: item.display_name.lower(),
             )
         ]
@@ -479,6 +481,11 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                 mapping = MappingOptions(
                     endpoint_entity=endpoint,
                     listing_id=user_input[CONF_LISTING_ID],
+                    endpoint_id=(
+                        stored_mapping.endpoint_id
+                        if stored_mapping is not None
+                        else endpoint_stable_id(endpoint)
+                    ),
                     display_language=(
                         self._mapping_language or self._system_display_language()
                     ),

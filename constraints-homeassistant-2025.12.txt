@@ -1,0 +1,5 @@
+# Home Assistant 2025.12 permits newer transitive versions that are no longer
+# compatible with its pinned aiohttp and aiodns releases. Keep the minimum
+# supported environment reproducible on Python 3.13.
+litellm==1.94.3
+pycares<5

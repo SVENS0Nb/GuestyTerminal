@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from copy import deepcopy
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 
@@ -16,6 +19,7 @@ from .const import (
     CONF_CLEAR_AFTER_MINUTES,
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
+    CONF_ENDPOINT_ID,
     CONF_LEAD_HOURS,
     CONF_MAPPINGS,
     CONF_POLL_MINUTES,
@@ -30,11 +34,52 @@ from .const import (
     TOKEN_STORE_VERSION,
 )
 from .coordinator import GuestyTerminalCoordinator
-from .runtime import GuestyTerminalRuntime, async_clear_configured_displays
+from .models import endpoint_stable_id
+from .runtime import (
+    DisplayDeliveryResult,
+    GuestyTerminalConfigEntry,
+    GuestyTerminalRuntime,
+    async_clear_configured_displays,
+)
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = (Platform.BUTTON, Platform.SENSOR)
-CONFIG_ENTRY_VERSION = 2
+CONFIG_ENTRY_VERSION = 3
+
+
+def _service_error(key: str, *, failed: int, total: int) -> HomeAssistantError:
+    """Return a translated, privacy-safe action error."""
+    return HomeAssistantError(
+        translation_domain=DOMAIN,
+        translation_key=key,
+        translation_placeholders={"failed": str(failed), "total": str(total)},
+    )
+
+
+def _active_runtimes(hass: HomeAssistant) -> list[GuestyTerminalRuntime]:
+    """Return only config-entry runtimes from shared domain data."""
+    return [
+        runtime
+        for runtime in hass.data.get(DOMAIN, {}).values()
+        if isinstance(runtime, GuestyTerminalRuntime)
+    ]
+
+
+def _validate_delivery(results: list[DisplayDeliveryResult]) -> None:
+    """Raise when a manual action could not reach any configured display."""
+    attempted = sum(result.attempted for result in results)
+    succeeded = sum(result.succeeded for result in results)
+    if attempted and not succeeded:
+        raise _service_error(
+            "display_delivery_failed", failed=attempted, total=attempted
+        )
+    failed = attempted - succeeded
+    if failed:
+        _LOGGER.warning(
+            "GuestyTerminal action reached %d of %d configured displays",
+            succeeded,
+            attempted,
+        )
 
 
 async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
@@ -44,26 +89,47 @@ async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
     if not hass.services.has_service(DOMAIN, SERVICE_REFRESH):
 
         async def _handle_refresh(_call: ServiceCall) -> None:
-            runtimes = list(hass.data.get(DOMAIN, {}).values())
-            for runtime in runtimes:
-                if isinstance(runtime, GuestyTerminalRuntime):
-                    await runtime.coordinator.async_request_refresh()
+            runtimes = _active_runtimes(hass)
+            outcomes = await asyncio.gather(
+                *(runtime.async_refresh_and_push() for runtime in runtimes),
+                return_exceptions=True,
+            )
+            failed_refreshes = sum(
+                isinstance(outcome, BaseException)
+                or not runtime.coordinator.last_update_success
+                for runtime, outcome in zip(runtimes, outcomes, strict=True)
+            )
+            if failed_refreshes:
+                raise _service_error(
+                    "data_refresh_failed",
+                    failed=failed_refreshes,
+                    total=len(runtimes),
+                )
+            deliveries = [
+                outcome
+                for outcome in outcomes
+                if isinstance(outcome, DisplayDeliveryResult)
+            ]
+            _validate_delivery(deliveries)
 
         hass.services.async_register(DOMAIN, SERVICE_REFRESH, _handle_refresh)
 
     if not hass.services.has_service(DOMAIN, SERVICE_FORCE_REDRAW):
 
         async def _handle_force_redraw(_call: ServiceCall) -> None:
-            runtimes = list(hass.data.get(DOMAIN, {}).values())
-            for runtime in runtimes:
-                if isinstance(runtime, GuestyTerminalRuntime):
-                    await runtime.async_force_redraw_all()
+            runtimes = _active_runtimes(hass)
+            deliveries = await asyncio.gather(
+                *(runtime.async_force_redraw_all() for runtime in runtimes)
+            )
+            _validate_delivery(deliveries)
 
         hass.services.async_register(DOMAIN, SERVICE_FORCE_REDRAW, _handle_force_redraw)
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(
+    hass: HomeAssistant, entry: GuestyTerminalConfigEntry
+) -> bool:
     """Set up one Guesty account."""
     token_store: Store[dict] = Store(
         hass,
@@ -124,20 +190,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Migrate early installations to the confirmed-reservation timing policy."""
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry[Any]) -> bool:
+    """Migrate timing defaults and stable display identities."""
     if entry.version >= CONFIG_ENTRY_VERSION:
         return True
 
     options = deepcopy(dict(entry.options))
     mappings = options.get(CONF_MAPPINGS, {})
     if isinstance(mappings, dict):
-        for raw_mapping in mappings.values():
+        for endpoint, raw_mapping in mappings.items():
             if not isinstance(raw_mapping, dict):
                 continue
-            raw_mapping[CONF_LEAD_HOURS] = DEFAULT_LEAD_HOURS
-            raw_mapping[CONF_CLEAR_AFTER_MINUTES] = DEFAULT_CLEAR_AFTER_MINUTES
-    if CONF_POLL_MINUTES in options:
+            if entry.version < 2:
+                raw_mapping[CONF_LEAD_HOURS] = DEFAULT_LEAD_HOURS
+                raw_mapping[CONF_CLEAR_AFTER_MINUTES] = DEFAULT_CLEAR_AFTER_MINUTES
+            if isinstance(endpoint, str):
+                raw_mapping.setdefault(CONF_ENDPOINT_ID, endpoint_stable_id(endpoint))
+    if entry.version < 2 and CONF_POLL_MINUTES in options:
         try:
             poll_minutes = int(options[CONF_POLL_MINUTES])
         except (TypeError, ValueError):
@@ -151,7 +220,9 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(
+    hass: HomeAssistant, entry: GuestyTerminalConfigEntry
+) -> bool:
     """Unload a Guesty account."""
     runtime: GuestyTerminalRuntime = entry.runtime_data
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
@@ -161,7 +232,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unloaded
 
 
-async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def async_remove_entry(
+    hass: HomeAssistant, entry: GuestyTerminalConfigEntry
+) -> None:
     """Clear displays and delete the cached OAuth token on permanent removal."""
     await async_clear_configured_displays(hass, entry)
     token_store: Store[dict] = Store(

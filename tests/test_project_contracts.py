@@ -41,8 +41,15 @@ def test_ci_exercises_minimum_home_assistant_and_real_firmware_build() -> None:
     workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(
         encoding="utf-8"
     )
-    assert 'homeassistant-version: ["2025.12.0", "2026.2.3"]' in workflow
-    assert "python -m pip install 'pycares<5'" in workflow
+    assert 'homeassistant-version: "2025.12.0"' in workflow
+    assert 'homeassistant-version: "2026.2.3"' in workflow
+    assert "constraints-homeassistant-2025.12.txt" in workflow
+    assert "mypy custom_components/guesty_terminal" in workflow
+    minimum_constraints = (ROOT / "constraints-homeassistant-2025.12.txt").read_text(
+        encoding="utf-8"
+    )
+    assert "litellm==1.94.3" in minimum_constraints
+    assert "pycares<5" in minimum_constraints
     assert "esphome config esphome/guestyterminal-display-1.yaml" in workflow
     assert "esphome compile esphome/guestyterminal-display-1.yaml" in workflow
     assert "-name firmware.ota.bin" in workflow

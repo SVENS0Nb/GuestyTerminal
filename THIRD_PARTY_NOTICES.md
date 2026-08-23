@@ -25,4 +25,5 @@ Zingg:
 The referenced upstream repository does not contain a standalone license file
 at this version. This notice records provenance and does not itself grant
 redistribution rights. Review the upstream terms before redistributing derived
-driver code.
+driver code. The resulting project-wide distribution status and the required
+owner decisions are documented in `LICENSE_STATUS.md`.

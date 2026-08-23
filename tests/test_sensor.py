@@ -81,6 +81,44 @@ def test_status_sensor_handles_unconfigured_or_missing_listing() -> None:
     assert sensor.extra_state_attributes["listing_name"] is None
 
 
+def test_status_sensor_recognizes_an_open_wifi_network() -> None:
+    payload = DisplayPayload(
+        "welcome",
+        "LOFT",
+        "Hallo",
+        "Willkommen",
+        "",
+        "Open Guest WiFi",
+        "",
+        "Check-out morgen",
+        123456,
+    )
+    mapping = MappingOptions(ENDPOINT, "listing-1")
+    coordinator = FakeCoordinator(
+        SimpleNamespace(payloads={ENDPOINT: payload}, listings={}), [mapping]
+    )
+
+    assert (
+        GuestyTerminalStatusSensor(coordinator, ENDPOINT).extra_state_attributes[
+            "contains_wifi"
+        ]
+        is True
+    )
+
+
+def test_status_sensor_unique_id_survives_endpoint_rename() -> None:
+    original = MappingOptions.from_dict(ENDPOINT, {"listing_id": "listing-1"})
+    renamed = MappingOptions.from_dict(
+        "sensor.renamed_guesty_terminal_endpoint", original.as_dict()
+    )
+    coordinator = FakeCoordinator(SimpleNamespace(payloads={}, listings={}), [])
+
+    assert (
+        GuestyTerminalStatusSensor(coordinator, original).unique_id
+        == GuestyTerminalStatusSensor(coordinator, renamed).unique_id
+    )
+
+
 def test_platform_setup_adds_one_sensor_per_mapping() -> None:
     mappings = [
         MappingOptions(ENDPOINT, "listing-1"),

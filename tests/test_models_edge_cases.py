@@ -126,6 +126,36 @@ def test_reservation_parses_dates_times_names_and_invalid_values() -> None:
     assert Reservation.from_api({"checkIn": "invalid"}, listing) is None
 
 
+def test_reservation_rejects_invalid_ranges_and_unsafe_timezones() -> None:
+    for timezone in ("/etc/passwd", "../UTC", "UTC\0invalid"):
+        reservation = Reservation.from_api(
+            {
+                "id": "res-safe-timezone",
+                "status": "confirmed",
+                "checkInDateLocalized": "2026-08-14",
+                "checkOutDateLocalized": "2026-08-15",
+            },
+            Listing("listing-1", "Loft", timezone=timezone),
+        )
+        assert reservation is not None
+        assert reservation.check_in.utcoffset() == reservation.check_out.utcoffset()
+
+    listing = Listing("listing-1", "Loft", timezone="Europe/Berlin")
+    for checkout in ("2026-08-14", "2026-08-13"):
+        assert (
+            Reservation.from_api(
+                {
+                    "id": "res-invalid-range",
+                    "status": "confirmed",
+                    "checkInDateLocalized": "2026-08-14",
+                    "checkOutDateLocalized": checkout,
+                },
+                listing,
+            )
+            is None
+        )
+
+
 def test_local_dates_use_listing_defaults_instead_of_misaligned_utc_times() -> None:
     listing = Listing(
         "listing-1",

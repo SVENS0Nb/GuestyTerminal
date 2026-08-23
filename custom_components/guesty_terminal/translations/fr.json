@@ -180,6 +180,8 @@
     }
   },
   "exceptions": {
+    "data_refresh_failed": {"message": "Les données Guesty n’ont pas pu être actualisées pour {failed} des {total} comptes configurés. Les données d’affichage existantes ont été conservées."},
+    "display_delivery_failed": {"message": "Les {failed} écrans configurés sur {total} ont refusé la mise à jour. Réveillez les écrans et vérifiez leur connexion ESPHome."},
     "firmware_no_managed_configs": {"message": "Aucune configuration ESPHome gérée par GuestyTerminal n’a été trouvée."},
     "firmware_config_update_failed": {"message": "Les configurations ESPHome gérées n’ont pas pu être mises à jour en toute sécurité."},
     "firmware_builder_unavailable": {"message": "ESPHome Device Builder est inaccessible ou n’est pas connecté à Home Assistant."},

@@ -2,28 +2,26 @@
 
 from __future__ import annotations
 
-from hashlib import sha256
-
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .coordinator import GuestyTerminalCoordinator
-from .runtime import GuestyTerminalRuntime
+from .models import MappingOptions, endpoint_stable_id
+from .runtime import GuestyTerminalConfigEntry, GuestyTerminalRuntime
 
 
 async def async_setup_entry(
     _hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: GuestyTerminalConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up one status sensor per mapping."""
     runtime: GuestyTerminalRuntime = entry.runtime_data
     async_add_entities(
-        GuestyTerminalStatusSensor(runtime.coordinator, mapping.endpoint_entity)
+        GuestyTerminalStatusSensor(runtime.coordinator, mapping)
         for mapping in runtime.coordinator.mapping_options()
     )
 
@@ -34,16 +32,23 @@ class GuestyTerminalStatusSensor(
     """Show display mode without exposing guest or credential data."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_has_entity_name = True
     _attr_icon = "mdi:tablet-dashboard"
 
     def __init__(
-        self, coordinator: GuestyTerminalCoordinator, endpoint_entity: str
+        self,
+        coordinator: GuestyTerminalCoordinator,
+        mapping: MappingOptions | str,
     ) -> None:
         super().__init__(coordinator)
-        self._endpoint_entity = endpoint_entity
-        digest = sha256(endpoint_entity.encode()).hexdigest()[:12]
+        if isinstance(mapping, MappingOptions):
+            self._endpoint_entity = mapping.endpoint_entity
+            digest = mapping.endpoint_id or endpoint_stable_id(mapping.endpoint_entity)
+        else:
+            self._endpoint_entity = mapping
+            digest = endpoint_stable_id(mapping)
         self._attr_unique_id = f"guesty_terminal_{digest}_status"
-        self._attr_name = f"GuestyTerminal {endpoint_entity} Status"
+        self._attr_name = f"GuestyTerminal {self._endpoint_entity} Status"
 
     @property
     def native_value(self) -> str:
@@ -71,7 +76,7 @@ class GuestyTerminalStatusSensor(
             "listing_id": mapping.listing_id,
             "listing_name": listing.display_name if listing else None,
             "contains_door_code": bool(payload.door_code),
-            "contains_wifi": bool(payload.wifi_name and payload.wifi_password),
+            "contains_wifi": bool(payload.wifi_name),
             "weather_entity": mapping.weather_entity or None,
             "contains_weather": bool(
                 payload.weather_condition or payload.weather_temperature

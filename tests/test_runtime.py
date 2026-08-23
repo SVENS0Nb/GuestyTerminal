@@ -575,6 +575,46 @@ def test_service_errors_are_isolated() -> None:
     assert len(hass.services.calls) == 1
 
 
+def test_endpoint_entity_rename_migrates_mapping_and_schedules_reload() -> None:
+    runtime, hass, _ = _runtime(
+        options={CONF_MAPPINGS: {ENDPOINT: {"listing_id": "listing-1"}}}
+    )
+    runtime.entry.entry_id = "entry-1"
+    updates = []
+    reloads = []
+
+    class ConfigEntries:
+        def async_entries(self, _domain):
+            return [runtime.entry]
+
+        def async_update_entry(self, entry, *, options):
+            entry.options = options
+            updates.append(options)
+
+        def async_schedule_reload(self, entry_id):
+            reloads.append(entry_id)
+
+    hass.config_entries = ConfigEntries()
+    renamed = "sensor.renamed_guesty_terminal_endpoint"
+
+    runtime._handle_entity_registry_update(
+        SimpleNamespace(
+            data={
+                "action": "update",
+                "old_entity_id": ENDPOINT,
+                "entity_id": renamed,
+            }
+        )
+    )
+
+    assert ENDPOINT not in runtime.entry.options[CONF_MAPPINGS]
+    migrated = runtime.entry.options[CONF_MAPPINGS][renamed]
+    assert migrated["listing_id"] == "listing-1"
+    assert migrated["endpoint_id"]
+    assert updates
+    assert reloads == ["entry-1"]
+
+
 def test_clear_endpoint_all_and_removed_entry() -> None:
     runtime, hass, _ = _runtime()
     assert asyncio.run(runtime.async_clear_endpoint(ENDPOINT))
@@ -646,7 +686,7 @@ def test_start_stop_and_callbacks(monkeypatch) -> None:
     runtime, hass, coordinator = _runtime(state=None)
     asyncio.run(runtime.async_start())
     assert callbacks["endpoints"] == [ENDPOINT]
-    assert callbacks["delay"] if "delay" in callbacks else True
+    assert callbacks.get("delay", True)
 
     callbacks["state"](SimpleNamespace(data={"new_state": None}))
     callbacks["state"](

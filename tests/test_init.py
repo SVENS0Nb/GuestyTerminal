@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from typing import ClassVar
 
+import pytest
 from homeassistant.const import Platform
+from homeassistant.exceptions import HomeAssistantError
 
 import custom_components.guesty_terminal as integration
 from custom_components.guesty_terminal.const import (
     CONF_CLEAR_AFTER_MINUTES,
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
+    CONF_ENDPOINT_ID,
     CONF_LEAD_HOURS,
     CONF_MAPPINGS,
     CONF_POLL_MINUTES,
@@ -20,7 +24,11 @@ from custom_components.guesty_terminal.const import (
     SERVICE_FORCE_REDRAW,
     SERVICE_REFRESH,
 )
-from custom_components.guesty_terminal.runtime import GuestyTerminalRuntime
+from custom_components.guesty_terminal.models import endpoint_stable_id
+from custom_components.guesty_terminal.runtime import (
+    DisplayDeliveryResult,
+    GuestyTerminalRuntime,
+)
 
 
 class FakeServices:
@@ -58,8 +66,8 @@ class FakeConfigEntries:
 
 
 class FakeStore:
-    stored = {"access_token": "stored"}
-    instances = []
+    stored: ClassVar = {"access_token": "stored"}
+    instances: ClassVar[list] = []
 
     def __init__(self, hass, version, key, *, private):
         self.hass = hass
@@ -95,12 +103,18 @@ def test_async_setup_registers_and_runs_refresh_service() -> None:
     redrawn = []
 
     class Coordinator:
+        last_update_success = True
+
         async def async_request_refresh(self):
             refreshed.append(True)
 
     class Runtime(GuestyTerminalRuntime):
+        async def async_push_all(self, **_kwargs):
+            return DisplayDeliveryResult(1, 1)
+
         async def async_force_redraw_all(self):
             redrawn.append(True)
+            return DisplayDeliveryResult(1, 1)
 
     runtime = Runtime(None, None, None, Coordinator())
     hass = SimpleNamespace(data={DOMAIN: {"entry": runtime}}, services=FakeServices())
@@ -113,6 +127,33 @@ def test_async_setup_registers_and_runs_refresh_service() -> None:
     redraw_handler = hass.services.registered[(DOMAIN, SERVICE_FORCE_REDRAW)]
     asyncio.run(redraw_handler(None))
     assert redrawn == [True]
+
+
+def test_manual_services_report_refresh_and_delivery_failures() -> None:
+    class Coordinator:
+        last_update_success = False
+
+        async def async_request_refresh(self):
+            return None
+
+    class Runtime(GuestyTerminalRuntime):
+        async def async_push_all(self, **_kwargs):
+            return DisplayDeliveryResult(2, 0)
+
+        async def async_force_redraw_all(self):
+            return DisplayDeliveryResult(2, 0)
+
+    runtime = Runtime(None, None, None, Coordinator())
+    hass = SimpleNamespace(data={DOMAIN: {"entry": runtime}}, services=FakeServices())
+    asyncio.run(integration.async_setup(hass, {}))
+
+    with pytest.raises(HomeAssistantError) as refresh_error:
+        asyncio.run(hass.services.registered[(DOMAIN, SERVICE_REFRESH)](None))
+    assert refresh_error.value.translation_key == "data_refresh_failed"
+
+    with pytest.raises(HomeAssistantError) as delivery_error:
+        asyncio.run(hass.services.registered[(DOMAIN, SERVICE_FORCE_REDRAW)](None))
+    assert delivery_error.value.translation_key == "display_delivery_failed"
 
 
 def test_setup_and_unload_entry(monkeypatch) -> None:
@@ -221,11 +262,29 @@ def test_migration_updates_existing_timing_and_skips_current_version() -> None:
     assert mapping[CONF_LEAD_HOURS] == 1
     assert mapping[CONF_CLEAR_AFTER_MINUTES] == 30
     assert entry.options[CONF_POLL_MINUTES] == 10
-    assert entry.version == 2
+    assert mapping[CONF_ENDPOINT_ID] == endpoint_stable_id("sensor.display")
+    assert entry.version == 3
 
     config_entries.updated.clear()
     assert asyncio.run(integration.async_migrate_entry(hass, entry))
     assert config_entries.updated == []
+
+    version_two = _entry(
+        version=2,
+        options={
+            CONF_MAPPINGS: {
+                "sensor.display": {
+                    CONF_LEAD_HOURS: 7,
+                    CONF_CLEAR_AFTER_MINUTES: 5,
+                }
+            }
+        },
+    )
+    assert asyncio.run(integration.async_migrate_entry(hass, version_two))
+    version_two_mapping = version_two.options[CONF_MAPPINGS]["sensor.display"]
+    assert version_two_mapping[CONF_LEAD_HOURS] == 7
+    assert version_two_mapping[CONF_CLEAR_AFTER_MINUTES] == 5
+    assert version_two_mapping[CONF_ENDPOINT_ID] == endpoint_stable_id("sensor.display")
 
 
 def test_remove_entry_clears_displays_and_token(monkeypatch) -> None:

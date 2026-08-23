@@ -781,6 +781,54 @@ def test_upcoming_snapshot_failure_does_not_replace_cached_data() -> None:
     assert coordinator._reservation_snapshot_cache["listing-1"] is cached_snapshot
 
 
+def test_listing_requests_use_bounded_parallelism() -> None:
+    class ConcurrentClient(FakeClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.active_requests = 0
+            self.maximum_active_requests = 0
+
+        async def _track(self):
+            self.active_requests += 1
+            self.maximum_active_requests = max(
+                self.maximum_active_requests, self.active_requests
+            )
+            await asyncio.sleep(0.01)
+            self.active_requests -= 1
+
+        async def async_get_listing(self, listing_id):
+            self.listing_calls.append(listing_id)
+            await self._track()
+            return self.full_listings[listing_id]
+
+        async def async_get_upcoming_reservations(self, listing_id, *, limit):
+            self.upcoming_reservation_calls.append((listing_id, limit))
+            await self._track()
+            return []
+
+    client = ConcurrentClient()
+    listing_ids = [f"listing-{index}" for index in range(6)]
+    client.listings = [
+        {"_id": listing_id, "title": f"Loft {index}"}
+        for index, listing_id in enumerate(listing_ids)
+    ]
+    client.full_listings = {
+        listing_id: {"_id": listing_id, "title": f"Loft {index}"}
+        for index, listing_id in enumerate(listing_ids)
+    }
+    options = {
+        CONF_MAPPINGS: {
+            f"sensor.display_{index}_guesty_terminal_endpoint": _mapping(listing_id)
+            for index, listing_id in enumerate(listing_ids)
+        }
+    }
+
+    data = asyncio.run(_coordinator(options, client)._async_update_data())
+
+    assert len(data.listings) == 6
+    assert client.maximum_active_requests == 4
+
+
 @pytest.mark.parametrize(
     ("failure", "expected"),
     [

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 import os
 import re
@@ -10,7 +11,7 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
-FIRMWARE_VERSION = "0.3.26"
+FIRMWARE_VERSION = "0.3.27"
 FIRMWARE_HEADER = "# Managed by the GuestyTerminal firmware assistant."
 POWER_MODES = ("auto", "battery", "mains")
 _DEVICE_NAME_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,22}[a-z0-9])?$")
@@ -109,7 +110,57 @@ def _existing_credentials(content: str) -> FirmwareCredentials | None:
         if match is None:
             return None
         values.append(match.group(1))
-    return FirmwareCredentials(*values)
+    credentials = FirmwareCredentials(*values)
+    try:
+        api_key = base64.b64decode(credentials.api_key, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    if (
+        len(api_key) != 32
+        or not 16 <= len(credentials.ota_password) <= 128
+        or not 8 <= len(credentials.fallback_password) <= 64
+    ):
+        return None
+    return credentials
+
+
+def _atomic_write_private(destination: Path, content: str) -> None:
+    """Atomically replace one managed file without a publicly readable window."""
+    temporary = destination.with_name(
+        f".{destination.name}.{secrets.token_hex(8)}.guestyterminal.tmp"
+    )
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(
+            temporary,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            descriptor = None
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, destination)
+        destination.chmod(0o600)
+        try:
+            directory_descriptor = os.open(
+                destination.parent,
+                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+            )
+            try:
+                os.fsync(directory_descriptor)
+            finally:
+                os.close(directory_descriptor)
+        except OSError:
+            # Some network and overlay filesystems do not support directory
+            # fsync. The file itself is already flushed, private and replaced.
+            pass
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
 
 
 def render_firmware_config(
@@ -201,15 +252,7 @@ def write_firmware_config(
             raise FirmwareFileExistsError(str(destination))
 
     content = render_firmware_config(options, credentials)
-    temporary = destination.with_name(
-        f".{destination.name}.{secrets.token_hex(8)}.guestyterminal.tmp"
-    )
-    try:
-        temporary.write_text(content, encoding="utf-8")
-        temporary.chmod(0o600)
-        os.replace(temporary, destination)
-    finally:
-        temporary.unlink(missing_ok=True)
+    _atomic_write_private(destination, content)
     return destination
 
 
@@ -257,20 +300,18 @@ def update_managed_firmware_configs(directory: Path) -> list[ManagedFirmwareConf
         content = path.read_text(encoding="utf-8")
         if not content.startswith(FIRMWARE_HEADER):
             continue
-        updated, changed = _updated_managed_config(content)
+        updated, content_changed = _updated_managed_config(content)
+        if _existing_credentials(content) is None:
+            raise FirmwareConfigError(
+                "Managed ESPHome configuration has invalid credentials"
+            )
+        permissions_changed = (path.stat().st_mode & 0o777) != 0o600
+        changed = content_changed or permissions_changed
         prepared.append((path, updated, changed))
 
     results: list[ManagedFirmwareConfig] = []
     for path, content, changed in prepared:
         if changed:
-            temporary = path.with_name(
-                f".{path.name}.{secrets.token_hex(8)}.guestyterminal.tmp"
-            )
-            try:
-                temporary.write_text(content, encoding="utf-8")
-                temporary.chmod(path.stat().st_mode & 0o777)
-                os.replace(temporary, path)
-            finally:
-                temporary.unlink(missing_ok=True)
+            _atomic_write_private(path, content)
         results.append(ManagedFirmwareConfig(path=path, changed=changed))
     return results
