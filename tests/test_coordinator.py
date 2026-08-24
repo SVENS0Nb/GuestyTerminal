@@ -587,14 +587,15 @@ def test_multi_unit_assignment_preserves_all_three_display_transitions(
     client.listings = [listing]
     client.full_listings["multi-unit-parent"] = listing
 
-    def booking(*, assigned: bool) -> dict:
+    def booking(*, assigned: bool, include_parent: bool = True) -> dict:
         stay = {
-            "unitTypeId": "multi-unit-parent",
             "checkInDateLocalized": "2026-09-10",
             "checkOutDateLocalized": "2026-09-13",
             "plannedArrivalTime": "15:00",
             "plannedDepartureTime": "10:00",
         }
+        if include_parent:
+            stay["unitTypeId"] = "multi-unit-parent"
         if assigned:
             stay["unitId"] = "assigned-apartment"
         return {
@@ -624,10 +625,20 @@ def test_multi_unit_assignment_preserves_all_three_display_transitions(
         "Kinderbett vorbereiten"
     )
 
-    assigned = booking(assigned=True)
+    # Once the stay is under way, Guesty's current-reservation search may only
+    # project the assigned concrete unit. The configured unit type is still the
+    # filter that matched this row, but no longer appears in the response. The
+    # future-snapshot query also stops returning the stay after its arrival day.
+    assigned = booking(assigned=True, include_parent=False)
     client.reservations = [assigned]
-    client.upcoming_reservations["multi-unit-parent"] = [assigned]
-    MutableDateTime.current = datetime(2026, 9, 10, 13, 1, tzinfo=UTC)
+    client.upcoming_reservations["multi-unit-parent"] = []
+    MutableDateTime.current = datetime(2026, 9, 11, 10, 0, tzinfo=UTC)
+    # The query context must be sufficient on its own; a Home Assistant restart
+    # during the stay must not depend on the earlier in-memory snapshot.
+    coordinator = _coordinator(
+        {CONF_MAPPINGS: {endpoint: mapping}},
+        client,
+    )
     after_check_in = asyncio.run(coordinator._async_update_data())
 
     assert after_check_in.payloads[endpoint].mode == "welcome"
@@ -791,11 +802,52 @@ def test_multiple_displays_receive_only_their_mapped_listing_payload() -> None:
     assert data.payloads[third_endpoint].reservation_id == "reservation-b"
     assert data.payloads[third_endpoint].door_code == "2222"
     assert data.payloads[third_endpoint].wifi_name == "WiFi B"
-    assert client.reservation_calls == [["listing-a", "listing-b"]]
+    assert client.reservation_calls == [["listing-a"], ["listing-b"]]
     assert client.upcoming_reservation_calls == [
         ("listing-a", 5),
         ("listing-b", 5),
     ]
+
+
+def test_context_only_reservation_is_never_copied_to_multiple_listings(
+    caplog,
+) -> None:
+    first_endpoint = "sensor.first_guesty_terminal_endpoint"
+    second_endpoint = "sensor.second_guesty_terminal_endpoint"
+    client = FakeClient()
+    client.listings = [
+        {"_id": "listing-a", "title": "Loft A"},
+        {"_id": "listing-b", "title": "Loft B"},
+    ]
+    # Simulate a sparse search projection returned for both mapped filters.
+    # Without an explicit identity, choosing either listing would risk leaking
+    # one guest's data to another property's display.
+    client.reservations = [
+        {
+            "reservationId": "ambiguous-reservation",
+            "status": "confirmed",
+            "guest": {"firstName": "Anna"},
+            "keycode": "1111",
+            "checkIn": "2026-08-14T12:00:00Z",
+            "checkOut": "2099-08-18T10:00:00Z",
+        }
+    ]
+    coordinator = _coordinator(
+        {
+            CONF_MAPPINGS: {
+                first_endpoint: _mapping("listing-a"),
+                second_endpoint: _mapping("listing-b"),
+            }
+        },
+        client,
+    )
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert data.reservations == ()
+    assert data.payloads[first_endpoint].mode == "idle"
+    assert data.payloads[second_endpoint].mode == "idle"
+    assert "Skipped 1 Guesty reservation(s)" in caplog.text
 
 
 def test_completed_booking_remains_cached_until_twelve_hours_after_checkout() -> None:

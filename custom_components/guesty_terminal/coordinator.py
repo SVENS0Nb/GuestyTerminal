@@ -43,7 +43,7 @@ from .models import (
     extract_keycode_direct,
     extract_keycode_from_custom_fields,
     first_present,
-    resolve_reservation_listing_id,
+    reservation_listing_id_groups,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -53,6 +53,8 @@ _MAX_KEYCODE_CACHE_ITEMS = 512
 _MAX_GUEST_CACHE_ITEMS = 256
 _MAX_CONCURRENT_GUESTY_REQUESTS = 4
 _CUSTOM_FIELD_DEFINITION_CACHE_SECONDS = 60 * 60
+
+type _ReservationObservation = tuple[str, dict[str, Any], bool]
 
 
 def _bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:
@@ -69,6 +71,33 @@ def _bounded_cache_set(cache: dict[Any, Any], key: Any, value: Any, limit: int) 
     cache[key] = value
     while len(cache) > limit:
         cache.pop(next(iter(cache)))
+
+
+def _resolve_observation_listing_id(
+    observations: list[_ReservationObservation], allowed_listing_ids: set[str]
+) -> str:
+    """Resolve multiple Guesty projections of one reservation exactly once."""
+    for priority in range(4):
+        candidates: list[str] = []
+        for _query_listing_id, raw, _include_keycode in observations:
+            groups = reservation_listing_id_groups(raw)
+            for listing_id in groups[priority]:
+                if listing_id in allowed_listing_ids and listing_id not in candidates:
+                    candidates.append(listing_id)
+        if len(candidates) == 1:
+            return candidates[0]
+        if candidates:
+            # Never copy one ambiguous reservation to several displays.
+            return ""
+
+    query_listing_ids = list(
+        dict.fromkeys(
+            query_listing_id
+            for query_listing_id, _raw, _include_keycode in observations
+            if query_listing_id in allowed_listing_ids
+        )
+    )
+    return query_listing_ids[0] if len(query_listing_ids) == 1 else ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -492,24 +521,31 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                 for listing_id in mapped_listing_ids
                 if listing_id in listings
             ]
-            raw_reservations = await self.client.async_get_reservations(
-                available_listing_ids
-            )
             raw_by_listing: dict[str, list[tuple[dict[str, Any], bool]]] = {
                 listing_id: [] for listing_id in mapped_listing_ids
             }
             routable_listing_ids = set(available_listing_ids)
-            known_ids: dict[str, set[str]] = {
-                listing_id: set() for listing_id in mapped_listing_ids
-            }
-            for raw in raw_reservations:
-                listing_id = resolve_reservation_listing_id(raw, routable_listing_ids)
-                if not listing_id:
-                    continue
-                reservation_id = first_present(raw, "reservationId", "_id", "id")
-                if reservation_id:
-                    known_ids[listing_id].add(reservation_id)
-                raw_by_listing[listing_id].append((raw, True))
+
+            # Current/recent searches are deliberately scoped to one mapped
+            # listing at a time. Guesty can match a multi-unit filter through
+            # the configured unit type while projecting only the assigned
+            # concrete unit in the result. The query context then preserves
+            # ownership even after Home Assistant restarts.
+            async def _current_reservations(
+                listing_id: str,
+            ) -> tuple[str, list[dict[str, Any]]]:
+                async with api_semaphore:
+                    reservations = await self.client.async_get_reservations(
+                        [listing_id]
+                    )
+                return listing_id, reservations
+
+            current_results = await asyncio.gather(
+                *(
+                    _current_reservations(listing_id)
+                    for listing_id in available_listing_ids
+                )
+            )
 
             # Fetch an authoritative, ordered future snapshot on every normal
             # poll. There is deliberately no query TTL here: additions and
@@ -533,25 +569,44 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                     for listing_id in available_listing_ids
                 )
             )
-            for listing_id, upcoming in upcoming_results:
-                for raw in upcoming:
-                    resolved_listing_id = resolve_reservation_listing_id(
-                        raw, routable_listing_ids
-                    )
-                    # This query was made for exactly one mapped listing. Some
-                    # Guesty search projections omit all listing identifiers;
-                    # the query context remains a trustworthy association.
-                    if not resolved_listing_id:
-                        resolved_listing_id = listing_id
-                    reservation_id = first_present(raw, "reservationId", "_id", "id")
-                    if (
-                        reservation_id
-                        and reservation_id in known_ids[resolved_listing_id]
-                    ):
-                        continue
-                    if reservation_id:
-                        known_ids[resolved_listing_id].add(reservation_id)
-                    raw_by_listing[resolved_listing_id].append((raw, False))
+            observations_by_reservation: dict[str, list[_ReservationObservation]] = {}
+            for include_keycode, results in (
+                (True, current_results),
+                (False, upcoming_results),
+            ):
+                for query_listing_id, rows in results:
+                    for raw in rows:
+                        reservation_id = first_present(
+                            raw, "reservationId", "_id", "id"
+                        )
+                        if not reservation_id:
+                            continue
+                        observations_by_reservation.setdefault(
+                            reservation_id, []
+                        ).append((query_listing_id, raw, include_keycode))
+
+            ambiguous_reservations = 0
+            for observations in observations_by_reservation.values():
+                listing_id = _resolve_observation_listing_id(
+                    observations, routable_listing_ids
+                )
+                if not listing_id:
+                    ambiguous_reservations += 1
+                    continue
+                # Prefer the current/recent projection because that path also
+                # resolves the access code. A future projection remains a
+                # complete fallback for the empty-room page.
+                _query_listing_id, raw, include_keycode = min(
+                    observations,
+                    key=lambda observation: not observation[2],
+                )
+                raw_by_listing[listing_id].append((raw, include_keycode))
+            if ambiguous_reservations:
+                _LOGGER.warning(
+                    "Skipped %d Guesty reservation(s) with ambiguous listing "
+                    "associations",
+                    ambiguous_reservations,
+                )
 
             async def _normalized_listing(
                 listing_id: str,

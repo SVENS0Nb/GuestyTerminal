@@ -58,3 +58,60 @@ def test_ci_exercises_minimum_home_assistant_and_real_firmware_build() -> None:
         ROOT / "esphome" / "secrets.example.yaml"
     ).read_text(encoding="utf-8")
     assert "sed -i 's/GENERATE_A_32_BYTE_BASE64_KEY/" in workflow
+
+
+def test_maintenance_guidance_covers_current_critical_contracts() -> None:
+    """Keep current routing, power, testing and distribution rules discoverable."""
+    agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    for phrase in (
+        "one timezone-aware UTC timestamp",
+        "`unitId`, then a direct/legacy `listingId`",
+        "`unitTypeId`, then",
+        "`parentListingId`",
+        "`REG0A.BUS_GD`",
+        "16 averaged ADC samples",
+        "`Wake-up reason`, and `Awake duration`",
+        "mypy custom_components/guesty_terminal",
+        "version-specific tests, `CHANGELOG.md`",
+        "Before any public release or redistribution",
+        "unresolved right or redistribution",
+    ):
+        assert phrase in agents
+
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    for document in (
+        "AGENTS.md",
+        "CONTRIBUTING.md",
+        "CHANGELOG.md",
+        "SECURITY.md",
+        "LICENSE_STATUS.md",
+        "THIRD_PARTY_NOTICES.md",
+    ):
+        assert f"[`{document}`](" in readme
+
+    contributing = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    assert "Home Assistant 2025.12.0" in contributing
+    assert "2026.2.3" in contributing
+    assert "mypy custom_components/guesty_terminal" in contributing
+    assert "python3 -m compileall -q custom_components/guesty_terminal" in contributing
+    assert "LICENSE_STATUS.md" in contributing
+    assert "THIRD_PARTY_NOTICES.md" in contributing
+
+
+def test_epaper_driver_has_only_documented_redistributable_sources() -> None:
+    """Keep the former ambiguous driver dependency out of current sources."""
+    component = ROOT / "esphome" / "components" / "guesty_epaper_gray4"
+    for path in (
+        component / "guesty_epaper_gray4.cpp",
+        component / "guesty_epaper_gray4.h",
+        ROOT / "README.md",
+        ROOT / "THIRD_PARTY_NOTICES.md",
+        ROOT / "LICENSE_STATUS.md",
+    ):
+        assert "GxEPD2_4G" not in path.read_text(encoding="utf-8")
+
+    notices = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
+    assert "b3dbc5e6232d8e5945706bf8c0b7b7466dee144a" in notices
+    assert "a2de1abca0597c202193f22d01e9fa35d1ff613b" in notices
+    assert (component / "LICENSE").is_file()
+    assert (component / "SEEED_GFX_LICENSE.txt").is_file()

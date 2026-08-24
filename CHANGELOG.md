@@ -7,6 +7,46 @@ unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
 
 Noch keine Änderungen.
 
+## 0.3.31 – 2026-08-24
+
+### Fehlerbehebungen
+
+- Laufende Reservierungen werden nun auch dann weiterhin dem konfigurierten
+  Mehrfach-Listing zugeordnet, wenn Guestys Suchantwort nach der Anreise nur
+  noch die konkret zugewiesene Einheit enthält. Dadurch bleibt der Übergang von
+  der Vorschau- zur Willkommens- und später zur Check-out-Seite auch nach einem
+  Home-Assistant-Neustart erhalten.
+- Projektionen derselben Reservierung werden listingübergreifend
+  zusammengeführt und genau einem Listing zugeordnet. Eine ohne Identitäten für
+  mehrere Listings mehrdeutige Antwort wird aus Datenschutzgründen nicht an
+  mehrere Displays verteilt.
+
+### Firmware und Lizenzherkunft
+
+- Der UC8179-Treiber verwendet nur noch dokumentiert permissiv lizenzierte
+  Seeed-Quellen. Die frühere Waveform- und Initialisierungsimplementierung mit
+  unklarer Weiterverteilungslage wurde vollständig entfernt.
+- `auto` erkennt die von Seeed vorgesehenen OTP-Vier-Grau-Wellenformen und
+  verwendet andernfalls Seeeds MIT-lizenzierte Register-LUTs. Die Auswahl wird
+  über Tiefschlaf hinweg im RTC-Speicher gehalten, um den Akkuzyklus nicht mit
+  wiederholten OTP-Lesevorgängen zu belasten.
+- Die Renderrevision steigt auf 22. Mit Version 0.3.31 ist daher einmalig ein
+  Display-Firmwareupdate erforderlich. Die Änderung wurde vollständig
+  kompiliert, aber noch nicht auf einem realen E1001 sichtbar geprüft.
+
+### Dokumentation und Wartung
+
+- Die Agentenanweisungen dokumentieren nun ausdrücklich die
+  Mehrfach-Listing-Auflösung und den gemeinsamen Zeitstempel eines
+  Aktualisierungslaufs aus Version 0.3.30.
+- Die Batterie-Kennlinie, 16-fache ADC-Mittelung,
+  `REG0A.BUS_GD`-Netzstromerkennung und Energie-Diagnose-Entitäten sind als
+  nicht zu regressierende Firmware-Invarianten festgehalten.
+- Lokale Prüfung, Release-Changelog, Firmware-Kompatibilität sowie Lizenz- und
+  Drittanbieterstatus sind Bestandteil der vollständigen Definition of Done.
+- Ein Repository-Vertragstest schützt die zentralen Wissenslinks und aktuellen
+  Wartungsinvarianten vor unbeabsichtigtem Entfernen.
+
 ## 0.3.30 – 2026-08-24
 
 ### Buchungsübergänge

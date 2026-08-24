@@ -21,8 +21,9 @@ enum LutMode : uint8_t {
  * The 96 KiB framebuffer stores four pixels per byte, with 0 representing
  * black and 3 white. A refresh sends the least- and most-significant pixel
  * bits as separate UC8179 DTM1 and DTM2 planes. The waveform and register
- * sequence follow the production-tested GxEPD2_4G GDEW075T7 implementation,
- * which uses controller-register LUTs for four-level output.
+ * sequence use Seeed's permissively licensed E1001 reference implementations:
+ * panel OTP waveforms where available and controller-register LUTs as the
+ * compatible fallback.
  */
 class GuestyEPaperGray4
     : public display::DisplayBuffer,
@@ -83,8 +84,14 @@ class GuestyEPaperGray4
   bool wait_until_idle_(const char *phase);
   bool wait_for_busy_cycle_(const char *phase);
   bool reset_panel_();
+  void gpio_write_command_(uint8_t command);
+  uint8_t gpio_read_byte_();
+  bool read_otp_marker_(uint16_t read_length, uint16_t marker_offset,
+                        uint8_t *marker);
+  bool probe_otp_support_(bool *supported);
   bool select_lut_mode_();
-  bool init_gray_mode_();
+  bool init_custom_gray_mode_();
+  bool init_otp_gray_mode_();
   bool init_partial_mode_();
   void write_lut_(uint8_t command, const uint8_t *lut, size_t length);
   void write_plane_(uint8_t command, uint8_t bit_index);
@@ -124,6 +131,7 @@ class GuestyEPaperGray4
   std::array<uint8_t, PARTIAL_BUFFER_CAPACITY> partial_previous_{};
   std::array<uint8_t, PARTIAL_BUFFER_CAPACITY> partial_current_{};
   LutMode configured_lut_mode_{LUT_MODE_AUTO};
+  LutMode active_lut_mode_{LUT_MODE_CUSTOM};
 };
 
 }  // namespace esphome::guesty_epaper_gray4

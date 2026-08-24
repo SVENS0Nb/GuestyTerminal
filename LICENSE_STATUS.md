@@ -6,18 +6,25 @@ Ohne eine solche ausdrückliche Lizenz bleiben die gesetzlichen Rechte bei den
 jeweiligen Rechteinhabern.
 
 Der Unterordner `esphome/components/guesty_epaper_gray4` enthält eine eigene
-MIT-Lizenzdatei. Teile seiner Initialisierungssequenz und Waveformtabellen sind
-jedoch von der in `THIRD_PARTY_NOTICES.md` genannten GxEPD2_4G-Version
-abgeleitet, deren Weiterverteilungsbedingungen für diese Version nicht
-eindeutig dokumentiert sind. Die Provenienznotiz ersetzt keine Erlaubnis.
+MIT-Lizenzdatei. Seine UC8179-Waveformtabellen, OTP-Erkennung und
+Initialisierungssequenzen stammen jetzt ausschließlich aus den in
+`THIRD_PARTY_NOTICES.md` festgehaltenen, permissiv lizenzierten Seeed-Quellen.
+Die dazugehörigen Lizenztexte liegen direkt beim Treiber. Der zuvor
+dokumentierte, unklare Drittanbieter-Codepfad wurde entfernt.
 
 Vor einem öffentlichen Release oder einer Weiterverteilung sollte der
 Projektinhaber:
 
-1. die Rechte beziehungsweise eine Erlaubnis für die abgeleiteten
-   GxEPD2_4G-Bestandteile klären oder diese unabhängig neu implementieren;
-2. eine gewünschte Projektlizenz ausdrücklich auswählen;
-3. anschließend eine passende Root-Datei `LICENSE` und aktualisierte
-   Drittanbieterhinweise hinzufügen.
+1. entscheiden, ob Dritte den eigenen GuestyTerminal-Code nutzen, ändern oder
+   weiterverteilen dürfen;
+2. bei gewünschter Freigabe eine passende Projektlizenz ausdrücklich auswählen
+   und als Root-Datei `LICENSE` hinzufügen;
+3. vor jedem Release die Drittanbieterhinweise sowie die Rechte an eigenen
+   Marken-, Logo- und Bilddateien erneut prüfen.
+
+Die öffentliche Bereitstellung als proprietärer Quellcode wird durch den
+früheren Treiberbefund nicht mehr blockiert. Ohne projektweite Lizenz erhalten
+Dritte jedoch weiterhin keine ausdrückliche Erlaubnis zur Nutzung, Änderung
+oder Weiterverteilung der übrigen GuestyTerminal-Dateien.
 
 Diese Datei dokumentiert nur den aktuellen Zustand und ist keine Rechtsberatung.

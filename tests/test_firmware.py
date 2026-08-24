@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import re
 import stat
 from pathlib import Path
 
@@ -23,6 +24,13 @@ PACKAGE_FILE = (
     / "esphome"
     / "packages"
     / "reterminal-e1001-guesty-terminal.yaml"
+)
+DRIVER_FILE = (
+    Path(__file__).parents[1]
+    / "esphome"
+    / "components"
+    / "guesty_epaper_gray4"
+    / "guesty_epaper_gray4.cpp"
 )
 
 
@@ -65,7 +73,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.30") == 2
+    assert rendered.count("ref: v0.3.31") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
@@ -76,7 +84,8 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
 
     assert package.count("bpp: 2") == 12
     assert "lut_mode: ${gray_lut_mode}" in package
-    assert "id(guesty_render_revision) == 21" in package
+    assert "id(guesty_render_revision) == 22" in package
+    assert "id(guesty_render_revision) = 22" in package
     assert "guesty_terminal_update_display_v9" in package
     assert '"Bei Fragen sind wir für dich da."' not in package
     assert "id(guesty_logo_data).size() == logo_hex_length" in package
@@ -268,7 +277,10 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "RTC_DATA_ATTR static RetainedPartialFrame" in gray_driver
     assert "display_partial_" in gray_driver
     assert "retained_partial_frame.partial_count" in gray_driver
+    assert "RTC_DATA_ATTR static RetainedLutSelection" in gray_driver
     assert "this->command_(0x90)" in gray_driver
+    assert "this->command_(0x91)" in gray_driver
+    assert "this->data_(0xA9)" in gray_driver
     assert "this->command_(0x12)" in gray_driver
     driver_path = (
         Path(__file__).parents[1]
@@ -281,14 +293,23 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert '"Framebuffer levels:' in driver
     assert "00=black, 01=dark gray, 10=light gray, 11=white" in driver
     assert "1U - ((first >>" not in driver
-    assert "probe_otp_support_" not in driver
-    assert "write_lut_(0x25, LUT_BORDER_GRAY" in driver
-    assert "write_plane_(0x10, 1)" in driver
-    assert "write_plane_(0x13, 0)" in driver
+    assert "probe_otp_support_" in driver
+    assert "read_otp_marker_(0x0BED, 0x0BE3" in driver
+    assert "read_otp_marker_(0x17ED, 0x17E3" in driver
+    assert "RETAINED_LUT_SELECTION_MAGIC" in driver
+    assert "init_custom_gray_mode_" in driver
+    assert "init_otp_gray_mode_" in driver
+    assert "write_lut_(0x24, LUT_KK_GRAY" in driver
+    assert "write_lut_(0x25" not in driver
+    assert "LUT_BORDER_GRAY" not in driver
+    assert "write_plane_(0x10, 0)" in driver
+    assert "write_plane_(0x13, 1)" in driver
+    assert "GxEPD2" not in driver
     assert "Display BUSY never asserted" in driver
     assert "this->last_update_successful_ = this->display_()" in driver
     assert "if (!this->reset_panel_()) {\n    this->deep_sleep_panel_();" in driver
-    assert "if (!this->init_gray_mode_()) {\n    this->deep_sleep_panel_();" in driver
+    assert "const bool initialized = this->active_lut_mode_" in driver
+    assert "if (!initialized) {\n    this->deep_sleep_panel_();" in driver
     assert (
         "if (!this->init_partial_mode_()) {\n    this->deep_sleep_panel_();" in driver
     )
@@ -296,6 +317,55 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "this->panel_asleep_ = powered_off" in driver
     header = driver_path.with_suffix(".h").read_text(encoding="utf-8")
     assert "bool last_update_successful() const" in header
+    component_dir = driver_path.parent
+    assert "MIT License" in (component_dir / "LICENSE").read_text(encoding="utf-8")
+    seeed_gfx_license = (component_dir / "SEEED_GFX_LICENSE.txt").read_text(
+        encoding="utf-8"
+    )
+    assert "Copyright (c) 2023 Bodmer" in seeed_gfx_license
+    assert "Copyright (c) 2012 Adafruit Industries" in seeed_gfx_license
+
+
+def test_four_gray_tables_match_the_licensed_seeed_reference() -> None:
+    """Pin the panel-sensitive MIT-licensed Seeed waveform bytes."""
+    driver = DRIVER_FILE.read_text(encoding="utf-8")
+    expected = {
+        "LUT_VCOM_GRAY": (
+            "00 00 06 08 07 01 00 06 0A 0B 0A 01 00 03 03 00 00 03 "
+            "00 05 09 06 06 01 00 02 02 0A 0A 01 00 0A 11 06 07 01 "
+            "00 02 01 02 01 01"
+        ),
+        "LUT_WW_GRAY": (
+            "15 00 06 08 07 01 54 06 0A 0B 0A 01 90 03 03 00 00 03 "
+            "2A 05 09 06 06 01 AA 02 02 0A 0A 01 00 0A 11 06 07 01 "
+            "28 02 01 02 01 01"
+        ),
+        "LUT_KW_GRAY": (
+            "2A 00 06 08 07 01 59 06 0A 0B 0A 01 90 03 03 00 00 03 "
+            "5A 05 09 06 06 01 A8 02 02 0A 0A 01 45 0A 11 06 07 01 "
+            "A8 02 01 02 01 01"
+        ),
+        "LUT_WK_GRAY": (
+            "16 00 06 08 07 01 A0 06 0A 0B 0A 01 90 03 03 00 00 03 "
+            "99 05 09 06 06 01 A0 02 02 0A 0A 01 40 0A 11 06 07 01 "
+            "20 02 01 02 01 01"
+        ),
+        "LUT_KK_GRAY": (
+            "26 00 06 08 07 01 6A 06 0A 0B 0A 01 90 03 03 00 00 03 "
+            "65 05 09 06 06 01 50 02 02 0A 0A 01 10 0A 11 06 07 01 "
+            "10 02 01 02 01 01"
+        ),
+    }
+
+    for name, expected_hex in expected.items():
+        match = re.search(
+            rf"static constexpr uint8_t {name}\[42\] = \{{(.*?)\n\}};",
+            driver,
+            re.DOTALL,
+        )
+        assert match is not None
+        actual = " ".join(re.findall(r"0x([0-9A-F]{2})", match.group(1)))
+        assert actual == expected_hex
 
 
 def test_battery_wake_cycle_requires_confirmed_bus_good_and_cannot_wake_loop() -> None:
@@ -422,7 +492,8 @@ def test_partial_refresh_rehydrates_both_complete_controller_planes() -> None:
     assert "column < BYTES_PER_ROW" in driver
     assert "partial_override[override_index]" in driver
     assert "write_partial_bitmap_" not in driver
-    assert "this->command_(0x91)" not in driver
+    assert "this->command_(0x91)" in driver
+    assert "this->data_(0xA9)" in driver
     assert "both %lu-byte controller planes" in driver
 
 
@@ -477,7 +548,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.30", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.31", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -489,8 +560,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.30") == 2
-    assert 'version: "0.3.30"' in updated
+    assert updated.count("ref: v0.3.31") == 2
+    assert 'version: "0.3.31"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -521,7 +592,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
 def test_update_managed_firmware_configs_rejects_invalid_credentials(
     tmp_path, broken_line
 ) -> None:
-    valid = render_firmware_config(_options()).replace("0.3.30", "0.3.10")
+    valid = render_firmware_config(_options()).replace("0.3.31", "0.3.10")
     if "key:" in broken_line:
         invalid = valid.replace(
             next(line for line in valid.splitlines() if "key:" in line), broken_line
@@ -558,14 +629,14 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.30", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.31", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     future.chmod(0o600)
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.30", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.31", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")

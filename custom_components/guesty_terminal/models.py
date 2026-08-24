@@ -192,6 +192,65 @@ def first_present(mapping: Mapping[str, Any], *keys: str) -> str:
     return ""
 
 
+def reservation_listing_id_groups(
+    data: Mapping[str, Any],
+) -> tuple[tuple[str, ...], ...]:
+    """Return reservation listing identities grouped by routing priority."""
+    groups: list[tuple[str, ...]] = []
+    seen: set[str] = set()
+
+    nested_listing = data.get("listing")
+    stay = data.get("stay")
+    stay_segments = (
+        [segment for segment in stay if isinstance(segment, Mapping)]
+        if isinstance(stay, list)
+        else []
+    )
+
+    def identity_group(
+        top_level_keys: tuple[str, ...],
+        nested_keys: tuple[str, ...],
+        stay_keys: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        values: list[str] = []
+
+        def add_values(source: Mapping[str, Any], keys: tuple[str, ...]) -> None:
+            for key in keys:
+                value = _string(source.get(key))
+                if value and value not in seen:
+                    seen.add(value)
+                    values.append(value)
+
+        add_values(data, top_level_keys)
+        if isinstance(nested_listing, Mapping):
+            add_values(nested_listing, nested_keys)
+        for segment in stay_segments:
+            add_values(segment, stay_keys)
+        return tuple(values)
+
+    # Resolve by meaning, not response-field order: when both a concrete unit
+    # and its parent type are mapped, exactly the concrete unit owns the stay.
+    # Keeping the groups intact also lets the coordinator combine projections
+    # from multiple context-specific Guesty searches without losing priority.
+    groups.append(identity_group(("unitId",), ("unitId",), ("unitId",)))
+    groups.append(
+        identity_group(
+            ("listingId",),
+            ("_id", "id", "listingId"),
+            ("listingId",),
+        )
+    )
+    groups.append(identity_group(("unitTypeId",), ("unitTypeId",), ("unitTypeId",)))
+    groups.append(
+        identity_group(
+            ("parentListingId",),
+            ("parentListingId",),
+            ("parentListingId",),
+        )
+    )
+    return tuple(groups)
+
+
 def reservation_listing_ids(data: Mapping[str, Any]) -> tuple[str, ...]:
     """Return every listing identity represented by a reservation.
 
@@ -202,51 +261,9 @@ def reservation_listing_ids(data: Mapping[str, Any]) -> tuple[str, ...]:
     configured listing instead of letting response-field order change
     ownership at check-in.
     """
-    identities: list[str] = []
-    seen: set[str] = set()
-
-    def add_values(source: Mapping[str, Any], *keys: str) -> None:
-        for key in keys:
-            value = _string(source.get(key))
-            if value and value not in seen:
-                seen.add(value)
-                identities.append(value)
-
-    nested_listing = data.get("listing")
-    stay = data.get("stay")
-    stay_segments = (
-        [segment for segment in stay if isinstance(segment, Mapping)]
-        if isinstance(stay, list)
-        else []
+    return tuple(
+        identity for group in reservation_listing_id_groups(data) for identity in group
     )
-
-    # Resolve by meaning, not response-field order: when both a concrete unit
-    # and its parent type are mapped, exactly the concrete unit owns the stay.
-    # If only the parent is mapped, the later fallbacks still resolve it there.
-    add_values(data, "unitId")
-    if isinstance(nested_listing, Mapping):
-        add_values(nested_listing, "unitId")
-    for segment in stay_segments:
-        add_values(segment, "unitId")
-
-    add_values(data, "listingId")
-    if isinstance(nested_listing, Mapping):
-        add_values(nested_listing, "_id", "id", "listingId")
-    for segment in stay_segments:
-        add_values(segment, "listingId")
-
-    add_values(data, "unitTypeId")
-    if isinstance(nested_listing, Mapping):
-        add_values(nested_listing, "unitTypeId")
-    for segment in stay_segments:
-        add_values(segment, "unitTypeId")
-
-    add_values(data, "parentListingId")
-    if isinstance(nested_listing, Mapping):
-        add_values(nested_listing, "parentListingId")
-    for segment in stay_segments:
-        add_values(segment, "parentListingId")
-    return tuple(identities)
 
 
 def resolve_reservation_listing_id(

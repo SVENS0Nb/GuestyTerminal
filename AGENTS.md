@@ -42,11 +42,20 @@ spelling in UI copy, device project metadata, documentation, and releases.
 - `esphome/packages/reterminal-e1001-guesty-terminal.yaml`: device behavior,
   action schema, power logic, entities, fonts, and display layout.
 - `esphome/components/guesty_epaper_gray4/`: external ESPHome component and
-  four-level/partial-refresh panel driver.
+  four-level/partial-refresh panel driver. Its `LICENSE` and
+  `SEEED_GFX_LICENSE.txt` files preserve the notices for the fixed Seeed source
+  revisions documented in `THIRD_PARTY_NOTICES.md`.
 - `esphome/guestyterminal-display-1.yaml`: local reference configuration.
 - `tests/`: unit and contract tests for both Python behavior and important
   firmware/YAML invariants.
 - `.github/workflows/tests.yml`: authoritative CI commands.
+- `README.md` / `CHANGELOG.md`: user-facing setup, architecture, compatibility,
+  release notes, and the chronological product history.
+- `CONTRIBUTING.md` / `SECURITY.md`: contributor workflow and private security
+  reporting rules.
+- `LICENSE_STATUS.md` / `THIRD_PARTY_NOTICES.md`: current distribution status,
+  remaining owner decisions, asset and driver provenance, fixed versions, and
+  licenses.
 
 Generated ESPHome build files under `esphome/.esphome/`, Python caches, coverage
 artifacts, and real `secrets.yaml` files are not source. Do not inspect or edit
@@ -91,6 +100,27 @@ incomplete change.
   required snapshot query fails, retain the coordinator's last successful data
   rather than interpreting the failure as a cancellation. The display lease
   limits how long stale sensitive content can remain visible.
+- Capture one timezone-aware UTC timestamp at the beginning of a coordinator
+  refresh and use it for snapshot pruning, reconciliation, reservation
+  selection, and every payload built during that refresh. Do not take separate
+  wall-clock readings at those layers; crossing a check-in, checkout, or local
+  checkout-page boundary mid-refresh must not produce contradictory screens.
+- Guesty multi-unit reservations may expose a concrete `unitId`, a legacy
+  `listingId`, an overlying `unitTypeId`, and a `parentListingId` across the
+  top-level response, nested `listing`, or any `stay` segment. Preserve all
+  represented identities and resolve them only against listings mapped and
+  available in the current coordinator refresh.
+- Route each normalized reservation to exactly one listing. Prefer a concrete
+  `unitId`, then a direct/legacy `listingId`, then `unitTypeId`, then
+  `parentListingId`. If both a concrete unit and its unit type are mapped, the
+  concrete unit owns the assigned stay. Current/recent and upcoming searches
+  are scoped to each distinct mapped listing, then all projections of the same
+  reservation are resolved together. The query listing is a fallback only when
+  no projection contains a mapped identity and exactly one query context
+  remains. If several contexts remain ambiguous, skip the reservation rather
+  than copying sensitive content to multiple listings. This context must make
+  an already-running stay routable after a Home Assistant restart even when
+  Guesty projects only its newly assigned concrete unit.
 - On the local checkout date, the checkout page replaces the welcome page from
   the per-display start time (05:00 by default) until the normal checkout grace
   expires. It never renders door or WiFi credentials. Its weather and global
@@ -166,6 +196,17 @@ incomplete change.
 - The partial window is deliberately quantized to black/white while the rest of
   the display retains four grayscale levels. Keep window bounds byte-aligned
   and within the driver's 2048-byte retained buffer.
+- In `auto` mode, probe the two Seeed-documented UC8179 OTP markers once, use
+  the panel's internal four-gray waveform when supported, and otherwise use
+  the MIT-licensed Seeed E1001 register LUTs. Retain the non-sensitive result in
+  RTC memory across deep sleep; a failed probe falls back safely without
+  persisting an uncertain result. Keep explicit `custom` and `otp` modes for
+  existing configurations.
+- The current LUTs, OTP probe, initialization, plane order, and partial-window
+  sequence come only from the fixed permissively licensed Seeed revisions in
+  `THIRD_PARTY_NOTICES.md`. Preserve the component's two local license files
+  and provenance when changing this path. Do not introduce driver sequences or
+  waveform tables without clear redistribution terms.
 - `guesty_render_revision` invalidates otherwise-identical images after a
   rendering or driver change. When a visible rendering change requires one
   repaint, increment the expected value and the stored-success value together,
@@ -184,9 +225,27 @@ incomplete change.
 
 - `auto` mode sleeps on battery and remains online on external power. `battery`
   always sleeps; `mains` always remains online.
+- Detect external power through the SY6974B charger's dedicated
+  `REG0A.BUS_GD` bit on `guesty_power_i2c`. Do not substitute the BC1.2 source
+  classification in `REG08.BUS_STAT`: CDP, unknown, and non-standard adapters
+  are still valid external power. Require three consistent positive samples;
+  a previously confirmed cable may survive one invalid measurement batch, but
+  two invalid batches fail safely to battery behavior.
 - The default battery cycle is 30 minutes with a maximum awake window of 90
   seconds. After Home Assistant delivers a payload, the device may sleep
   earlier.
+- Battery voltage uses 16 averaged ADC samples with the board's 2x divider.
+  Convert voltage to percent with ESPHome's exact piecewise calibration points
+  from 3.27 V/0% through 4.15 V/100%; do not replace them with a least-squares
+  line. This remains a voltage estimate rather than a coulomb counter.
+- Preserve the diagnostic entities `Battery voltage`, `Battery level`,
+  `Wake-up reason`, and `Awake duration`. Publish awake duration through the
+  shared sleep script immediately before deep sleep, and keep timer, button,
+  cold-boot, and other wake reasons distinguishable.
+- Route every normal battery sleep entry through that shared script. It must
+  disable the battery measurement circuit and unused peripherals, publish the
+  awake duration, mark the OTA boot successful, and only then enter deep sleep;
+  do not duplicate partial sleep sequences in action or watchdog paths.
 - A device already in deep sleep is expected to notice newly connected USB
   power at its next scheduled wake and then stay online. Do not reintroduce a
   separate periodic USB wake/probe mechanism unless the product requirement is
@@ -268,12 +327,14 @@ Use the smallest applicable row, then inspect all named layers:
 | Change | Required impact review |
 | --- | --- |
 | Guesty API shape or endpoint | `api.py`, coordinator normalization/cache behavior, API and coordinator tests |
+| Guesty listing or multi-unit identity | `reservation_listing_ids()`, contextual coordinator routing, per-listing deduplication, snapshot ownership, model/coordinator isolation and three-screen transition tests |
 | Booking timing/status/timezone | `models.py`, coordinator query window, privacy lease, model/coordinator/runtime tests |
 | New per-display option or text | constants, localization presets, `MappingOptions` load/save, config flow, translations, payload, action, renderer, tests |
 | New visible payload field | fingerprints, versioned ESPHome action, runtime version negotiation, globals/rendering, tests |
 | Layout/font/logo/weather rendering | package YAML, `content_id`, render revision, partial-window containment, firmware tests, hardware check |
 | Panel/LUT/partial-refresh code | component Python schema, C++/header, package geometry, compile, hardware full/partial/deep-sleep tests |
 | Power/deep-sleep behavior | boot/action/interval paths, privacy fallback, external-power detection, README, firmware tests, battery and USB hardware checks |
+| Battery estimate, VBUS detection, or power diagnostics | 16-sample ADC path, exact piecewise curve, `REG0A.BUS_GD` confidence/fallback logic, sleep script, diagnostic entities, firmware contract tests, battery and USB hardware checks |
 | Home Assistant entity/service | platform forwarding, entity IDs/unique IDs, strings/translations, tests, README |
 | Firmware generation/update | managed header, exact template structure, credential preservation, atomic writes, updater parser, tests |
 
@@ -293,8 +354,9 @@ Home Assistant's real Python package. In an activated virtual environment:
 python3 -m pip install -r requirements-test.txt
 ruff check .
 ruff format --check .
+mypy custom_components/guesty_terminal
+python3 -m compileall -q custom_components/guesty_terminal
 pytest
-python3 -m compileall custom_components/guesty_terminal
 ```
 
 `pytest` enforces at least **80% branch coverage** for
@@ -327,6 +389,9 @@ After editing:
   translation files.
 - Run the tests proportional to the change, then the complete CI suite before a
   release or when shared models/runtime/firmware contracts changed.
+- Ensure `README.md`, `CHANGELOG.md`, `AGENTS.md`, and `CONTRIBUTING.md` still
+  describe the behavior, commands, compatibility, and release requirements
+  affected by the change.
 - State clearly when hardware behavior was compiled but not tested on a real
   E1001.
 
@@ -340,7 +405,15 @@ For a release, use one semantic version consistently in:
 - `custom_components/guesty_terminal/manifest.json`
 - `custom_components/guesty_terminal/firmware.py` (`FIRMWARE_VERSION`)
 - `esphome/guestyterminal-display-1.yaml`
-- version-specific tests and the release section in `README.md`
+- version-specific tests, `CHANGELOG.md`, and the release section in
+  `README.md`
+
+Before any public release or redistribution, read `LICENSE_STATUS.md` and
+`THIRD_PARTY_NOTICES.md`. If they document an unresolved right or redistribution
+blocker that applies to the release, stop and request an explicit project-owner
+decision; a generic request to publish does not resolve third-party rights or
+select a project-wide license. This check is required even when no asset or
+driver file changed.
 
 Generated managed YAML contains two GitHub refs and one ESPHome project version.
 The updater intentionally requires exactly those three versions to match and
@@ -352,7 +425,12 @@ Firmware generation pins both the package and external component to
 `v<FIRMWARE_VERSION>`. That Git tag must contain the referenced files before
 users can compile newly generated configurations. Run the complete Python
 suite, ESPHome config validation, and preferably a firmware compile before
-tagging. Hardware-affecting releases also require checks of:
+tagging. State in `README.md` and the GitHub release whether existing displays
+need a firmware update; integration-only changes may remain compatible with the
+previous device firmware even though all release version markers advance
+together. Release notes must name the tested Home Assistant/ESPHome versions,
+coverage result, firmware build status, and any missing real-device test.
+Hardware-affecting releases also require checks of:
 
 - full four-gray refresh and legible fonts;
 - unchanged-content suppression;
@@ -368,6 +446,7 @@ version, source, or license changes.
 ## Definition of done
 
 A change is complete only when the implementation, persistence/migration,
-HA/ESPHome protocol, localization, privacy behavior, tests, and user-facing
-documentation affected by that change agree. Report the validation commands
-actually run, any real-device testing performed, and any remaining limitation.
+HA/ESPHome protocol, localization, privacy behavior, tests, user-facing
+documentation, agent guidance, changelog, and applicable distribution notices
+agree. Report the validation commands actually run, any real-device testing
+performed, and any remaining technical or distribution limitation.

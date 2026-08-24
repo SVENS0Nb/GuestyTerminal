@@ -56,7 +56,10 @@ installiert daraus die Firmware.
    bleiben Reservierungen, Zugangsdaten und Notizen strikt getrennt. Bei
    Guesty-Mehrfacheinheiten bleibt diese Zuordnung auch dann stabil, wenn beim
    Check-in zusätzlich zur übergeordneten `unitTypeId` eine konkrete `unitId`
-   vergeben wird.
+   vergeben wird oder die laufende Suchantwort danach nur noch diese konkrete
+   Einheit enthält. Das gilt auch nach einem Neustart von Home Assistant. Eine
+   ohne Identitäten für mehrere Listings mehrdeutige Antwort wird nicht an
+   mehrere Displays verteilt.
 5. Wenn das E1001 aufwacht, überträgt Home Assistant die aktuellen Daten über
    eine ESPHome Native-API-Aktion. Dazu gehört auch das einmal zentral gewählte
    Logo. Das Gerät zeichnet nur dann neu, wenn sich der sichtbare Inhalt
@@ -145,12 +148,16 @@ GuestyTerminal verwendet einen eigenen UC8179-Treiber für die vier nativen
 Graustufen des GDEY075T7-Panels. Schriftdateien werden direkt mit 2 Bit pro
 Pixel auf die vier Panelstufen gerastert. QR-Code
 und Türcode bleiben dabei satt schwarz und werden ohne sichtbare
-Umrandung gezeichnet. Da das Panel im OTP nur eine
-Schwarz-Weiß-Wellenform enthält, verwendet der Treiber für vier Graustufen
-ausschließlich die erprobten Register-LUTs und die Initialisierungsfolge aus
-GxEPD2_4G. So bleibt GPIO9 durchgehend als SPI-Datenleitung konfiguriert. Die
-beiden UC8179-Bitebenen verwenden die direkte Pegelzuordnung
+Umrandung gezeichnet. Im Standardmodus `auto` prüft der Treiber einmalig die
+von Seeed dokumentierten UC8179-OTP-Markierungen. Unterstützt die jeweilige
+Panelrevision eine interne Vier-Grau-Wellenform, wird diese verwendet;
+andernfalls greift der Treiber auf Seeeds MIT-lizenzierte Register-LUTs zurück.
+Die erkannte Auswahl bleibt über den Tiefschlaf erhalten, damit der
+30-Minuten-Akkuzyklus nicht durch wiederholte OTP-Lesevorgänge belastet wird.
+Die beiden UC8179-Bitebenen verwenden die direkte Pegelzuordnung
 `00 = Schwarz`, `01 = Dunkelgrau`, `10 = Hellgrau` und `11 = Weiß`.
+Quellen, feste Revisionen und Lizenztexte sind in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) dokumentiert.
 
 Für weitere Displays die Beispieldatei kopieren und einen eindeutigen
 `device_name` verwenden. Alle Geräte verwenden dasselbe Layout-Paket.
@@ -498,6 +505,23 @@ Reconnect-Impuls als auch auf den wiederhergestellten Aktionsnamen und versucht
 die Zustellung innerhalb eines begrenzten Zeitfensters erneut. Nach dem
 HACS-Update muss die Display-Firmware einmalig auf 0.3.26 aktualisiert werden.
 
+Version **0.3.31** behebt den weiterhin möglichen Verlust einer laufenden
+Buchung beim Übergang von der Vorbereitungs- zur Willkommensseite. Projektionen
+derselben Guesty-Reservierung werden listingübergreifend zusammengeführt und
+anhand konkreter Einheit, Listing, Einheitentyp und übergeordnetem Listing
+eindeutig genau einem konfigurierten Display zugeordnet. Mehrdeutige Antworten
+werden zum Schutz der Gästedaten nicht dupliziert.
+
+Der UC8179-Treiber verwendet ab 0.3.31 ausschließlich dokumentiert permissiv
+lizenzierte Seeed-Quellen. Im Modus `auto` nutzt er die interne
+Vier-Grau-Wellenform kompatibler Panelrevisionen und andernfalls Seeeds
+Register-LUTs; die erkannte Auswahl bleibt über Tiefschlaf erhalten. Wegen der
+neuen Treiberfolge und Renderrevision 22 müssen nach dem HACS-Update auch alle
+Displays einmalig auf Firmware 0.3.31 aktualisiert werden. Der Release wurde
+mit jeweils 177 Tests gegen Home Assistant 2025.12.0 und 2026.2.3 bei 91,38 %
+Abdeckung sowie einem vollständigen Build mit ESPHome 2026.7.4 geprüft. Eine
+physische Sichtprüfung auf einem realen E1001 steht noch aus.
+
 Version **0.3.30** stabilisiert bei Guesty-Mehrfacheinheiten den Übergang von
 der Vorbereitungsseite zur Willkommensseite. Eine beim Check-in nachträglich
 vergebene konkrete Einheit trennt die aktive Buchung nicht mehr vom
@@ -563,6 +587,27 @@ Fernkontrolle des Displays. Home Assistant kann diese Zustände im Recorder
 speichern. Wer diese personenbezogene Historie nicht benötigt, sollte die
 Entität in den Recorder-Einstellungen ausschließen.
 
+## Projektwissen und Wartung
+
+Die gepflegte Wissensbasis besteht aus wenigen, klar abgegrenzten Dokumenten:
+
+- [`AGENTS.md`](AGENTS.md) enthält Architektur, nicht verhandelbare
+  Produktregeln, Änderungsfolgen, Prüfungen und Releasevorgaben für Agents und
+  Maintainer.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) fasst den Beitrags- und Prüfablauf
+  kompakt zusammen.
+- [`CHANGELOG.md`](CHANGELOG.md) dokumentiert veröffentlichte und noch nicht
+  veröffentlichte Änderungen.
+- [`SECURITY.md`](SECURITY.md) beschreibt die private Meldung von
+  Sicherheitsproblemen und den sicheren Umgang mit Diagnosedaten.
+- [`LICENSE_STATUS.md`](LICENSE_STATUS.md) und
+  [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) dokumentieren den aktuellen
+  Distributionsstatus sowie Herkunft und Lizenz externer Bestandteile.
+
+Bei widersprüchlichen technischen Angaben gilt der getestete Quellcode
+zusammen mit `AGENTS.md` als Wartungsgrundlage; Benutzerverhalten und
+Installationsschritte müssen anschließend in diesem README nachgezogen werden.
+
 ## Tests
 
 ```bash
@@ -570,8 +615,8 @@ python3 -m pip install -r requirements-test.txt
 ruff check .
 ruff format --check .
 mypy custom_components/guesty_terminal
+python3 -m compileall -q custom_components/guesty_terminal
 pytest
-python3 -m compileall custom_components
 ```
 
 Für einen lokalen Lauf gegen die minimale Home-Assistant-Version werden die
@@ -591,7 +636,5 @@ Vor dem ersten produktiven Einsatz sollte mit einer Testreservierung geprüft
 werden, ob das konkrete Guesty-Konto `keycode`, `wifiName` und `wifiPassword` in
 den erwarteten API-Antworten bereitstellt.
 
-Hinweise für Beiträge und Sicherheitsmeldungen stehen in
-[`CONTRIBUTING.md`](CONTRIBUTING.md) und [`SECURITY.md`](SECURITY.md). Der
-aktuelle rechtliche Lizenzstatus ist in
-[`LICENSE_STATUS.md`](LICENSE_STATUS.md) ausdrücklich dokumentiert.
+Hinweise für Beiträge, Sicherheit und Distribution sind in der obigen
+Wissensbasis zentral verknüpft.
