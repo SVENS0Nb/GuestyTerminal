@@ -73,7 +73,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.31") == 2
+    assert rendered.count("ref: v0.3.32") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
@@ -84,8 +84,12 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
 
     assert package.count("bpp: 2") == 12
     assert "lut_mode: ${gray_lut_mode}" in package
-    assert "id(guesty_render_revision) == 22" in package
-    assert "id(guesty_render_revision) = 22" in package
+    expected_revision = re.search(r"id\(guesty_render_revision\) == (\d+);", package)
+    stored_revision = re.search(r"id\(guesty_render_revision\) = (\d+);", package)
+    assert expected_revision is not None
+    assert stored_revision is not None
+    assert expected_revision.group(1) == "23"
+    assert expected_revision.group(1) == stored_revision.group(1)
     assert "guesty_terminal_update_display_v9" in package
     assert '"Bei Fragen sind wir für dich da."' not in package
     assert "id(guesty_logo_data).size() == logo_hex_length" in package
@@ -305,7 +309,8 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "write_plane_(0x10, 0)" in driver
     assert "write_plane_(0x13, 1)" in driver
     assert "GxEPD2" not in driver
-    assert "Display BUSY never asserted" in driver
+    assert "Display BUSY never asserted" not in driver
+    assert "wait_after_controller_command_" in driver
     assert "this->last_update_successful_ = this->display_()" in driver
     assert "if (!this->reset_panel_()) {\n    this->deep_sleep_panel_();" in driver
     assert "const bool initialized = this->active_lut_mode_" in driver
@@ -324,6 +329,70 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     )
     assert "Copyright (c) 2023 Bodmer" in seeed_gfx_license
     assert "Copyright (c) 2012 Adafruit Industries" in seeed_gfx_license
+
+
+def test_otp_probe_releases_and_reinitializes_the_esp32_spi_bus() -> None:
+    """Prevent restoring only the device while its bus pins remain GPIOs."""
+    package = PACKAGE_FILE.read_text(encoding="utf-8")
+    driver = DRIVER_FILE.read_text(encoding="utf-8")
+
+    release = re.search(
+        r"bool GuestyEPaperGray4::release_spi_bus_for_gpio_read_\(\) \{(.*?)\n\}",
+        driver,
+        re.DOTALL,
+    )
+    restore = re.search(
+        r"bool GuestyEPaperGray4::restore_spi_bus_after_gpio_read_\(\) \{(.*?)\n\}",
+        driver,
+        re.DOTALL,
+    )
+    assert release is not None
+    assert restore is not None
+    spi_config = package[package.index("spi:\n") : package.index("\ni2c:\n")]
+    assert "interface: spi2" in spi_config
+    assert release.group(1).index("this->spi_teardown()") < release.group(1).index(
+        "spi_bus_free(SPI2_HOST)"
+    )
+    assert "this->spi_setup()" in release.group(1)  # release-failure recovery
+    assert "spi_bus_initialize(SPI2_HOST" in restore.group(1)
+    assert restore.group(1).index("spi_bus_initialize(SPI2_HOST") < restore.group(
+        1
+    ).index("this->spi_setup()")
+    assert "this->spi_is_ready()" in restore.group(1)
+    assert "bus_config.mosi_io_num = data_pin->get_pin();" in restore.group(1)
+    assert "bus_config.miso_io_num = 8;" in restore.group(1)
+    assert "bus_config.sclk_io_num = clock_pin->get_pin();" in restore.group(1)
+    assert "bus_config.max_transfer_sz = 4092;" in restore.group(1)
+    assert (
+        "bus_config.flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_SCLK;"
+    ) in restore.group(1)
+    assert "if (!this->release_spi_bus_for_gpio_read_())" in driver
+    assert "if (!this->restore_spi_bus_after_gpio_read_())" in driver
+    assert "if (this->is_failed())\n          return false;" in driver
+
+
+def test_uc8179_power_on_and_refresh_use_the_seeed_busy_guard() -> None:
+    """Wait 100 ms and then for idle without requiring a sampled BUSY edge."""
+    driver = DRIVER_FILE.read_text(encoding="utf-8")
+    helper = re.search(
+        r"bool GuestyEPaperGray4::wait_after_controller_command_\("
+        r"const char \*phase\) \{(.*?)\n\}",
+        driver,
+        re.DOTALL,
+    )
+    assert helper is not None
+    body = helper.group(1)
+    assert body.index("delay(100)") < body.index("wait_until_idle_(phase)")
+    assert "BUSY never asserted" not in driver
+    assert "assertion_started" not in driver
+    for phase in (
+        "after custom-LUT power on",
+        "after OTP power on",
+        "after partial power on",
+        "during partial refresh",
+        "during grayscale refresh",
+    ):
+        assert f'wait_after_controller_command_("{phase}")' in driver
 
 
 def test_four_gray_tables_match_the_licensed_seeed_reference() -> None:
@@ -548,7 +617,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.31", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.32", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -560,8 +629,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.31") == 2
-    assert 'version: "0.3.31"' in updated
+    assert updated.count("ref: v0.3.32") == 2
+    assert 'version: "0.3.32"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -592,7 +661,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
 def test_update_managed_firmware_configs_rejects_invalid_credentials(
     tmp_path, broken_line
 ) -> None:
-    valid = render_firmware_config(_options()).replace("0.3.31", "0.3.10")
+    valid = render_firmware_config(_options()).replace("0.3.32", "0.3.10")
     if "key:" in broken_line:
         invalid = valid.replace(
             next(line for line in valid.splitlines() if "key:" in line), broken_line
@@ -629,14 +698,14 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.31", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.32", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     future.chmod(0o600)
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.31", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.32", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")

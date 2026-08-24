@@ -43,9 +43,38 @@ installiert daraus die Firmware.
    lokale RAM-Snapshot wird nur ersetzt, wenn eine Buchung hinzugekommen,
    geändert oder aus der bestätigten Ergebnismenge verschwunden ist.
    Abgeschlossene Buchungen bleiben noch zwölf Stunden nach Check-out im Cache.
-2. `keycode` wird zuerst direkt aus der Reservierung gelesen. Falls Guesty es
-   als Custom Field zurückgibt, löst die Integration die Field-ID über die
-   Account-Felddefinitionen auf.
+   Wechselt dieselbe Reservierung zeitgesteuert von einem `stay`-Segment zum
+   nächsten Listing, wird die alte Kopie jedoch sofort entfernt, damit nie zwei
+   Displays denselben Gast übernehmen.
+   Fehlt eine bereits bekannte laufende Reservierung nach einer
+   Einheitenzuweisung in der gefilterten Suche, verifiziert die Integration
+   ausschließlich diese Reservierungs-ID noch einmal über Guestys V3-Endpunkt,
+   in Paketen mit maximal zehn IDs. Zukünftige Buchungen verwenden diesen
+   Rückfall nicht, damit Stornierungen sofort wirksam bleiben. Zusätzlich gibt
+   es pro Lauf einen kontoweiten aktuellen Such-Snapshot, weil Guestys
+   Listing-Filter nur das erste `stay`-Segment berücksichtigt. Die Integration
+   verwirft daraus lokal alle Reservierungen, die keinem eingerichteten Listing
+   eindeutig gehören. Dadurch wird auch ein späteres aktives Segment direkt
+   nach einem Home-Assistant-Neustart gefunden.
+
+   Fehler einer einzelnen Listing-Abfrage lassen nur dessen letzten
+   erfolgreichen RAM-Snapshot stehen, erzeugen dafür aber keine neue Payload
+   und verlängern die 15-minütige Anzeigefrist nicht. Andere Listings laufen
+   weiter; schlägt alles fehl, bleibt der vorherige Gesamtstand erhalten.
+   Unvollständige oder formal falsche HTTP-200-Antworten gelten nie als leere,
+   autoritative Buchungsliste. Alle API-Anfragen werden pro Client innerhalb von
+   Guestys Grenzen von 15 pro Sekunde, 120 pro Minute und 5.000 pro Stunde
+   eingereiht; HTTP 429 gibt `Retry-After` sofort an Home Assistant weiter,
+   anstatt einen manuellen Aufruf im Hintergrund schlafen zu lassen. Guesty
+   zählt diese Grenzen kontoweit über alle API-Tokens, sodass getrennte Clients
+   oder Home-Assistant-Instanzen dasselbe Kontingent teilen.
+2. `keycode`, `keyCode` und `doorCode` werden zuerst direkt aus der
+   Reservierung gelesen. Falls Guesty den Türcode als Custom Field zurückgibt,
+   löst die Integration die Field-ID über die Account-Felddefinitionen auf.
+   Explizit geleerte Werte in einer aktuellen Reservierungsprojektion haben
+   Vorrang vor älteren Direktwerten, Cache-Inhalten und optionalen
+   Detailabfragen; auch ein abgelaufener Felddefinitions-Cache wird nach einem
+   fehlgeschlagenen Neuabruf nicht weiterverwendet.
 3. Jedes E1001 veröffentlicht in Home Assistant eine diagnostische Entität
    namens `GuestyTerminal Endpoint`.
 4. In den Optionen der Integration wird diese Entität einem Listing zugeordnet.
@@ -59,7 +88,13 @@ installiert daraus die Firmware.
    vergeben wird oder die laufende Suchantwort danach nur noch diese konkrete
    Einheit enthält. Das gilt auch nach einem Neustart von Home Assistant. Eine
    ohne Identitäten für mehrere Listings mehrdeutige Antwort wird nicht an
-   mehrere Displays verteilt.
+   mehrere Displays verteilt. Besitzt eine Reservierung mehrere zeitlich
+   aufeinanderfolgende `stay`-Segmente, wird mit dem einmal je
+   Aktualisierungslauf erfassten Zeitpunkt zuerst das aktive, sonst das nächste
+   oder zuletzt abgeschlossene Segment gewählt. Derselbe Zeitpunkt gilt für
+   API-Datumsfilter, Normalisierung, Snapshot-Abgleich und alle Payloads.
+   Projektionen derselben Reservierung werden nur ergänzend zusammengeführt;
+   explizit geleerte sensible Felder bleiben leer.
 5. Wenn das E1001 aufwacht, überträgt Home Assistant die aktuellen Daten über
    eine ESPHome Native-API-Aktion. Dazu gehört auch das einmal zentral gewählte
    Logo. Das Gerät zeichnet nur dann neu, wenn sich der sichtbare Inhalt
@@ -154,6 +189,12 @@ Panelrevision eine interne Vier-Grau-Wellenform, wird diese verwendet;
 andernfalls greift der Treiber auf Seeeds MIT-lizenzierte Register-LUTs zurück.
 Die erkannte Auswahl bleibt über den Tiefschlaf erhalten, damit der
 30-Minuten-Akkuzyklus nicht durch wiederholte OTP-Lesevorgänge belastet wird.
+Für den bidirektionalen OTP-Lesevorgang gibt der Treiber den dedizierten
+SPI2-Bus vollständig frei und initialisiert Bus und SPI-Gerät danach mit der
+E1001-Konfiguration neu. Nach `POWER ON` und `DISPLAY REFRESH` wartet er gemäß
+der Seeed-Sequenz zunächst fest 100 ms und anschließend bis `BUSY_N` inaktiv
+ist; eine bereits vor der ersten Abfrage erfolgte BUSY-Flanke muss nicht noch
+einmal beobachtet werden.
 Die beiden UC8179-Bitebenen verwenden die direkte Pegelzuordnung
 `00 = Schwarz`, `01 = Dunkelgrau`, `10 = Hellgrau` und `11 = Weiß`.
 Quellen, feste Revisionen und Lizenztexte sind in
@@ -504,6 +545,43 @@ oder instabilen API-Verbindungen. Die Integration reagiert sowohl auf den
 Reconnect-Impuls als auch auf den wiederhergestellten Aktionsnamen und versucht
 die Zustellung innerhalb eines begrenzten Zeitfensters erneut. Nach dem
 HACS-Update muss die Display-Firmware einmalig auf 0.3.26 aktualisiert werden.
+
+Der **unveröffentlichte Stand 0.3.32** verifiziert bereits bekannte aktive
+Reservierungen zusätzlich anhand ihrer V3-ID, wenn Guestys gefilterte Suche sie
+nach einer Einheitenzuweisung nicht mehr eindeutig zurückliefert. Die Abfrage
+erfolgt in Paketen mit höchstens zehn IDs. Ein gemeinsamer Zeitpunkt steuert
+API-Filter, zeitabhängige `stay`-Segmente, Normalisierung, Abgleich und
+Seitenauswahl. Ein zusätzlicher kontoweiter aktueller Snapshot entdeckt spätere
+aktive `stay`-Segmente auch nach einem Home-Assistant-Neustart; nur lokal
+eindeutig gemappte Identitäten gelangen weiter. Kontrolliertes Zusammenführen
+verhindert zugleich, dass ältere Projektionen explizit geleerte sensible Felder
+über alternative Guesty-Feldformen wiederherstellen; Löschungen aus jeder
+aktuellen Projektion gelten dabei auch über Gast-ID- und Custom-Field-Aliase.
+Das schließt direkte `keycode`-/`keyCode`-/`doorCode`-Formen, Custom-Field-
+Datensätze mit `value` oder `code` und zunächst nur über ihre Field-ID
+erkennbare Felder ein. Ein leerer aktueller Wert kann daher weder durch den
+Türcode-Cache noch durch die optionale Populated-Fields-Abfrage oder eine
+spätere Normalisierung wieder auftauchen.
+Fehler bleiben auf das jeweils betroffene Listing begrenzt, dessen RAM-Snapshot
+wird aber nicht als neue Display-Payload ausgegeben und erneuert deshalb keine
+Datenschutzfrist. Fehlerhafte oder widersprüchliche Antwortformen gelten nicht
+als Löschung. Der Client reiht Anfragen in Guestys Grenzen von 15 pro Sekunde,
+120 pro Minute und 5.000 pro Stunde ein;
+`Retry-After` nach HTTP 429 wird ohne versteckten Langzeitschlaf sofort
+weitergegeben. Die Grenzen gelten bei Guesty kontoweit und tokenübergreifend;
+getrennte Clients teilen daher dasselbe Kontingent.
+
+Die zugehörige Firmware gibt beim `auto`-OTP-Test den SPI2-Bus tatsächlich frei
+und stellt ihn anschließend vollständig wieder her. Außerdem folgt sie Seeeds
+Abfolge aus 100 ms Mindestwartezeit und anschließendem Warten auf den inaktiven
+`BUSY_N`-Pegel. Die Renderrevision ist 23; bei Installation dieses Standes
+0.3.32 ist daher zwingend auch ein Display-Firmwareupdate
+erforderlich. Der Stand wurde mit jeweils 237 Tests gegen Home Assistant
+2025.12.0 und 2026.2.3 bei 90,79 % Branch-Abdeckung sowie Ruff, Formatprüfung,
+Mypy und Bytecode-Kompilierung geprüft. ESPHome 2026.7.4 hat die
+Referenzkonfiguration validiert und vollständig gebaut; im App-Partitionsreport
+bleiben 21 % frei. Eine Prüfung der OTP-, Voll-/Teilaktualisierungs- und
+BUSY-Pfade auf einem realen E1001 steht noch aus.
 
 Version **0.3.31** behebt den weiterhin möglichen Verlust einer laufenden
 Buchung beim Übergang von der Vorbereitungs- zur Willkommensseite. Projektionen

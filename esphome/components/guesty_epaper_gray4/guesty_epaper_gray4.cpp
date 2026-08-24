@@ -8,6 +8,7 @@
 #include "esphome/core/log.h"
 
 #ifdef USE_ESP32
+#include "driver/spi_master.h"
 #include "esp_attr.h"
 #endif
 
@@ -214,19 +215,13 @@ bool GuestyEPaperGray4::wait_until_idle_(const char *phase) {
   return true;
 }
 
-bool GuestyEPaperGray4::wait_for_busy_cycle_(const char *phase) {
-  // A refresh that never asserts BUSY was not accepted by the controller.
-  // Do not report this as success merely because BUSY was already high.
-  const uint32_t assertion_started = millis();
-  while (this->busy_pin_->digital_read()) {
-    if (millis() - assertion_started > 1000U) {
-      ESP_LOGE(TAG, "Display BUSY never asserted (%s)", phase);
-      this->status_set_warning();
-      return false;
-    }
-    App.feed_wdt();
-    delay(1);
-  }
+bool GuestyEPaperGray4::wait_after_controller_command_(const char *phase) {
+  // Seeed's UC8179 sequences leave a fixed 100 ms guard after POWER ON and
+  // DISPLAY REFRESH, then wait for BUSY_N to return HIGH. Requiring this driver
+  // to witness the LOW edge is too strict: a valid controller revision may
+  // assert it before the first sampled edge or complete a short power-on cycle
+  // during the guard period.
+  delay(100);
   return this->wait_until_idle_(phase);
 }
 
@@ -241,6 +236,77 @@ bool GuestyEPaperGray4::reset_panel_() {
   delay(10);
   this->panel_asleep_ = false;
   return this->wait_until_idle_("after reset");
+}
+
+bool GuestyEPaperGray4::release_spi_bus_for_gpio_read_() {
+#ifdef USE_ESP32
+  if (!this->clock_pin_->is_internal() || !this->data_pin_->is_internal()) {
+    ESP_LOGW(TAG, "OTP probing requires internal ESP32 clock and data pins");
+    return false;
+  }
+
+  // SPIClient::spi_teardown() removes only this device. It deliberately does
+  // not release the ESP-IDF bus or its GPIO matrix. The OTP read switches MOSI
+  // to a bidirectional GPIO, so release the otherwise-exclusive E1001 SPI2 bus
+  // as Seeed_GFX does with SPI.end() before touching either bus pin.
+  this->spi_teardown();
+  const esp_err_t error = spi_bus_free(SPI2_HOST);
+  if (error != ESP_OK) {
+    ESP_LOGW(TAG, "Could not release SPI2 for OTP read (error 0x%X)",
+             static_cast<unsigned int>(error));
+    this->spi_setup();
+    if (!this->spi_is_ready()) {
+      ESP_LOGE(TAG, "Could not recover the E-paper SPI device");
+      this->status_set_warning();
+      this->mark_failed();
+    }
+    return false;
+  }
+  return true;
+#else
+  ESP_LOGW(TAG, "OTP probing is only supported on the ESP32 E1001 target");
+  return false;
+#endif
+}
+
+bool GuestyEPaperGray4::restore_spi_bus_after_gpio_read_() {
+#ifdef USE_ESP32
+  const auto *clock_pin = static_cast<InternalGPIOPin *>(this->clock_pin_);
+  const auto *data_pin = static_cast<InternalGPIOPin *>(this->data_pin_);
+  spi_bus_config_t bus_config{};
+  bus_config.mosi_io_num = data_pin->get_pin();
+  // Match ESPHome's original E1001 bus configuration exactly. GPIO8 is the
+  // board's MISO pin even though normal panel writes use only GPIO9/MOSI.
+  bus_config.miso_io_num = 8;
+  bus_config.sclk_io_num = clock_pin->get_pin();
+  bus_config.quadwp_io_num = -1;
+  bus_config.quadhd_io_num = -1;
+  bus_config.max_transfer_sz = 4092;
+  bus_config.flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_SCLK;
+
+  // Reinitializing the bus is essential. Calling spi_setup() alone would only
+  // add a new device handle while GPIO7/GPIO9 remained detached from the SPI
+  // peripheral after the manual OTP read.
+  const esp_err_t error =
+      spi_bus_initialize(SPI2_HOST, &bus_config, SPI_DMA_CH_AUTO);
+  if (error != ESP_OK) {
+    ESP_LOGE(TAG, "Could not restore SPI2 after OTP read (error 0x%X)",
+             static_cast<unsigned int>(error));
+    this->status_set_warning();
+    this->mark_failed();
+    return false;
+  }
+  this->spi_setup();
+  if (!this->spi_is_ready()) {
+    ESP_LOGE(TAG, "Could not restore the E-paper SPI device after OTP read");
+    this->status_set_warning();
+    this->mark_failed();
+    return false;
+  }
+  return true;
+#else
+  return false;
+#endif
 }
 
 void GuestyEPaperGray4::gpio_write_command_(uint8_t command) {
@@ -301,8 +367,9 @@ bool GuestyEPaperGray4::probe_otp_support_(bool *supported) {
   *supported = false;
 
   // Seeed_GFX probes two UC8179 user-data banks over the bidirectional
-  // SDA/MOSI line. Hardware SPI must be released while GPIO9 is an input.
-  this->spi_teardown();
+  // SDA/MOSI line. Hardware SPI must be fully released while GPIO9 is an input.
+  if (!this->release_spi_bus_for_gpio_read_())
+    return false;
   this->clock_pin_->setup();
   this->data_pin_->setup();
   this->clock_pin_->pin_mode(gpio::FLAG_OUTPUT);
@@ -343,7 +410,8 @@ bool GuestyEPaperGray4::probe_otp_support_(bool *supported) {
   this->data_pin_->pin_mode(gpio::FLAG_OUTPUT);
   this->data_pin_->digital_write(true);
   this->cs_->digital_write(true);
-  this->spi_setup();
+  if (!this->restore_spi_bus_after_gpio_read_())
+    return false;
 
   if (!probe_ok) {
     ESP_LOGW(TAG, "Could not read OTP markers; using Seeed register LUTs");
@@ -378,6 +446,8 @@ bool GuestyEPaperGray4::select_lut_mode_() {
         retained_lut_selection.mode = this->active_lut_mode_;
         retained_lut_selection.magic = RETAINED_LUT_SELECTION_MAGIC;
       } else {
+        if (this->is_failed())
+          return false;
         this->active_lut_mode_ = LUT_MODE_CUSTOM;
       }
     }
@@ -420,7 +490,7 @@ bool GuestyEPaperGray4::init_custom_gray_mode_() {
   this->data_(0x17);
 
   this->command_(0x04);  // POWER ON
-  if (!this->wait_for_busy_cycle_("after custom-LUT power on"))
+  if (!this->wait_after_controller_command_("after custom-LUT power on"))
     return false;
 
   this->command_(0x00);  // KW mode; waveform loaded from registers
@@ -464,7 +534,7 @@ bool GuestyEPaperGray4::init_otp_gray_mode_() {
   this->data_(0x17);
 
   this->command_(0x04);  // POWER ON
-  if (!this->wait_for_busy_cycle_("after OTP power on"))
+  if (!this->wait_after_controller_command_("after OTP power on"))
     return false;
 
   this->command_(0x00);  // KW mode; waveform loaded from panel OTP
@@ -503,7 +573,7 @@ bool GuestyEPaperGray4::init_partial_mode_() {
   this->data_(0x17);
 
   this->command_(0x04);  // POWER ON
-  if (!this->wait_for_busy_cycle_("after partial power on"))
+  if (!this->wait_after_controller_command_("after partial power on"))
     return false;
 
   this->command_(0x00);  // PANEL SETTING: monochrome OTP waveform
@@ -638,7 +708,7 @@ bool GuestyEPaperGray4::refresh_partial_() {
   // partial window constrains the differential update to the status header.
   this->set_partial_ram_area_();
   this->command_(0x12);  // DISPLAY REFRESH
-  if (!this->wait_for_busy_cycle_("during partial refresh"))
+  if (!this->wait_after_controller_command_("during partial refresh"))
     return false;
   ESP_LOGI(TAG, "Partial weather refresh completed in %lu ms",
            static_cast<unsigned long>(millis() - started));
@@ -748,7 +818,7 @@ void GuestyEPaperGray4::log_frame_levels_() {
 bool GuestyEPaperGray4::refresh_() {
   const uint32_t started = millis();
   this->command_(0x12);  // DISPLAY REFRESH
-  if (!this->wait_for_busy_cycle_("during grayscale refresh"))
+  if (!this->wait_after_controller_command_("during grayscale refresh"))
     return false;
   ESP_LOGI(TAG, "Four-level refresh completed in %lu ms",
            static_cast<unsigned long>(millis() - started));

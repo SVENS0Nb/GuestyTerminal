@@ -3,9 +3,98 @@
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt. Einträge
 unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
 
-## Unveröffentlicht
+## Unveröffentlicht (0.3.32)
 
-Noch keine Änderungen.
+### Buchungsübergänge und Fehlertoleranz
+
+- Bereits bekannte laufende Reservierungen, die Guestys gefilterte Suche nach
+  einer Einheitenzuweisung nicht mehr oder nicht eindeutig liefert, werden vor
+  dem Entfernen gezielt über `GET /reservations-v3` verifiziert. Die
+  `reservationIds[]` werden entsprechend Guestys Vorgabe in Pakete mit maximal
+  zehn IDs aufgeteilt. Dieser Rückfall gilt bewusst nicht für zukünftige
+  Buchungen, damit eine Stornierung weiterhin sofort aus dem autoritativen
+  Upcoming-Snapshot verschwindet. ID-Antworten müssen selbst eine gemappte
+  Identität enthalten; alter Cache-Besitz wird nie als erfundener Query-Kontext
+  verwendet. Unvollständige aktive Projektionen werden verifiziert oder
+  geschützt statt als Löschung behandelt.
+- Ein zusätzlicher kontoweiter Current/Recent-Snapshot gleicht aus, dass Guestys
+  V3-`filter[listingId]` nur das erste `stay`-Segment berücksichtigt. Nur lokal
+  eindeutig einem eingerichteten Listing zuordenbare Zeilen werden übernommen;
+  dadurch ist ein späteres aktives Segment auch direkt nach einem
+  Home-Assistant-Neustart auffindbar.
+- API-Datumsfilter, Auswahl des relevanten `stay`-Segments, Normalisierung,
+  Listing-Zuordnung, Snapshot-Abgleich und alle Display-Payloads verwenden nun
+  denselben zeitzonenbewussten Zeitpunkt eines Aktualisierungslaufs. Bei
+  Reservierungen mit mehreren zeitlich aufeinanderfolgenden Aufenthaltssegmenten
+  gehört dadurch die aktive, sonst die nächste beziehungsweise zuletzt
+  abgeschlossene Einheit eindeutig zum richtigen Display. Segmentbesitz nutzt
+  die exakten V3-`stay.checkIn`-/`stay.checkOut`-Grenzen. Wird dieselbe
+  Reservierungs-ID frisch einem neuen Listing zugeordnet, entfällt die
+  zwölfstündige Retention ihrer alten Listing-Kopie sofort.
+- Mehrere Guesty-Projektionen derselben Reservierung werden kontrolliert
+  zusammengeführt: Die aktuelle Projektion bleibt maßgeblich, fehlende Felder
+  dürfen ergänzt werden, explizit geleerte Notizen, Custom Fields und andere
+  sensible Werte werden jedoch auch über abweichende Root-, Nested- oder
+  Metadaten-Aliase und spätere optionale Lookups nicht wiederhergestellt.
+  Löschungen aus jeder aktuellen Projektion gewinnen dabei vor älteren
+  Gast-, `guestId`-/`bookerId`- und
+  `customFields`-/`customField`-/`fields`-Formen. Das gilt auch für direkte
+  `keycode`-/`keyCode`-/`doorCode`-Aliase, Datensätze mit `value` oder `code`
+  und zunächst nur per Account-Felddefinition erkennbare Field-IDs. Ein leerer
+  aktueller Türcode wird weder aus einem Cache, einer optionalen
+  Populated-Fields-Abfrage noch während der Normalisierung wiederhergestellt;
+  abgelaufene Felddefinitionen werden nach einem fehlgeschlagenen Neuabruf
+  nicht als gültige Grundlage verwendet.
+- Fehler einer einzelnen Listing-Abfrage lassen die letzten erfolgreichen
+  RAM-Daten dieses Listings bestehen, ohne erfolgreich aktualisierte Listings
+  zu blockieren. Sie erzeugen jedoch keine neue Display-Payload und verlängern
+  damit keine Datenschutzfrist. Ein manueller Geräte-Refresh löscht einen noch
+  unbestätigten Bildschirm ebenfalls nicht. Wenn kein Listing erfolgreich ist,
+  bleibt der ganze vorherige Coordinator-Stand erhalten. Authentifizierungs-,
+  kontoweite Discovery- und Rate-Limit-Fehler bleiben Fehler des gesamten
+  Aktualisierungslaufs.
+
+### Guesty API
+
+- Ein echter gleitender Request-Limiter reiht die Anfragen eines Clients in
+  Guestys Grenzen von 15 Anfragen pro Sekunde, 120 pro Minute und 5.000 pro
+  Stunde ein. Der Slot wird erst unmittelbar vor dem API-Aufruf nach einer
+  möglichen OAuth-Aktualisierung reserviert. Ein `Retry-After` nach HTTP 429
+  liefert bis zum Ablauf sofort den verbleibenden Rate-Limit-Fehler zurück,
+  statt manuelle Aufrufe schlafen zu lassen; parallele Geschwisteraufrufe werden
+  nach dem ersten Fehler abgebrochen.
+- Verbindungs-, Request- und ungültige Responsefehler sind getrennt typisiert;
+  weder ihre Meldungen noch verkettete Tracebacks geben Reservierungs-IDs,
+  Request-Pfade oder Guesty-Antworttexte preis.
+  Fehlende `results`, falsche Collection-Typen, ungültige Zeilen oder eine
+  fremde/fehlende Listing-ID in einem HTTP-200-Detail gelten ausdrücklich nicht
+  als autoritativer leerer Snapshot. Dasselbe gilt für eine leere
+  Reservierungsseite mit `pagination.hasMore: true` und doppelte Zeilen in
+  einer V3-ID-Verifikation.
+
+### E-Paper-Firmware
+
+- Der `auto`-OTP-Test gibt den dedizierten SPI2-Bus jetzt vollständig frei,
+  liest die bidirektionale SDA/MOSI-Leitung per GPIO und initialisiert danach
+  Bus und SPI-Gerät mit der E1001-Konfiguration neu. Damit bleiben die normalen
+  Hardware-SPI-Übertragungen nach dem einmaligen OTP-Test funktionsfähig.
+- Nach `POWER ON` und `DISPLAY REFRESH` hält der Treiber Seeeds feste
+  100-ms-Wartezeit ein und wartet anschließend auf den inaktiven
+  `BUSY_N`-Pegel, ohne zusätzlich eine möglicherweise bereits verpasste
+  BUSY-Flanke zu verlangen.
+- Die Renderrevision steigt auf 23. Für Version 0.3.32 ist
+  deshalb zwingend ein Display-Firmwareupdate erforderlich.
+
+### Prüfstatus
+
+- Der vollständige Python-Prüflauf war mit jeweils 237 Tests gegen Home
+  Assistant 2025.12.0 und 2026.2.3 erfolgreich; die Branch-Abdeckung beträgt
+  90,79 %. Ruff, Formatprüfung, Mypy und Bytecode-Kompilierung sind ebenfalls
+  fehlerfrei.
+- ESPHome 2026.7.4 hat die Referenzkonfiguration validiert und die Firmware
+  vollständig gebaut; im App-Partition-Report bleiben 21 % frei. Eine Prüfung
+  der OTP-, Voll-/Teilaktualisierungs- und BUSY-Pfade auf einem realen
+  reTerminal E1001 fehlt weiterhin.
 
 ## 0.3.31 – 2026-08-24
 

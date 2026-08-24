@@ -82,8 +82,10 @@ class GuestyEPaperGray4
   void start_data_();
   void end_data_();
   bool wait_until_idle_(const char *phase);
-  bool wait_for_busy_cycle_(const char *phase);
+  bool wait_after_controller_command_(const char *phase);
   bool reset_panel_();
+  bool release_spi_bus_for_gpio_read_();
+  bool restore_spi_bus_after_gpio_read_();
   void gpio_write_command_(uint8_t command);
   uint8_t gpio_read_byte_();
   bool read_otp_marker_(uint16_t read_length, uint16_t marker_offset,

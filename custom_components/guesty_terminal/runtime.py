@@ -538,10 +538,27 @@ class GuestyTerminalRuntime:
                 and endpoint in self.coordinator.data.payloads
             ):
                 await self.async_force_redraw_endpoint(endpoint)
+            elif self._endpoint_has_stale_listing(endpoint):
+                _LOGGER.warning(
+                    "Guesty refresh was incomplete; not clearing display %s",
+                    endpoint,
+                )
             else:
                 await self.async_clear_endpoint(endpoint)
         finally:
             self._sync_requests.discard(endpoint)
+
+    def _endpoint_has_stale_listing(self, endpoint_entity: str) -> bool:
+        """Return whether a partial refresh left this endpoint unverified."""
+        data = getattr(self.coordinator, "data", None)
+        stale_listing_ids: frozenset[str] = getattr(
+            data, "stale_listing_ids", frozenset()
+        )
+        return any(
+            mapping.endpoint_entity == endpoint_entity
+            and mapping.listing_id in stale_listing_ids
+            for mapping in self.coordinator.mapping_options()
+        )
 
     async def async_push_endpoint(self, endpoint_entity: str) -> bool:
         """Push one display payload through its ESPHome action."""

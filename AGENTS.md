@@ -65,7 +65,9 @@ them as if they were part of the implementation.
 
 1. `GuestyClient` obtains a Client Credentials token and fetches listings,
    current/recent confirmed reservations, and an ordered upcoming snapshot for
-   every mapped listing from Guesty's API.
+   every mapped listing from Guesty's API. It queues its own requests according
+   to Guesty's documented account-wide limits and can verify already-known
+   active reservations by V3 ID in batches of at most ten.
 2. `GuestyTerminalCoordinator` resolves full listing details, guest names, the
    `keycode` custom field, and optional Home Assistant weather data.
 3. `build_display_payload()` selects the visible reservation and produces one
@@ -95,32 +97,92 @@ incomplete change.
   snapshot until 12 hours after checkout, even if it disappears from a later
   successful Guesty response. This retention does not extend the display's
   configured post-checkout visibility. Future cancellations are removed
-  immediately and are never retained until their planned checkout.
-- Upcoming snapshot queries are authoritative and must not use a TTL. If any
-  required snapshot query fails, retain the coordinator's last successful data
-  rather than interpreting the failure as a cancellation. The display lease
-  limits how long stale sensitive content can remain visible.
+  immediately and are never retained until their planned checkout. If the same
+  reservation ID is freshly owned by another listing after a timed stay
+  transition, remove the previous listing copy immediately instead of applying
+  completed-stay retention to both.
+- Upcoming snapshot queries are authoritative and must not use a TTL. Isolate a
+  current/upcoming or active-ID verification failure to every affected listing
+  and retain those listings' last successful data rather than interpreting the
+  failure as a cancellation. Other listings may still reconcile normally.
+  Do not build or send a new payload for a failed listing: retaining its RAM
+  snapshot must never renew the 15-minute display lease. If no mapped listing
+  succeeds, fail the coordinator refresh and retain its previous complete data.
+  Authentication, account-discovery and rate-limit failures remain
+  refresh-wide failures. The display lease limits how long stale sensitive
+  content can remain visible.
+- If a cached confirmed reservation is active at the captured refresh instant
+  but filtered search omits it or no longer routes it, verify that known ID via
+  `GET /reservations-v3` with `reservationIds[]` batches of at most ten before
+  removing it. A successful response that omits the requested ID is
+  authoritative removal. A failed verification preserves every affected
+  listing snapshot. A by-ID response has no filtered query context and must
+  represent a mapped identity itself; never route it from old cache ownership.
+  An incomplete active projection is verified or protected rather than treated
+  as a cancellation. Never apply this fallback to future reservations: absence
+  from a successful upcoming snapshot remains an immediate cancellation.
 - Capture one timezone-aware UTC timestamp at the beginning of a coordinator
-  refresh and use it for snapshot pruning, reconciliation, reservation
-  selection, and every payload built during that refresh. Do not take separate
-  wall-clock readings at those layers; crossing a check-in, checkout, or local
-  checkout-page boundary mid-refresh must not produce contradictory screens.
+  refresh and pass it as `as_of` to API date filters and as `now` to stay
+  routing and normalization. Use the same value for snapshot pruning,
+  reconciliation, reservation selection, and every payload built during that
+  refresh. Do not take separate wall-clock readings at those layers; crossing
+  a check-in, checkout, or local checkout-page boundary mid-refresh must not
+  produce contradictory screens.
 - Guesty multi-unit reservations may expose a concrete `unitId`, a legacy
   `listingId`, an overlying `unitTypeId`, and a `parentListingId` across the
   top-level response, nested `listing`, or any `stay` segment. Preserve all
   represented identities and resolve them only against listings mapped and
   available in the current coordinator refresh.
+- A reservation may contain several chronological `stay` segments. At the
+  captured refresh instant prefer the active timed segment, otherwise the next
+  one, otherwise the most recently completed one. That segment's identities
+  override stale top-level identities. Use V3 `stay.checkIn`/`stay.checkOut`
+  for ownership boundaries; localized dates combine with explicit planned or
+  exact segment times for display copy. If any segment window is incomplete,
+  preserve every represented identity and normalize a uniquely matched segment
+  only when its own window is complete, otherwise use safe whole-reservation
+  boundaries.
 - Route each normalized reservation to exactly one listing. Prefer a concrete
   `unitId`, then a direct/legacy `listingId`, then `unitTypeId`, then
   `parentListingId`. If both a concrete unit and its unit type are mapped, the
   concrete unit owns the assigned stay. Current/recent and upcoming searches
-  are scoped to each distinct mapped listing, then all projections of the same
-  reservation are resolved together. The query listing is a fallback only when
-  no projection contains a mapped identity and exactly one query context
-  remains. If several contexts remain ambiguous, skip the reservation rather
-  than copying sensitive content to multiple listings. This context must make
-  an already-running stay routable after a Home Assistant restart even when
-  Guesty projects only its newly assigned concrete unit.
+  are scoped to each distinct mapped listing. Add one account-scoped
+  current/recent discovery snapshot because Guesty's V3 `filter[listingId]`
+  evaluates only the first stay segment; locally discard every row that cannot
+  be resolved to a mapped identity. Then resolve all projections of the same
+  reservation together. The query listing is a fallback only for a genuinely
+  filtered search when no projection contains a mapped identity and exactly one
+  query context remains. Account-wide and by-ID rows never receive such a
+  fallback. If several contexts remain ambiguous, skip the reservation rather
+  than copying sensitive content to multiple listings.
+- Merge duplicate projections before normalization with current/recent data as
+  the primary observation. Merge every current projection before upcoming
+  rows; other projections may fill only absent data.
+  Explicitly empty `notes`, `customFields`/`customField`/`fields`,
+  `guest`/`guestId`/`bookerId`, channel metadata, door-code fields, and
+  identified list entries remain authoritative across all Guesty alias shapes.
+  A clear in any equally authoritative current/recent projection overrides a
+  populated sibling before upcoming data is merged; never revive sensitive
+  content from an older projection or optional enrichment endpoint.
+- Queue every Open API request made by one client through sliding limits of
+  15 requests per second, 120 per minute, and 5,000 per hour. On HTTP 429,
+  expose the bounded `Retry-After` value to the coordinator and defer subsequent
+  client requests by immediately returning the remaining rate-limit error; do
+  not hide it behind a long automatic retry. Cancel sibling requests after the
+  first parallel failure. Reserve a sliding-window slot only immediately before
+  the API request, after any OAuth refresh. Keep
+  connection/request/response exceptions typed and free of paths, Guesty
+  response messages, reservation IDs, and other sensitive values.
+- Treat a missing `results` member, a non-array collection, non-object rows,
+  missing row IDs, an empty page that claims `pagination.hasMore`, duplicate
+  by-ID rows, and invalid listing-detail identities as response errors. Never
+  turn a malformed or internally inconsistent HTTP-200 body into an
+  authoritative empty snapshot. Sanitized transport errors must also have no
+  chained cause/context that could expose request paths or reservation IDs in
+  a traceback.
+- Guesty applies those limits account-wide across all API tokens. The
+  per-client queue is a conservative in-process guarantee, not permission for
+  separate clients or Home Assistant instances to spend the full quota each.
 - On the local checkout date, the checkout page replaces the welcome page from
   the per-display start time (05:00 by default) until the normal checkout grace
   expires. It never renders door or WiFi credentials. Its weather and global
@@ -143,8 +205,14 @@ incomplete change.
 - Perform comparisons with timezone-aware datetimes and render in the listing's
   timezone. Invalid/missing timezones fall back safely to UTC.
 - The door code comes from Guesty's `keycode` data. Keep tolerant support for
-  direct `keycode`/`keyCode`, nested populated custom fields, and field-ID
-  resolution through account custom-field definitions.
+  direct `keycode`/`keyCode`/`doorCode`, nested populated custom fields with
+  `value` or `code`, and field-ID resolution through account custom-field
+  definitions. Resolve opaque current-projection field IDs before consulting
+  the keycode cache or populated-fields endpoint. An explicit current empty
+  value must remain empty through merge, enrichment, and normalization; never
+  revive it from raw aliases, stale cache data, or an older projection. If
+  refreshing expired field definitions fails, fail closed instead of treating
+  the expired definitions as authoritative.
 
 ### Privacy and secret handling
 
@@ -202,6 +270,15 @@ incomplete change.
   RTC memory across deep sleep; a failed probe falls back safely without
   persisting an uncertain result. Keep explicit `custom` and `otp` modes for
   existing configurations.
+- The E1001 `auto` OTP probe temporarily uses SDA/MOSI as a bidirectional GPIO.
+  Tear down the SPI device, free the dedicated ESP32-S3 SPI2 host, perform the
+  GPIO read, then initialize SPI2 with the same pins, MISO, transfer size,
+  flags, and DMA configuration before recreating the device. A failed bus
+  restore must fail closed; `spi_setup()` alone is not a bus reinitialization.
+- After UC8179 `POWER ON` and `DISPLAY REFRESH`, preserve Seeed's fixed 100 ms
+  guard and then wait until active-low `BUSY_N` is inactive/high. Do not require
+  witnessing a low assertion edge that may already have completed during the
+  guard period.
 - The current LUTs, OTP probe, initialization, plane order, and partial-window
   sequence come only from the fixed permissively licensed Seeed revisions in
   `THIRD_PARTY_NOTICES.md`. Preserve the component's two local license files
@@ -210,7 +287,7 @@ incomplete change.
 - `guesty_render_revision` invalidates otherwise-identical images after a
   rendering or driver change. When a visible rendering change requires one
   repaint, increment the expected value and the stored-success value together,
-  and update their tests.
+  and update their tests. The current source revision is 23.
 - Publish the displayed-booking confirmation only after a successful physical
   refresh, or when a restored matching fingerprint proves the same content was
   previously drawn.
@@ -312,7 +389,9 @@ incomplete change.
   request. The integration must refresh Guesty first and then send one forced,
   authoritative redraw to that display. Suppress the endpoint's immediate
   action-state restore and the coordinator's ordinary push while this request
-  is pending, so stale RAM cannot win the race.
+  is pending, so stale RAM cannot win the race. If another listing succeeds but
+  the requested endpoint's listing remains unverified, neither redraw nor clear
+  it; let its existing lease expire instead.
 - The central integration button updates every GuestyTerminal-managed YAML to
   `FIRMWARE_VERSION` and queues OTA jobs through ESPHome Device Builder. It must
   ignore user-owned YAML and report only non-sensitive counts/status.
@@ -326,13 +405,13 @@ Use the smallest applicable row, then inspect all named layers:
 
 | Change | Required impact review |
 | --- | --- |
-| Guesty API shape or endpoint | `api.py`, coordinator normalization/cache behavior, API and coordinator tests |
+| Guesty API shape, endpoint, or limit | `api.py`, V3 ID batching, 429/Retry-After behavior, privacy-safe exception shape, coordinator failure isolation, API and coordinator tests |
 | Guesty listing or multi-unit identity | `reservation_listing_ids()`, contextual coordinator routing, per-listing deduplication, snapshot ownership, model/coordinator isolation and three-screen transition tests |
 | Booking timing/status/timezone | `models.py`, coordinator query window, privacy lease, model/coordinator/runtime tests |
 | New per-display option or text | constants, localization presets, `MappingOptions` load/save, config flow, translations, payload, action, renderer, tests |
 | New visible payload field | fingerprints, versioned ESPHome action, runtime version negotiation, globals/rendering, tests |
 | Layout/font/logo/weather rendering | package YAML, `content_id`, render revision, partial-window containment, firmware tests, hardware check |
-| Panel/LUT/partial-refresh code | component Python schema, C++/header, package geometry, compile, hardware full/partial/deep-sleep tests |
+| Panel/LUT/partial-refresh code | component Python schema, C++/header, SPI2 teardown/reinitialization, 100-ms/BUSY timing, render revision, package geometry, compile, hardware full/partial/deep-sleep tests |
 | Power/deep-sleep behavior | boot/action/interval paths, privacy fallback, external-power detection, README, firmware tests, battery and USB hardware checks |
 | Battery estimate, VBUS detection, or power diagnostics | 16-sample ADC path, exact piecewise curve, `REG0A.BUS_GD` confidence/fallback logic, sleep script, diagnostic entities, firmware contract tests, battery and USB hardware checks |
 | Home Assistant entity/service | platform forwarding, entity IDs/unique IDs, strings/translations, tests, README |

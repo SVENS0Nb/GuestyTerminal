@@ -54,8 +54,15 @@ def _reservation(keycode: str = "4827") -> Reservation:
 def test_extracts_direct_keycode_variants() -> None:
     assert extract_keycode_direct({"keycode": "4827"}) == "4827"
     assert extract_keycode_direct({"keyCode": 9123}) == "9123"
+    assert extract_keycode_direct({"doorCode": "2468"}) == "2468"
     assert extract_keycode_direct({"keycode": {"value": "3159"}}) == "3159"
     assert extract_keycode_direct({"notes": {"keyCode": "8642"}}) == "8642"
+    assert extract_keycode_direct({"notes": {"doorCode": "9753"}}) == "9753"
+    assert extract_keycode_direct({"fieldName": "keycode", "code": "1357"}) == "1357"
+    assert (
+        extract_keycode_direct({"fieldName": "keycode", "value": "", "code": "stale"})
+        == ""
+    )
     assert (
         extract_keycode_direct(
             {"customFields": [{"name": "Key code", "value": "7788"}]}
@@ -139,6 +146,26 @@ def test_resolves_keycode_by_custom_field_definition() -> None:
     populated = {"customFields": [{"fieldId": "field-123", "value": "5643"}]}
     definitions = [{"_id": "field-123", "name": "keycode"}]
     assert extract_keycode_from_custom_fields(populated, definitions) == "5643"
+    door_definitions = [{"_id": "field-123", "name": "Door Code"}]
+    assert extract_keycode_from_custom_fields(populated, door_definitions) == "5643"
+    code_projection = {"customFields": [{"fieldId": "field-123", "code": "2468"}]}
+    assert extract_keycode_from_custom_fields(code_projection, definitions) == "2468"
+
+
+def test_explicit_empty_keycode_override_never_falls_back_to_raw_alias() -> None:
+    raw = {
+        "reservationId": "reservation-v3",
+        "status": "confirmed",
+        "guest": {"firstName": "Mia"},
+        "checkInDateLocalized": "2026-08-14",
+        "checkOutDateLocalized": "2026-08-17",
+        "keycode": "stale-code",
+    }
+
+    reservation = Reservation.from_api(raw, _listing(), keycode="")
+
+    assert reservation is not None
+    assert reservation.keycode == ""
 
 
 def test_normalizes_v3_reservation_without_payment_dependency() -> None:
@@ -199,6 +226,195 @@ def test_resolves_multi_unit_reservation_against_the_configured_listing() -> Non
 
     assert reservation is not None
     assert reservation.listing_id == "mapped-parent"
+
+
+def test_routes_localized_multi_stay_segment_at_the_captured_listing_time() -> None:
+    """Use the active V3 stay.listingId near a local UTC-day boundary."""
+    listing = Listing(
+        "unit-b",
+        "Apartment B",
+        timezone="Europe/Berlin",
+        default_check_in="15:00",
+        default_check_out="10:00",
+    )
+    raw = {
+        "reservationId": "relocation-1",
+        "status": "confirmed",
+        "guest": {"firstName": "Mia"},
+        # The top-level values describe the whole reservation. The active
+        # segment must take precedence for a timed relocation.
+        "checkInDateLocalized": "2026-09-10",
+        "checkOutDateLocalized": "2026-09-13",
+        "plannedArrivalTime": "15:00",
+        "plannedDepartureTime": "10:00",
+        "stay": [
+            {
+                "listingId": "unit-a",
+                "parentListingId": "unit-type",
+                "checkIn": "2026-09-10T13:00:00Z",
+                "checkOut": "2026-09-10T22:30:00Z",
+                "checkInDateLocalized": "2026-09-10",
+                "checkOutDateLocalized": "2026-09-11",
+                "plannedArrivalTime": "15:00",
+                "plannedDepartureTime": "00:30",
+            },
+            {
+                "listingId": "unit-b",
+                "parentListingId": "unit-type",
+                "checkIn": "2026-09-10T22:30:00Z",
+                "checkOut": "2026-09-13T08:00:00Z",
+                "checkInDateLocalized": "2026-09-11",
+                "checkOutDateLocalized": "2026-09-13",
+                "plannedArrivalTime": "00:30",
+                "plannedDepartureTime": "10:00",
+            },
+        ],
+    }
+
+    before_relocation = datetime(2026, 9, 10, 21, 0, tzinfo=UTC)
+    after_relocation = datetime(2026, 9, 10, 22, 45, tzinfo=UTC)
+    after_stay = datetime(2026, 9, 13, 9, 0, tzinfo=UTC)
+
+    assert (
+        resolve_reservation_listing_id(
+            raw,
+            {"unit-a", "unit-b"},
+            now=before_relocation,
+            listing=listing,
+        )
+        == "unit-a"
+    )
+    assert (
+        resolve_reservation_listing_id(
+            raw,
+            {"unit-a", "unit-b"},
+            now=after_relocation,
+            listing=listing,
+        )
+        == "unit-b"
+    )
+    assert (
+        resolve_reservation_listing_id(
+            raw,
+            {"unit-a", "unit-b"},
+            now=after_stay,
+            listing=listing,
+        )
+        == "unit-b"
+    )
+    assert (
+        resolve_reservation_listing_id(
+            raw,
+            {"unit-type"},
+            now=after_relocation,
+            listing=listing,
+        )
+        == "unit-type"
+    )
+
+    before = Reservation.from_api(raw, listing, now=before_relocation)
+    reservation = Reservation.from_api(raw, listing, now=after_relocation)
+
+    assert before is not None
+    assert before.listing_id == "unit-a"
+    assert before.check_out == datetime(2026, 9, 10, 22, 30, tzinfo=UTC)
+    assert reservation is not None
+    assert reservation.listing_id == "unit-b"
+    assert reservation.check_in == datetime(2026, 9, 10, 22, 30, tzinfo=UTC)
+    assert reservation.check_out == datetime(2026, 9, 13, 8, 0, tzinfo=UTC)
+
+
+def test_multi_stay_iso_segment_boundaries_override_stale_top_level_dates() -> None:
+    listing = Listing(
+        "unit-b",
+        "Apartment B",
+        timezone="Europe/Berlin",
+    )
+    raw = {
+        "reservationId": "relocation-iso",
+        "status": "confirmed",
+        "guest": {"firstName": "Mia"},
+        "checkInDateLocalized": "2026-09-10",
+        "checkOutDateLocalized": "2026-09-13",
+        "plannedArrivalTime": "15:00",
+        "plannedDepartureTime": "10:00",
+        "stay": [
+            {
+                "listingId": "unit-a",
+                "checkIn": "2026-09-10T13:00:00Z",
+                "checkOut": "2026-09-10T22:30:00Z",
+            },
+            {
+                "listingId": "unit-b",
+                "checkIn": "2026-09-10T22:30:00Z",
+                "checkOut": "2026-09-13T08:00:00Z",
+            },
+        ],
+    }
+
+    reservation = Reservation.from_api(
+        raw,
+        listing,
+        now=datetime(2026, 9, 11, 8, 0, tzinfo=UTC),
+    )
+
+    assert reservation is not None
+    assert reservation.listing_id == "unit-b"
+    assert reservation.check_in == datetime(2026, 9, 10, 22, 30, tzinfo=UTC)
+    assert reservation.check_out == datetime(2026, 9, 13, 8, 0, tzinfo=UTC)
+
+
+def test_partially_timed_multi_stay_keeps_all_identities_for_safe_routing() -> None:
+    raw = {
+        "reservationId": "relocation-incomplete",
+        "stay": [
+            {
+                "listingId": "unit-a",
+                "checkIn": "2026-09-10T13:00:00Z",
+                "checkOut": "2026-09-11T08:00:00Z",
+            },
+            {"listingId": "unit-b"},
+        ],
+    }
+
+    assert reservation_listing_ids(
+        raw,
+        now=datetime(2026, 9, 10, 16, 0, tzinfo=UTC),
+        listing=Listing("unit-a", "Apartment A"),
+    ) == ("unit-a", "unit-b")
+
+
+def test_partially_timed_matching_segment_uses_whole_reservation_boundaries() -> None:
+    listing = Listing("unit-b", "Apartment B", timezone="Europe/Berlin")
+    raw = {
+        "reservationId": "relocation-incomplete",
+        "status": "confirmed",
+        "guest": {"firstName": "Mia"},
+        "checkInDateLocalized": "2026-09-10",
+        "checkOutDateLocalized": "2026-09-13",
+        "plannedArrivalTime": "15:00",
+        "plannedDepartureTime": "10:00",
+        "stay": [
+            {
+                "listingId": "unit-a",
+                "checkIn": "2026-09-10T13:00:00Z",
+                "checkOut": "2026-09-11T08:00:00Z",
+            },
+            {"listingId": "unit-b"},
+        ],
+    }
+
+    reservation = Reservation.from_api(
+        raw,
+        listing,
+        resolved_listing_id="unit-b",
+        now=datetime(2026, 9, 11, 12, 0, tzinfo=UTC),
+    )
+
+    assert reservation is not None
+    assert reservation.listing_id == "unit-b"
+    assert reservation.check_in == datetime(2026, 9, 10, 13, 0, tzinfo=UTC)
+    assert reservation.check_out == datetime(2026, 9, 13, 8, 0, tzinfo=UTC)
 
 
 def test_normalizes_v3_stay_dates_and_internal_notes() -> None:

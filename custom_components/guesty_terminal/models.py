@@ -58,6 +58,7 @@ _CHECKOUT_INSTRUCTION_KEYS = {
     "departureinstruction",
     "departureinstructions",
 }
+_DOOR_CODE_FIELD_NAMES = {"keycode", "doorcode"}
 
 
 def _string(value: Any) -> str:
@@ -105,6 +106,16 @@ def sanitize_door_code(value: Any) -> str:
         if not character.isspace()
         and unicodedata.category(character)[0] not in {"C", "M"}
     )
+
+
+def _projected_door_code_value(value: Any) -> str:
+    """Read a projected value while preserving an explicit empty ``value``."""
+    if isinstance(value, Mapping):
+        for key in ("value", "code"):
+            if key in value:
+                return sanitize_door_code(value[key])
+        return ""
+    return sanitize_door_code(value)
 
 
 def _instruction_value(value: Any) -> str:
@@ -161,6 +172,11 @@ def extract_checkout_instructions(data: Any) -> str:
 def extract_reservation_notes(data: Mapping[str, Any]) -> tuple[str, str, str]:
     """Return Guesty's general, cleaner and special-request reservation notes."""
     notes = data.get("notes")
+    if "notes" in data and (not isinstance(notes, Mapping) or not notes):
+        # An explicitly empty current notes container clears every legacy root
+        # alias. Falling through would revive stale cleaner/internal notes from
+        # a less-authoritative projection.
+        return "", "", ""
     if not isinstance(notes, Mapping):
         notes = {}
     channel_metadata = data.get("channelMetadata")
@@ -192,8 +208,184 @@ def first_present(mapping: Mapping[str, Any], *keys: str) -> str:
     return ""
 
 
+def _listing_identity(value: Any) -> str:
+    """Return one listing identity from a scalar or populated API object."""
+    if isinstance(value, Mapping):
+        return first_present(value, "_id", "id", "listingId")
+    return _string(value)
+
+
+def _stay_segment_window(
+    segment: Mapping[str, Any],
+    listing: Listing | None,
+) -> tuple[datetime, datetime] | None:
+    """Return the exact ownership window for one Guesty stay segment."""
+    zone = _timezone(listing.timezone if listing is not None else "UTC")
+    default_check_in = _parse_time(
+        listing.default_check_in if listing is not None else "15:00",
+        time(15, 0),
+    )
+    default_check_out = _parse_time(
+        listing.default_check_out if listing is not None else "10:00",
+        time(10, 0),
+    )
+
+    # V3 search guarantees stay.checkIn/checkOut and filter[listingId] only
+    # considers the first segment. Those exact boundaries must therefore own
+    # routing; localized dates plus listing defaults can move a 00:30
+    # relocation by many hours and keep the old display active.
+    check_in = _parse_iso_datetime(segment.get("checkIn"))
+    if check_in is None:
+        check_in_date = _parse_date(segment.get("checkInDateLocalized"))
+        if check_in_date is not None:
+            check_in = datetime.combine(
+                check_in_date,
+                _parse_time(
+                    segment.get("plannedArrival")
+                    or segment.get("plannedArrivalTime")
+                    or segment.get("eta"),
+                    default_check_in,
+                ),
+                zone,
+            )
+        else:
+            check_in = _parse_iso_datetime(
+                segment.get("checkInDate") or segment.get("eta")
+            )
+
+    check_out = _parse_iso_datetime(segment.get("checkOut"))
+    if check_out is None:
+        check_out_date = _parse_date(segment.get("checkOutDateLocalized"))
+        if check_out_date is not None:
+            check_out = datetime.combine(
+                check_out_date,
+                _parse_time(
+                    segment.get("plannedDeparture")
+                    or segment.get("plannedDepartureTime")
+                    or segment.get("etd"),
+                    default_check_out,
+                ),
+                zone,
+            )
+        else:
+            check_out = _parse_iso_datetime(
+                segment.get("checkOutDate") or segment.get("etd")
+            )
+    if check_in is None or check_out is None or check_out <= check_in:
+        return None
+    return check_in, check_out
+
+
+def _stay_segment_display_window(
+    segment: Mapping[str, Any],
+    listing: Listing,
+) -> tuple[datetime, datetime] | None:
+    """Return guest-facing segment boundaries without losing exact times."""
+    zone = _timezone(listing.timezone)
+
+    def boundary(
+        localized_key: str,
+        iso_keys: tuple[str, ...],
+        planned_keys: tuple[str, ...],
+        default: time,
+    ) -> datetime | None:
+        parsed_iso = _parse_iso_datetime(
+            next((segment.get(key) for key in iso_keys if segment.get(key)), None)
+        )
+        localized_date = _parse_date(segment.get(localized_key))
+        if localized_date is None:
+            return parsed_iso or _parse_iso_datetime(
+                next(
+                    (segment.get(key) for key in planned_keys if segment.get(key)),
+                    None,
+                )
+            )
+        planned = next(
+            (segment.get(key) for key in planned_keys if segment.get(key)),
+            None,
+        )
+        if planned:
+            local_time = _parse_time(planned, default)
+        elif parsed_iso is not None:
+            local_time = parsed_iso.astimezone(zone).timetz().replace(tzinfo=None)
+        else:
+            local_time = default
+        return datetime.combine(localized_date, local_time, zone)
+
+    check_in = boundary(
+        "checkInDateLocalized",
+        ("checkIn", "checkInDate"),
+        ("plannedArrival", "plannedArrivalTime", "eta"),
+        _parse_time(listing.default_check_in, time(15, 0)),
+    )
+    check_out = boundary(
+        "checkOutDateLocalized",
+        ("checkOut", "checkOutDate"),
+        ("plannedDeparture", "plannedDepartureTime", "etd"),
+        _parse_time(listing.default_check_out, time(10, 0)),
+    )
+    if check_in is None or check_out is None or check_out <= check_in:
+        return None
+    return check_in, check_out
+
+
+def _relevant_stay_segments(
+    data: Mapping[str, Any],
+    *,
+    now: datetime | None,
+    listing: Listing | None = None,
+) -> tuple[Mapping[str, Any], ...]:
+    """Select the stay segment that owns the reservation at one instant.
+
+    Guesty's search response exposes every segment of a mid-stay reservation.
+    Considering all of them together can make a valid relocation look
+    ambiguous when several physical units have displays. Prefer the active
+    segment, otherwise the next segment, otherwise the most recently completed
+    one. Rows without exact segment timestamps retain the compatibility
+    behavior and expose every represented identity.
+    """
+    stay = data.get("stay")
+    segments = (
+        tuple(segment for segment in stay if isinstance(segment, Mapping))
+        if isinstance(stay, list)
+        else ()
+    )
+    if now is None or len(segments) <= 1:
+        return segments
+
+    current = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
+    timed_segments = tuple(
+        (index, segment, window)
+        for index, segment in enumerate(segments)
+        if (window := _stay_segment_window(segment, listing)) is not None
+    )
+    if len(timed_segments) != len(segments):
+        # A partially timed relocation cannot be assigned safely. Exposing all
+        # represented identities lets the coordinator reject an ambiguity or
+        # use its single-query fallback instead of guessing the wrong unit.
+        return segments
+
+    active = tuple(
+        item for item in timed_segments if item[2][0] <= current < item[2][1]
+    )
+    if active:
+        selected = max(active, key=lambda item: (item[2][0], -item[0]))
+        return (selected[1],)
+
+    future = tuple(item for item in timed_segments if item[2][0] > current)
+    if future:
+        selected = min(future, key=lambda item: (item[2][0], item[0]))
+        return (selected[1],)
+
+    selected = max(timed_segments, key=lambda item: (item[2][1], -item[0]))
+    return (selected[1],)
+
+
 def reservation_listing_id_groups(
     data: Mapping[str, Any],
+    *,
+    now: datetime | None = None,
+    listing: Listing | None = None,
 ) -> tuple[tuple[str, ...], ...]:
     """Return reservation listing identities grouped by routing priority."""
     groups: list[tuple[str, ...]] = []
@@ -201,10 +393,20 @@ def reservation_listing_id_groups(
 
     nested_listing = data.get("listing")
     stay = data.get("stay")
-    stay_segments = (
-        [segment for segment in stay if isinstance(segment, Mapping)]
+    all_stay_segments = (
+        tuple(segment for segment in stay if isinstance(segment, Mapping))
         if isinstance(stay, list)
-        else []
+        else ()
+    )
+    stay_segments = _relevant_stay_segments(data, now=now, listing=listing)
+    selected_segment_is_authoritative = (
+        len(all_stay_segments) > 1
+        and len(stay_segments) == 1
+        and any(
+            _listing_identity(segment.get(key))
+            for segment in stay_segments
+            for key in ("unitId", "listingId", "unitTypeId", "parentListingId")
+        )
     )
 
     def identity_group(
@@ -216,16 +418,24 @@ def reservation_listing_id_groups(
 
         def add_values(source: Mapping[str, Any], keys: tuple[str, ...]) -> None:
             for key in keys:
-                value = _string(source.get(key))
+                value = _listing_identity(source.get(key))
                 if value and value not in seen:
                     seen.add(value)
                     values.append(value)
 
-        add_values(data, top_level_keys)
-        if isinstance(nested_listing, Mapping):
-            add_values(nested_listing, nested_keys)
-        for segment in stay_segments:
-            add_values(segment, stay_keys)
+        # In a timed multi-stay response, Guesty's top-level identity may still
+        # describe the first segment. The selected segment is authoritative at
+        # the captured refresh instant; fall back to global identities only if
+        # no segment identity was usable.
+        if selected_segment_is_authoritative:
+            for segment in stay_segments:
+                add_values(segment, stay_keys)
+        else:
+            add_values(data, top_level_keys)
+            if isinstance(nested_listing, Mapping):
+                add_values(nested_listing, nested_keys)
+            for segment in stay_segments:
+                add_values(segment, stay_keys)
         return tuple(values)
 
     # Resolve by meaning, not response-field order: when both a concrete unit
@@ -251,29 +461,40 @@ def reservation_listing_id_groups(
     return tuple(groups)
 
 
-def reservation_listing_ids(data: Mapping[str, Any]) -> tuple[str, ...]:
-    """Return every listing identity represented by a reservation.
+def reservation_listing_ids(
+    data: Mapping[str, Any],
+    *,
+    now: datetime | None = None,
+    listing: Listing | None = None,
+) -> tuple[str, ...]:
+    """Return the relevant listing identities represented by a reservation.
 
     Guesty's Reservations v3 search can match a multi-unit reservation by
-    either its concrete ``unitId`` or its parent ``unitTypeId``. A concrete
-    unit may also be assigned after the reservation was first returned. Keep
-    every identity so the coordinator can resolve it against the display's
-    configured listing instead of letting response-field order change
-    ownership at check-in.
+    concrete unit, legacy listing, overlying unit type, or parent listing. Keep
+    every represented identity when timing is unavailable. With a captured
+    timestamp, a fully timed multi-stay reservation exposes only its active,
+    next, or most recently completed segment so ownership can move between
+    units without copying the stay to both displays.
     """
     return tuple(
-        identity for group in reservation_listing_id_groups(data) for identity in group
+        identity
+        for group in reservation_listing_id_groups(data, now=now, listing=listing)
+        for identity in group
     )
 
 
 def resolve_reservation_listing_id(
-    data: Mapping[str, Any], allowed_listing_ids: set[str]
+    data: Mapping[str, Any],
+    allowed_listing_ids: set[str],
+    *,
+    now: datetime | None = None,
+    listing: Listing | None = None,
 ) -> str:
     """Resolve a reservation to one explicitly allowed listing identity."""
     return next(
         (
             listing_id
-            for listing_id in reservation_listing_ids(data)
+            for listing_id in reservation_listing_ids(data, now=now, listing=listing)
             if listing_id in allowed_listing_ids
         ),
         "",
@@ -288,16 +509,15 @@ def reservation_listing_id(data: Mapping[str, Any]) -> str:
 def extract_keycode_direct(data: Any) -> str:
     """Find a directly named keycode in a Guesty response.
 
-    Guesty accounts may expose this as ``keycode``, ``keyCode`` or as a
-    populated custom-field object that already contains its name. The field ID
-    only case is resolved separately with account custom-field definitions.
+    Guesty accounts may expose this as ``keycode``, ``keyCode``, ``doorCode``
+    or as a populated custom-field object that already contains its name. The
+    field-ID-only case is resolved separately with account custom-field
+    definitions.
     """
     if isinstance(data, Mapping):
         for key, value in data.items():
-            if normalize_field_name(key) == "keycode":
-                scalar = sanitize_door_code(value)
-                if not scalar and isinstance(value, Mapping):
-                    scalar = sanitize_door_code(first_present(value, "value", "code"))
+            if normalize_field_name(key) in _DOOR_CODE_FIELD_NAMES:
+                scalar = _projected_door_code_value(value)
                 if scalar:
                     return scalar
 
@@ -310,8 +530,10 @@ def extract_keycode_direct(data: Any) -> str:
             data.get("placeholder"),
             data.get("fieldId"),
         )
-        if any(normalize_field_name(name) == "keycode" for name in field_names):
-            scalar = sanitize_door_code(data.get("value"))
+        if any(
+            normalize_field_name(name) in _DOOR_CODE_FIELD_NAMES for name in field_names
+        ):
+            scalar = _projected_door_code_value(data)
             if scalar:
                 return scalar
 
@@ -384,8 +606,8 @@ def extract_keycode_from_custom_fields(populated_fields: Any, definitions: Any) 
         if not isinstance(item, Mapping):
             continue
         field_id = first_present(item, "fieldId", "_id", "id")
-        if name_by_id.get(field_id) == "keycode":
-            return sanitize_door_code(item.get("value"))
+        if name_by_id.get(field_id) in _DOOR_CODE_FIELD_NAMES:
+            return _projected_door_code_value(item)
     return ""
 
 
@@ -495,8 +717,9 @@ class Reservation:
         data: Mapping[str, Any],
         listing: Listing,
         *,
-        keycode: str = "",
+        keycode: str | None = None,
         resolved_listing_id: str = "",
+        now: datetime | None = None,
     ) -> Reservation | None:
         """Create a normalized reservation, or ``None`` for invalid dates."""
         zone = _timezone(listing.timezone)
@@ -506,76 +729,115 @@ class Reservation:
         # on channel-imported reservations. An explicit planned time wins;
         # otherwise combine the local date with the listing default.
         stay = data.get("stay")
-        stay_segment = (
-            next((item for item in stay if isinstance(item, Mapping)), {})
+        stay_segments = (
+            tuple(segment for segment in stay if isinstance(segment, Mapping))
             if isinstance(stay, list)
-            else {}
+            else ()
         )
+        relevant_stay_segments = _relevant_stay_segments(
+            data,
+            now=now,
+            listing=listing,
+        )
+        stay_segment: Mapping[str, Any] = next(iter(relevant_stay_segments), {})
+        prefer_stay_segment = (
+            len(stay_segments) > 1 and len(relevant_stay_segments) == 1
+        )
+        if len(stay_segments) > 1 and not prefer_stay_segment:
+            matching_segments = tuple(
+                segment
+                for segment in stay_segments
+                if resolved_listing_id
+                and any(
+                    _listing_identity(segment.get(key)) == resolved_listing_id
+                    for key in (
+                        "unitId",
+                        "listingId",
+                        "unitTypeId",
+                        "parentListingId",
+                    )
+                )
+            )
+            if len(matching_segments) == 1:
+                stay_segment = matching_segments[0]
+                prefer_stay_segment = (
+                    _stay_segment_display_window(stay_segment, listing) is not None
+                )
+        selected_stay_window = (
+            _stay_segment_display_window(stay_segment, listing)
+            if prefer_stay_segment
+            else None
+        )
+
+        def boundary_value(*keys: str) -> Any:
+            sources = (
+                (stay_segment, data) if prefer_stay_segment else (data, stay_segment)
+            )
+            for source in sources:
+                for key in keys:
+                    if value := source.get(key):
+                        return value
+            return None
 
         check_in: datetime | None
-        check_in_date = _parse_date(
-            data.get("checkInDateLocalized") or stay_segment.get("checkInDateLocalized")
-        )
-        if check_in_date is not None:
-            check_in = datetime.combine(
-                check_in_date,
-                _parse_time(
-                    data.get("plannedArrival")
-                    or data.get("plannedArrivalTime")
-                    or stay_segment.get("plannedArrival")
-                    or stay_segment.get("plannedArrivalTime")
-                    or stay_segment.get("eta"),
-                    _parse_time(listing.default_check_in, time(15, 0)),
-                ),
-                zone,
-            )
+        if selected_stay_window is not None:
+            check_in = selected_stay_window[0]
         else:
-            check_in = _parse_iso_datetime(
-                data.get("checkIn")
-                or data.get("checkInDate")
-                or stay_segment.get("checkIn")
-            )
-            if check_in is None:
-                check_in = _parse_iso_datetime(
-                    data.get("plannedArrival")
-                    or data.get("plannedArrivalTime")
-                    or stay_segment.get("plannedArrival")
-                    or stay_segment.get("plannedArrivalTime")
-                    or stay_segment.get("eta")
+            check_in_date = _parse_date(boundary_value("checkInDateLocalized"))
+            if check_in_date is not None:
+                check_in = datetime.combine(
+                    check_in_date,
+                    _parse_time(
+                        boundary_value(
+                            "plannedArrival",
+                            "plannedArrivalTime",
+                            "eta",
+                        ),
+                        _parse_time(listing.default_check_in, time(15, 0)),
+                    ),
+                    zone,
                 )
+            else:
+                check_in = _parse_iso_datetime(boundary_value("checkIn", "checkInDate"))
+                if check_in is None:
+                    check_in = _parse_iso_datetime(
+                        boundary_value(
+                            "plannedArrival",
+                            "plannedArrivalTime",
+                            "eta",
+                        )
+                    )
 
         check_out: datetime | None
-        check_out_date = _parse_date(
-            data.get("checkOutDateLocalized")
-            or stay_segment.get("checkOutDateLocalized")
-        )
-        if check_out_date is not None:
-            check_out = datetime.combine(
-                check_out_date,
-                _parse_time(
-                    data.get("plannedDeparture")
-                    or data.get("plannedDepartureTime")
-                    or stay_segment.get("plannedDeparture")
-                    or stay_segment.get("plannedDepartureTime")
-                    or stay_segment.get("etd"),
-                    _parse_time(listing.default_check_out, time(10, 0)),
-                ),
-                zone,
-            )
+        if selected_stay_window is not None:
+            check_out = selected_stay_window[1]
         else:
-            check_out = _parse_iso_datetime(
-                data.get("checkOut")
-                or data.get("checkOutDate")
-                or stay_segment.get("checkOut")
-            )
-            if check_out is None:
-                check_out = _parse_iso_datetime(
-                    data.get("plannedDeparture")
-                    or data.get("plannedDepartureTime")
-                    or stay_segment.get("plannedDeparture")
-                    or stay_segment.get("plannedDepartureTime")
-                    or stay_segment.get("etd")
+            check_out_date = _parse_date(boundary_value("checkOutDateLocalized"))
+            if check_out_date is not None:
+                check_out = datetime.combine(
+                    check_out_date,
+                    _parse_time(
+                        boundary_value(
+                            "plannedDeparture",
+                            "plannedDepartureTime",
+                            "etd",
+                        ),
+                        _parse_time(listing.default_check_out, time(10, 0)),
+                    ),
+                    zone,
                 )
+            else:
+                check_out = _parse_iso_datetime(
+                    boundary_value("checkOut", "checkOutDate")
+                )
+                if check_out is None:
+                    check_out = _parse_iso_datetime(
+                        boundary_value(
+                            "plannedDeparture",
+                            "plannedDepartureTime",
+                            "etd",
+                        )
+                    )
 
         if check_in is None or check_out is None:
             return None
@@ -599,7 +861,9 @@ class Reservation:
             part for part in (first_name, last_name) if part
         )
 
-        listing_id = _string(resolved_listing_id) or reservation_listing_id(data)
+        listing_id = _string(resolved_listing_id) or next(
+            iter(reservation_listing_ids(data, now=now, listing=listing)), ""
+        )
         general_notes, cleaner_notes, special_requests = extract_reservation_notes(data)
 
         return cls(
@@ -610,7 +874,9 @@ class Reservation:
             check_in=check_in,
             check_out=check_out,
             guest_name=guest_name or first_name,
-            keycode=sanitize_door_code(keycode or extract_keycode_direct(data)),
+            keycode=sanitize_door_code(
+                extract_keycode_direct(data) if keycode is None else keycode
+            ),
             account_id=first_present(data, "accountId"),
             general_notes=general_notes,
             cleaner_notes=cleaner_notes,

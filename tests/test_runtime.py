@@ -850,6 +850,24 @@ def test_device_refresh_clears_when_authoritative_payload_disappeared(
     assert hass.services.calls[0][2]["force_redraw"] is False
 
 
+def test_device_refresh_does_not_clear_a_partially_failed_listing(
+    monkeypatch,
+) -> None:
+    runtime, hass, coordinator = _runtime(state=ACTION_V9)
+    coordinator.data.payloads = {}
+    coordinator.data.stale_listing_ids = frozenset({"listing-1"})
+
+    async def no_wait(_delay):
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", no_wait)
+    runtime._sync_requests.add(ENDPOINT)
+    asyncio.run(runtime._async_sync_and_force_redraw_endpoint(ENDPOINT))
+
+    assert hass.services.calls == []
+    assert ENDPOINT not in runtime._sync_requests
+
+
 def test_stop_cancels_runtime_owned_tasks() -> None:
     runtime, hass, _coordinator = _runtime()
     created = []

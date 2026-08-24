@@ -9,10 +9,42 @@ Bei Guesty-Mehrfacheinheiten müssen konkrete `unitId`, direkte `listingId`,
 übergeordnete `unitTypeId` und `parentListingId` kontextbezogen auf genau ein
 konfiguriertes Listing aufgelöst bleiben. Auswahl, Snapshot-Abgleich und
 Payload-Erstellung müssen innerhalb eines Aktualisierungslaufs denselben
-zeitzonenbewussten Zeitstempel verwenden. Laufende und zukünftige Abfragen
-bleiben pro Listing kontextgebunden; mehrere Projektionen derselben Reservierung
-werden vor der Normalisierung zusammengeführt. Mehrdeutige Antworten ohne
-eindeutige Identität dürfen nie auf mehrere Listings verteilt werden.
+zeitzonenbewussten Zeitstempel verwenden; dazu gehören auch API-Datumsfilter,
+die Auswahl zeitabhängiger `stay`-Segmente und die Normalisierung. Exakte
+`stay.checkIn`-/`stay.checkOut`-Werte bestimmen Segmentbesitz. Laufende und
+zukünftige Abfragen bleiben pro Listing kontextgebunden; ein zusätzlicher
+kontoweiter Current/Recent-Snapshot entdeckt spätere Segmente, weil Guestys
+Listing-Filter nur das erste Segment prüft. Seine Zeilen besitzen keinen
+Query-Kontext und dürfen ausschließlich anhand gemappter Identitäten geroutet
+werden. Mehrere Projektionen derselben Reservierung werden vor der
+Normalisierung kontrolliert zusammengeführt: Aktuelle Daten sind maßgeblich,
+und explizit geleerte sensible Felder dürfen über keine Aliasform oder spätere
+optionale Abfrage aus älteren Projektionen wiederhergestellt werden. Das gilt
+für jede aktuelle Projektion sowie insbesondere für
+`guest`/`guestId`/`bookerId` und
+`customFields`/`customField`/`fields`. Türcodes müssen zusätzlich über
+`keycode`/`keyCode`/`doorCode`, `value`/`code` und kontoweite
+Custom-Field-Definitionen hinweg dieselbe Löschsemantik behalten. Ein explizit
+leerer aktueller Wert darf weder aus Cache- oder Populated-Fields-Daten noch in
+der späteren Normalisierung wiederhergestellt werden; abgelaufene
+Felddefinitionen sind nach einem fehlgeschlagenen Neuabruf nicht autoritativ.
+Mehrdeutige Antworten ohne eindeutige Identität dürfen nie auf mehrere
+Listings verteilt werden.
+
+Fehlt eine bereits bekannte aktive Reservierung in der gefilterten Suche, darf
+sie gezielt über `GET /reservations-v3` mit `reservationIds[]` verifiziert
+werden; Pakete enthalten höchstens zehn IDs. Dieser Rückfall darf nicht auf
+zukünftige Reservierungen ausgedehnt werden, weil deren Fehlen im erfolgreichen
+Upcoming-Snapshot eine sofortige Stornierung signalisiert. Fehler werden pro
+Listing isoliert und erhalten dessen letzten erfolgreichen RAM-Snapshot;
+für ein fehlgeschlagenes Listing darf daraus keine neue Payload oder Lease
+entstehen. Authentifizierungs-, Discovery- und Rate-Limit-Fehler bleiben global.
+Änderungen am API-Client müssen die gleitenden Guesty-Grenzen von 15 Anfragen
+pro Sekunde, 120 pro Minute und 5.000 pro Stunde, sofort propagiertes
+`Retry-After` bei HTTP 429, Abbruch paralleler Geschwisteraufrufe,
+datenschutzneutrale Exception-Texte sowie fail-closed HTTP-200-Schemata testen.
+Die Grenzen gelten kontoweit und tokenübergreifend; getrennte Clients oder
+Home-Assistant-Instanzen teilen dasselbe Kontingent.
 
 ## Lokale Prüfung
 
@@ -42,12 +74,26 @@ ESPHome-Output committen. Hardwareänderungen müssen im Pull Request als auf
 einem realen E1001 getestet oder ausdrücklich als nicht hardwaregetestet
 gekennzeichnet werden.
 
+Beim `auto`-OTP-Pfad muss der dedizierte SPI2-Bus vollständig freigegeben und
+nach dem GPIO-Lesevorgang mit derselben E1001-Konfiguration neu initialisiert
+werden; das erneute Anlegen nur des SPI-Geräts genügt nicht. `POWER ON` und
+`DISPLAY REFRESH` behalten Seeeds feste 100-ms-Wartezeit und warten danach auf
+den inaktiven `BUSY_N`-Pegel. Jede sichtbare Treiberänderung erhöht erwartete
+und gespeicherte Renderrevision gemeinsam; der unveröffentlichte Stand
+verwendet Revision 23.
+
 ## Veröffentlichungen und Distribution
 
 Vor einer Veröffentlichung müssen die Versionsangaben in Manifest,
 Firmwaregenerator, Referenz-YAML und versionsabhängigen Tests übereinstimmen.
 `README.md` und `CHANGELOG.md` müssen die Änderung sowie die Notwendigkeit eines
 Display-Firmwareupdates eindeutig nennen.
+
+Für den derzeit unveröffentlichten Stand ist wegen der SPI2-/Timing-Korrektur
+und Renderrevision 23 ein Display-Firmwareupdate zwingend erforderlich. Der
+vollständige Testlauf und die ESPHome-Kompilierung werden erst im
+abschließenden Prüflauf bestätigt; eine Prüfung auf einem realen E1001 fehlt
+noch und muss entsprechend offengelegt bleiben.
 
 Zusätzlich sind `LICENSE_STATUS.md` und `THIRD_PARTY_NOTICES.md` vor jeder
 öffentlichen Veröffentlichung zu prüfen. Dokumentieren sie einen anwendbaren,
