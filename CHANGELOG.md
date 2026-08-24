@@ -3,7 +3,7 @@
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt. Einträge
 unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
 
-## Unveröffentlicht (0.3.32)
+## 0.3.32 – 2026-08-25
 
 ### Buchungsübergänge und Fehlertoleranz
 
