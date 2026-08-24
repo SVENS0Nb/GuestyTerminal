@@ -53,7 +53,10 @@ installiert daraus die Firmware.
    gemeinsamen Buchungssnapshot nur einmal und erzeugt anschließend für jedes
    Display einen eigenen Payload mit dessen Texten, Sprache, Zeitformat,
    Wetterauswahl und Sichtbarkeitseinstellungen. Bei verschiedenen Listings
-   bleiben Reservierungen, Zugangsdaten und Notizen strikt getrennt.
+   bleiben Reservierungen, Zugangsdaten und Notizen strikt getrennt. Bei
+   Guesty-Mehrfacheinheiten bleibt diese Zuordnung auch dann stabil, wenn beim
+   Check-in zusätzlich zur übergeordneten `unitTypeId` eine konkrete `unitId`
+   vergeben wird.
 5. Wenn das E1001 aufwacht, überträgt Home Assistant die aktuellen Daten über
    eine ESPHome Native-API-Aktion. Dazu gehört auch das einmal zentral gewählte
    Logo. Das Gerät zeichnet nur dann neu, wenn sich der sichtbare Inhalt
@@ -494,6 +497,14 @@ oder instabilen API-Verbindungen. Die Integration reagiert sowohl auf den
 Reconnect-Impuls als auch auf den wiederhergestellten Aktionsnamen und versucht
 die Zustellung innerhalb eines begrenzten Zeitfensters erneut. Nach dem
 HACS-Update muss die Display-Firmware einmalig auf 0.3.26 aktualisiert werden.
+
+Version **0.3.30** stabilisiert bei Guesty-Mehrfacheinheiten den Übergang von
+der Vorbereitungsseite zur Willkommensseite. Eine beim Check-in nachträglich
+vergebene konkrete Einheit trennt die aktive Buchung nicht mehr vom
+konfigurierten Listing. Alle drei Zustände – Vorbereitung, Willkommen und
+Check-out – verwenden außerdem denselben Aktualisierungszeitpunkt. Dies ist
+eine reine Integrationskorrektur; vorhandene Displays mit Firmware 0.3.29
+müssen nicht neu geflasht werden.
 
 Version **0.3.29** korrigiert die automatische Netzstromerkennung. Die Firmware
 verwendet jetzt das dedizierte `REG0A.BUS_GD`-Signal des SY6974B und erkennt

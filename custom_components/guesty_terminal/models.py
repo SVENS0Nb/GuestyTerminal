@@ -192,33 +192,80 @@ def first_present(mapping: Mapping[str, Any], *keys: str) -> str:
     return ""
 
 
-def reservation_listing_id(data: Mapping[str, Any]) -> str:
-    """Return a listing ID from legacy or Reservations v3 data."""
-    listing_id = first_present(data, "listingId")
-    if listing_id:
-        return listing_id
+def reservation_listing_ids(data: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return every listing identity represented by a reservation.
+
+    Guesty's Reservations v3 search can match a multi-unit reservation by
+    either its concrete ``unitId`` or its parent ``unitTypeId``. A concrete
+    unit may also be assigned after the reservation was first returned. Keep
+    every identity so the coordinator can resolve it against the display's
+    configured listing instead of letting response-field order change
+    ownership at check-in.
+    """
+    identities: list[str] = []
+    seen: set[str] = set()
+
+    def add_values(source: Mapping[str, Any], *keys: str) -> None:
+        for key in keys:
+            value = _string(source.get(key))
+            if value and value not in seen:
+                seen.add(value)
+                identities.append(value)
 
     nested_listing = data.get("listing")
-    if isinstance(nested_listing, Mapping):
-        listing_id = first_present(nested_listing, "_id", "id")
-        if listing_id:
-            return listing_id
-
     stay = data.get("stay")
-    if isinstance(stay, list):
-        for segment in stay:
-            if not isinstance(segment, Mapping):
-                continue
-            listing_id = first_present(
-                segment,
-                "listingId",
-                "unitId",
-                "unitTypeId",
-                "parentListingId",
-            )
-            if listing_id:
-                return listing_id
-    return ""
+    stay_segments = (
+        [segment for segment in stay if isinstance(segment, Mapping)]
+        if isinstance(stay, list)
+        else []
+    )
+
+    # Resolve by meaning, not response-field order: when both a concrete unit
+    # and its parent type are mapped, exactly the concrete unit owns the stay.
+    # If only the parent is mapped, the later fallbacks still resolve it there.
+    add_values(data, "unitId")
+    if isinstance(nested_listing, Mapping):
+        add_values(nested_listing, "unitId")
+    for segment in stay_segments:
+        add_values(segment, "unitId")
+
+    add_values(data, "listingId")
+    if isinstance(nested_listing, Mapping):
+        add_values(nested_listing, "_id", "id", "listingId")
+    for segment in stay_segments:
+        add_values(segment, "listingId")
+
+    add_values(data, "unitTypeId")
+    if isinstance(nested_listing, Mapping):
+        add_values(nested_listing, "unitTypeId")
+    for segment in stay_segments:
+        add_values(segment, "unitTypeId")
+
+    add_values(data, "parentListingId")
+    if isinstance(nested_listing, Mapping):
+        add_values(nested_listing, "parentListingId")
+    for segment in stay_segments:
+        add_values(segment, "parentListingId")
+    return tuple(identities)
+
+
+def resolve_reservation_listing_id(
+    data: Mapping[str, Any], allowed_listing_ids: set[str]
+) -> str:
+    """Resolve a reservation to one explicitly allowed listing identity."""
+    return next(
+        (
+            listing_id
+            for listing_id in reservation_listing_ids(data)
+            if listing_id in allowed_listing_ids
+        ),
+        "",
+    )
+
+
+def reservation_listing_id(data: Mapping[str, Any]) -> str:
+    """Return the preferred listing ID for compatibility with older callers."""
+    return next(iter(reservation_listing_ids(data)), "")
 
 
 def extract_keycode_direct(data: Any) -> str:
@@ -427,7 +474,12 @@ class Reservation:
 
     @classmethod
     def from_api(
-        cls, data: Mapping[str, Any], listing: Listing, *, keycode: str = ""
+        cls,
+        data: Mapping[str, Any],
+        listing: Listing,
+        *,
+        keycode: str = "",
+        resolved_listing_id: str = "",
     ) -> Reservation | None:
         """Create a normalized reservation, or ``None`` for invalid dates."""
         zone = _timezone(listing.timezone)
@@ -530,7 +582,7 @@ class Reservation:
             part for part in (first_name, last_name) if part
         )
 
-        listing_id = reservation_listing_id(data)
+        listing_id = _string(resolved_listing_id) or reservation_listing_id(data)
         general_notes, cleaner_notes, special_requests = extract_reservation_notes(data)
 
         return cls(

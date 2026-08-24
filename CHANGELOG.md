@@ -7,6 +7,23 @@ unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
 
 Noch keine Änderungen.
 
+## 0.3.30 – 2026-08-24
+
+### Buchungsübergänge
+
+- Reservierungen von Guesty-Mehrfacheinheiten bleiben beim Wechsel von der
+  Vorbereitungsseite zur Willkommensseite korrekt dem konfigurierten Listing
+  zugeordnet, auch wenn Guesty beim Check-in nachträglich eine konkrete
+  `unitId` zusätzlich zur übergeordneten `unitTypeId` liefert.
+- Alle bekannten Listing-Identitäten werden nach ihrer Bedeutung priorisiert
+  und ausschließlich gegen die tatsächlich konfigurierten Listings aufgelöst.
+  Das erhält die strikte Trennung zwischen Displays und verhindert doppelte
+  oder verwaiste Buchungen.
+- Auswahl, Snapshot-Abgleich und Payload-Erstellung verwenden innerhalb eines
+  Aktualisierungslaufs denselben Zeitstempel. Dadurch bleiben die Übergänge
+  Vorbereitung, Willkommen und Check-out auch direkt an Zeitgrenzen
+  konsistent.
+
 ## 0.3.29 – 2026-08-23
 
 ### Energie

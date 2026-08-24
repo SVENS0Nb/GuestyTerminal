@@ -11,6 +11,7 @@ import pytest
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
+import custom_components.guesty_terminal.coordinator as coordinator_module
 from custom_components.guesty_terminal.api import (
     GuestyAuthenticationError,
     GuestyError,
@@ -555,6 +556,94 @@ def test_update_reconciles_upcoming_booking_snapshot_for_empty_room_page() -> No
         ("listing-1", 5),
     ]
     assert client.guest_calls == ["guest-next"]
+
+
+def test_multi_unit_assignment_preserves_all_three_display_transitions(
+    monkeypatch,
+) -> None:
+    """A later concrete unit assignment must not orphan the mapped unit type."""
+
+    class MutableDateTime(datetime):
+        current = datetime(2026, 9, 10, 10, 0, tzinfo=UTC)
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.current if tz is None else cls.current.astimezone(tz)
+
+    monkeypatch.setattr(coordinator_module, "datetime", MutableDateTime)
+
+    endpoint = "sensor.display_guesty_terminal_endpoint"
+    client = FakeClient()
+    listing = {
+        "_id": "multi-unit-parent",
+        "title": "Apartmenthaus",
+        "timezone": "Europe/Berlin",
+        "defaultCheckInTime": "15:00",
+        "defaultCheckOutTime": "10:00",
+        "wifiName": "Guest WiFi",
+        "wifiPassword": "secret",
+        "checkoutInstructions": "Schlüssel in die Box legen.",
+    }
+    client.listings = [listing]
+    client.full_listings["multi-unit-parent"] = listing
+
+    def booking(*, assigned: bool) -> dict:
+        stay = {
+            "unitTypeId": "multi-unit-parent",
+            "checkInDateLocalized": "2026-09-10",
+            "checkOutDateLocalized": "2026-09-13",
+            "plannedArrivalTime": "15:00",
+            "plannedDepartureTime": "10:00",
+        }
+        if assigned:
+            stay["unitId"] = "assigned-apartment"
+        return {
+            "reservationId": "reservation-1",
+            "status": "confirmed",
+            "guest": {"firstName": "Anna"},
+            "stay": [stay],
+            "keycode": "4827",
+            "notes": {"cleaning": "Kinderbett vorbereiten"},
+        }
+
+    mapping = _mapping("multi-unit-parent")
+    mapping["lead_hours"] = 1
+    coordinator = _coordinator(
+        {CONF_MAPPINGS: {endpoint: mapping}},
+        client,
+    )
+
+    unassigned = booking(assigned=False)
+    client.reservations = [unassigned]
+    client.upcoming_reservations["multi-unit-parent"] = [unassigned]
+    before_check_in = asyncio.run(coordinator._async_update_data())
+
+    assert before_check_in.payloads[endpoint].mode == "empty"
+    assert before_check_in.payloads[endpoint].next_booking_guest == "Anna"
+    assert before_check_in.payloads[endpoint].cleaner_notes == (
+        "Kinderbett vorbereiten"
+    )
+
+    assigned = booking(assigned=True)
+    client.reservations = [assigned]
+    client.upcoming_reservations["multi-unit-parent"] = [assigned]
+    MutableDateTime.current = datetime(2026, 9, 10, 13, 1, tzinfo=UTC)
+    after_check_in = asyncio.run(coordinator._async_update_data())
+
+    assert after_check_in.payloads[endpoint].mode == "welcome"
+    assert after_check_in.payloads[endpoint].door_code == "4827"
+    assert after_check_in.payloads[endpoint].wifi_name == "Guest WiFi"
+    assert after_check_in.reservations[0].listing_id == "multi-unit-parent"
+
+    MutableDateTime.current = datetime(2026, 9, 13, 3, 1, tzinfo=UTC)
+    checkout_day = asyncio.run(coordinator._async_update_data())
+
+    assert checkout_day.payloads[endpoint].mode == "checkout"
+    assert checkout_day.payloads[endpoint].checkout_instructions == (
+        "Schlüssel in die Box legen."
+    )
+    assert checkout_day.payloads[endpoint].door_code == ""
+    assert checkout_day.payloads[endpoint].wifi_name == ""
 
 
 def test_snapshot_keeps_five_upcoming_bookings_and_changes_only_on_reconcile() -> None:

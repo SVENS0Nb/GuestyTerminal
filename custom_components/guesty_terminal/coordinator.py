@@ -43,7 +43,7 @@ from .models import (
     extract_keycode_direct,
     extract_keycode_from_custom_fields,
     first_present,
-    reservation_listing_id,
+    resolve_reservation_listing_id,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -339,13 +339,19 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
         listing: Listing,
         *,
         include_keycode: bool,
+        resolved_listing_id: str,
     ) -> Reservation | None:
         """Normalize one booking with the required optional enrichments."""
         guest = await self._async_guest(raw)
         if guest and not isinstance(raw.get("guest"), dict):
             raw = {**raw, "guest": guest}
         keycode = await self._async_keycode(raw) if include_keycode else ""
-        reservation = Reservation.from_api(raw, listing, keycode=keycode)
+        reservation = Reservation.from_api(
+            raw,
+            listing,
+            keycode=keycode,
+            resolved_listing_id=resolved_listing_id,
+        )
         if (
             reservation is None
             or not reservation.reservation_id
@@ -492,12 +498,13 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
             raw_by_listing: dict[str, list[tuple[dict[str, Any], bool]]] = {
                 listing_id: [] for listing_id in mapped_listing_ids
             }
+            routable_listing_ids = set(available_listing_ids)
             known_ids: dict[str, set[str]] = {
                 listing_id: set() for listing_id in mapped_listing_ids
             }
             for raw in raw_reservations:
-                listing_id = reservation_listing_id(raw)
-                if listing_id not in raw_by_listing or listing_id not in listings:
+                listing_id = resolve_reservation_listing_id(raw, routable_listing_ids)
+                if not listing_id:
                     continue
                 reservation_id = first_present(raw, "reservationId", "_id", "id")
                 if reservation_id:
@@ -528,12 +535,23 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
             )
             for listing_id, upcoming in upcoming_results:
                 for raw in upcoming:
+                    resolved_listing_id = resolve_reservation_listing_id(
+                        raw, routable_listing_ids
+                    )
+                    # This query was made for exactly one mapped listing. Some
+                    # Guesty search projections omit all listing identifiers;
+                    # the query context remains a trustworthy association.
+                    if not resolved_listing_id:
+                        resolved_listing_id = listing_id
                     reservation_id = first_present(raw, "reservationId", "_id", "id")
-                    if reservation_id and reservation_id in known_ids[listing_id]:
+                    if (
+                        reservation_id
+                        and reservation_id in known_ids[resolved_listing_id]
+                    ):
                         continue
                     if reservation_id:
-                        known_ids[listing_id].add(reservation_id)
-                    raw_by_listing[listing_id].append((raw, False))
+                        known_ids[resolved_listing_id].add(reservation_id)
+                    raw_by_listing[resolved_listing_id].append((raw, False))
 
             async def _normalized_listing(
                 listing_id: str,
@@ -548,6 +566,7 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                             raw,
                             listing,
                             include_keycode=include_keycode,
+                            resolved_listing_id=listing_id,
                         )
                         if reservation is not None:
                             normalized.append(reservation)
@@ -608,6 +627,7 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                     mapped_listing,
                     reservations,
                     mapping,
+                    now=current,
                     weather_condition=weather_condition,
                     weather_temperature=weather_temperature,
                 )

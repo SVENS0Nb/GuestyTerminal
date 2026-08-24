@@ -14,6 +14,8 @@ from custom_components.guesty_terminal.models import (
     extract_keycode_from_custom_fields,
     extract_reservation_notes,
     reservation_listing_id,
+    reservation_listing_ids,
+    resolve_reservation_listing_id,
     sanitize_door_code,
     select_next_reservation,
 )
@@ -158,6 +160,45 @@ def test_normalizes_v3_reservation_without_payment_dependency() -> None:
     assert reservation.keycode == "7391"
     assert reservation.status == "confirmed"
     assert reservation_listing_id(raw) == "listing-1"
+
+
+def test_resolves_multi_unit_reservation_against_the_configured_listing() -> None:
+    raw = {
+        "reservationId": "reservation-multi-unit",
+        "status": "confirmed",
+        "unitTypeId": "parent-top-level",
+        "stay": [
+            {
+                "unitId": "assigned-child",
+                "unitTypeId": "mapped-parent",
+                "parentListingId": "portfolio-parent",
+            }
+        ],
+        "checkIn": "2026-08-14T13:00:00Z",
+        "checkOut": "2026-08-17T09:00:00Z",
+    }
+
+    assert reservation_listing_ids(raw) == (
+        "assigned-child",
+        "parent-top-level",
+        "mapped-parent",
+        "portfolio-parent",
+    )
+    assert resolve_reservation_listing_id(raw, {"mapped-parent"}) == "mapped-parent"
+    assert (
+        resolve_reservation_listing_id(raw, {"assigned-child", "mapped-parent"})
+        == "assigned-child"
+    )
+    assert resolve_reservation_listing_id(raw, {"unrelated"}) == ""
+
+    reservation = Reservation.from_api(
+        raw,
+        _listing(),
+        resolved_listing_id="mapped-parent",
+    )
+
+    assert reservation is not None
+    assert reservation.listing_id == "mapped-parent"
 
 
 def test_normalizes_v3_stay_dates_and_internal_notes() -> None:
