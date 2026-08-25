@@ -23,6 +23,9 @@ sequence are adapted from Seeed's Open Source Hardware repository:
 - License: MIT
 - Local license copy: `esphome/components/guesty_epaper_gray4/LICENSE`
 
+The two-plane transfer retains the reference's explicit `3 - gray` conversion
+between the logical `0=black, 3=white` canvas and the UC8179 DTM wire polarity.
+
 ## Seeed_GFX UC8179 support
 
 The panel-OTP detection, OTP grayscale setup, and differential partial-refresh

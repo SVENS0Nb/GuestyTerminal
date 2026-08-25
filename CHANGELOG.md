@@ -3,6 +3,54 @@
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt. Einträge
 unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
 
+## 0.3.33 – 2026-08-25
+
+### Automatische Stromerkennung
+
+- Der Modus `auto` erkennt nun beide offiziellen E1001-Hardwarestände ohne
+  zusätzliche Benutzerauswahl. Auf v1.2 wird der SY6974B zuerst über `REG0B`
+  identifiziert und externe Versorgung weiterhin dreifach über das dedizierte
+  `REG0A.BUS_GD`-Signal bestätigt. Ein einmal gesehener Ladecontroller bleibt
+  für den Startvorgang maßgeblich; drei Identitätsbestätigungen speichern die
+  nicht sensible Hardwareeigenschaft über Deep Sleep hinweg.
+- E1001 v1.0 verwendet den ausschließlich von `TYPEC_5V` versorgten
+  USB-UART-Baustein als revisionsspezifischen Rückfall. Vor jeder Messung wird
+  die physische UART0-Ausgabe pausiert, GPIO43 vom UART getrennt und mindestens
+  60 ms auf Low gehalten. GPIO44 bleibt während drei Fenstern mit je 64
+  Messungen definiert heruntergezogen. Das verhindert falsche Netzmeldungen und
+  unnötigen Akkuverbrauch durch mögliche Rückspeisung bei älteren CH340C-Losen.
+- UART0 wird nur nach einem roh bestätigten externen Stromsignal wieder
+  verbunden. Bei Akku oder einer unklaren Messung bleibt GPIO43 bis zum
+  nächsten Test beziehungsweise Deep Sleep auf Low. Jeder Schlafpfad führt
+  diese elektrische Beruhigung erneut aus; API-Logs bleiben währenddessen
+  verfügbar.
+- Die neue Diagnose-Entität **Power detection method** zeigt `SY6974B BUS_GD`,
+  `USB-UART` oder `Unavailable`. Ein bestätigtes Kabel übersteht weiterhin eine
+  unklare Messgruppe; zwei Gruppen schalten sicher auf Akkuverhalten zurück.
+- Die Lade-LED wird nur auf v1.2 per SY6974B deaktiviert. Der ETA6003 von v1.0
+  bietet keinen entsprechenden Softwareschalter; UI und Dokumentation nennen
+  diese Hardwaregrenze jetzt ausdrücklich.
+- Die Vier-Grau-Übertragung wandelt die logischen Pufferwerte jetzt wie Seeeds
+  E1001-Referenz mit `3 - Grauwert` in die beiden UC8179-Datenebenen um. Damit
+  erscheinen Hintergrund und Text wieder in der vorgesehenen Polarität:
+  heller Hintergrund mit dunkler Schrift statt dunklem Negativbild.
+- Alle Versionsmarkierungen stehen auf 0.3.33. Die Renderrevision steigt wegen
+  der sichtbaren Polaritätskorrektur auf 24 und erzwingt nach dem Update genau
+  einen vollständigen Neuaufbau. Ein Display-Firmwareupdate ist erforderlich.
+
+### Prüfstatus
+
+- Der vollständige Python-Prüflauf war mit jeweils 254 Tests gegen Home
+  Assistant 2025.12.0 und 2026.2.3 erfolgreich; die Branch-Abdeckung beträgt
+  90,79 %. Ruff, Formatprüfung, Mypy und Bytecode-Kompilierung sind ebenfalls
+  fehlerfrei.
+- ESPHome 2026.7.4 hat die Referenzkonfiguration validiert und die Firmware
+  vollständig gebaut; im App-Partition-Report bleiben 21 % frei. Reale
+  USB-/Akku-Tests auf E1001 v1.0 und v1.2 stehen noch aus. Dazu gehören PC-USB,
+  ein hostloses Netzteil, ein reines Ladekabel, Abziehen/Wiederanstecken und
+  UART-Verkehr. Ein dauerhaftes UART-BREAK auf GPIO44 ist auf v1.0 physikalisch
+  nicht von einer unversorgten USB-UART-Brücke unterscheidbar.
+
 ## 0.3.32 – 2026-08-25
 
 ### Buchungsübergänge und Fehlertoleranz

@@ -142,7 +142,7 @@
       },
       "firmware": {
         "title": "E1001-Firmware erstellen",
-        "description": "Erzeugt eine sichere ESPHome-Konfiguration unter /config/esphome. Im Modus Automatisch schläft das Display auf Akku und bleibt bei USB-Strom online. LED, Lade-LED, Buzzer und Mikrofon werden deaktiviert.",
+        "description": "Erzeugt eine sichere ESPHome-Konfiguration unter /config/esphome. Automatisch erkennt USB-Strom auf den E1001-Hardwareständen v1.0 und v1.2, schläft auf Akku und bleibt bei externer Versorgung online. Status-LED, Buzzer und Mikrofon werden deaktiviert; auf v1.2 zusätzlich die Lade-LED.",
         "data": {
           "firmware_device_name": "Gerätename",
           "firmware_friendly_name": "Anzeigename",
@@ -153,7 +153,7 @@
         },
         "data_description": {
           "firmware_device_name": "1-24 Kleinbuchstaben, Zahlen oder Bindestriche. Für jedes Display eindeutig.",
-          "firmware_power_mode": "Automatisch wird für den E1001 empfohlen.",
+          "firmware_power_mode": "Automatisch erkennt USB-Strom beim E1001 v1.0 über den USB-UART-Baustein und bei v1.2 über den Ladecontroller.",
           "firmware_awake_seconds": "Das Display schläft früher ein, sobald Home Assistant neue Daten geliefert hat."
         }
       }

@@ -142,7 +142,7 @@
       },
       "firmware": {
         "title": "Créer le firmware E1001",
-        "description": "Crée une configuration ESPHome sécurisée dans /config/esphome. En mode Automatique, l’écran dort sur batterie et reste en ligne lorsqu’il est alimenté par USB. LED, buzzer et microphone sont désactivés.",
+        "description": "Crée une configuration ESPHome sécurisée dans /config/esphome. Le mode Automatique détecte l’alimentation USB sur les révisions matérielles E1001 v1.0 et v1.2, met l’écran en veille sur batterie et le maintient en ligne sur alimentation externe. Le voyant d’état, le buzzer et le microphone sont désactivés ; le voyant de charge l’est également sur la v1.2.",
         "data": {
           "firmware_device_name": "Nom de l’appareil",
           "firmware_friendly_name": "Nom affiché",
@@ -153,7 +153,7 @@
         },
         "data_description": {
           "firmware_device_name": "1 à 24 lettres minuscules, chiffres ou tirets. Unique pour chaque écran.",
-          "firmware_power_mode": "Le mode Automatique est recommandé pour l’E1001.",
+          "firmware_power_mode": "Le mode Automatique détecte l’USB via le pont USB-UART sur l’E1001 v1.0 et via le contrôleur de charge sur la v1.2.",
           "firmware_awake_seconds": "L’écran se rendort plus tôt dès que Home Assistant a transmis les nouvelles données."
         }
       }

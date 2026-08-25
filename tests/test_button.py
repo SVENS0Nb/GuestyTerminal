@@ -25,7 +25,7 @@ def test_button_platform_adds_one_central_firmware_button() -> None:
     entity = added[0]
     assert entity.unique_id == "guesty_terminal_entry-1_update_all_firmware"
     assert entity.translation_key == "update_all_firmware"
-    assert entity.extra_state_attributes == {"target_firmware_version": "0.3.32"}
+    assert entity.extra_state_attributes == {"target_firmware_version": "0.3.33"}
 
 
 def test_firmware_button_queues_all_and_reports_non_sensitive_counts(
@@ -44,7 +44,7 @@ def test_firmware_button_queues_all_and_reports_non_sensitive_counts(
     asyncio.run(entity.async_press())
 
     assert entity.extra_state_attributes == {
-        "target_firmware_version": "0.3.32",
+        "target_firmware_version": "0.3.33",
         "managed_displays": 3,
         "updated_configurations": 2,
         "queued_jobs": 3,

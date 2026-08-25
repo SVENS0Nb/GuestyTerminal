@@ -336,19 +336,25 @@ Symbol folgt ihm in Zehn-Prozent-Stufen.
   Abgeschlossene Buchungen werden erst zwölf Stunden nach Check-out aus diesem
   RAM-Cache entfernt; die sichtbare Nachlaufzeit des Displays bleibt davon
   unabhängig standardmäßig bei 30 Minuten.
-- Im empfohlenen Modus **Automatisch** bestätigt die Firmware USB-Strom durch
-  drei konsistente BUS-Good-Messungen des E1001-v1.2-Ladecontrollers. Dadurch
-  werden USB-Hosts, CDP-/DCP-Netzteile sowie unbekannte und nicht standardisierte
-  Adapter unabhängig von ihrer Ladequellenklassifizierung erkannt. Fehlerhafte
-  oder widersprüchliche Antworten werden sicher als Akkubetrieb behandelt. Auf
-  Akku schläft das Gerät 30 Minuten und bleibt nach dem Aufwachen höchstens 90
-  Sekunden aktiv. Sobald Home Assistant die aktuellen Daten geliefert hat,
-  schläft es früher wieder ein. Falls ein älterer Hardwarestand USB-Strom nicht
-  erkennt, kann im Assistenten **Immer online** ausgewählt werden.
+- Im empfohlenen Modus **Automatisch** erkennt die Firmware beide offiziellen
+  E1001-Hardwarestände selbst. Auf v1.2 identifiziert sie zuerst den SY6974B und
+  verlangt drei konsistente Messungen seines dedizierten `REG0A.BUS_GD`-Signals.
+  USB-Hosts, CDP-/DCP-Netzteile sowie unbekannte und nicht standardisierte
+  Adapter werden dadurch unabhängig von der Ladequellenklassifizierung erkannt.
+  Auf v1.0 besitzt der ETA6003 kein auslesbares USB-Statusregister. Dort prüft
+  die Firmware stattdessen den ausschließlich von `TYPEC_5V` versorgten
+  USB-UART-Baustein. Sie unterbindet vor der Messung eine mögliche
+  Rückspeisung vom ESP32, hält die Leitung definiert und verlangt drei
+  übereinstimmende Messfenster. Sobald ein SY6974B erkannt wurde, bleibt dessen
+  Signal maßgeblich; ein vorübergehender I²C-Fehler darf dann nicht auf die
+  ältere Methode umschalten. Auf Akku schläft das Gerät standardmäßig 30
+  Minuten und bleibt nach dem Aufwachen höchstens 90 Sekunden aktiv. Sobald
+  Home Assistant aktuelle Daten geliefert hat, schläft es früher wieder ein.
 - Bei angeschlossenem USB-Strom bleibt das Gerät online. Wird der Strom später
   getrennt, wechselt es nach spätestens zwei aufeinanderfolgenden
-  15-Sekunden-Tests in den Akkubetrieb; eine einzelne gestörte I²C-Messung kann
-  ein tatsächlich über USB versorgtes Gerät dadurch nicht schlafen schicken.
+  15-Sekunden-Tests in den Akkubetrieb; eine einzelne unauflösbare Messgruppe
+  kann ein zuvor bestätigt über USB versorgtes Gerät dadurch nicht schlafen
+  schicken.
   Im Akkubetrieb schläft es für das konfigurierte Intervall – standardmäßig 30
   Minuten – vollständig. Wird währenddessen USB angeschlossen, erkennt das
   Gerät dies beim nächsten regulären Aufwachen und bleibt danach online.
@@ -358,11 +364,12 @@ Symbol folgt ihm in Zehn-Prozent-Stufen.
   das Gerät bereits wach ist, ändert die Taste weder Betriebsmodus noch
   Wachzeit. Ein beim Einschlafen noch gehaltener Taster kann keine Schleife aus
   Deep Sleep und sofortigem Wiederaufwachen erzeugen.
-- GPIO-Status-LED, Lade-LED-Ausgang, Buzzer und Mikrofon-Stromversorgung werden
-  von der Firmware deaktiviert. Nach einem vollständigen stromlosen Neustart
-  kann die hardwaregesteuerte Lade-LED bis zum Start der Firmware sehr kurz
-  aufleuchten; vollständig verhindern lässt sich diese Startphase nur durch
-  eine physische Abdeckung oder Hardwareänderung.
+- GPIO-Status-LED, Buzzer und Mikrofon-Stromversorgung werden auf beiden
+  Hardwareständen deaktiviert. Auf v1.2 schaltet die Firmware zusätzlich den
+  Lade-LED-Ausgang des SY6974B ab. Der ETA6003 von v1.0 bietet dafür keinen
+  entsprechenden Software-Schalter; dort kann die rote, hardwaregesteuerte
+  Lade-LED während des Ladens sichtbar bleiben. Auch auf v1.2 kann sie nach
+  einem vollständig stromlosen Neustart bis zum Firmwarestart kurz aufleuchten.
 - Weil E-Paper das letzte Bild stromlos behält, erhält jeder Gastbildschirm eine
   erneuerbare 15-Minuten-Freigabe. Home Assistant erneuert sie beim regulären
   Abruf bis 30 Minuten nach Check-out. Nach dem Entfernen einer Zuordnung oder
@@ -402,6 +409,12 @@ Symbol folgt ihm in Zehn-Prozent-Stufen.
   dem konfigurierten Maximum von standardmäßig 90 Sekunden. Wiederholte
   `button`-Wakeups oder häufig ausgeschöpfte Wachfenster erklären einen hohen
   Verbrauch und lassen sich mit diesen beiden Entitäten im Verlauf erkennen.
+- **External power** zeigt das erkannte Versorgungsergebnis. Die zusätzliche
+  Diagnose-Entität **Power detection method** nennt dazu `SY6974B BUS_GD` auf
+  v1.2, `USB-UART` beim revisionskompatiblen Rückfall oder `Unavailable`, wenn
+  eine Messgruppe nicht eindeutig war. Ein zuvor bestätigtes Kabel übersteht
+  einmalig `Unavailable`; nach zwei solchen Gruppen verwendet die Firmware
+  sicherheitshalber das Akkuverhalten.
 - Die Diagnose-Entität **Angezeigte Buchung** nennt Gastname und Zeitraum der
   Buchung, deren Bild das E-Paper zuletzt erfolgreich bestätigt hat. Sie wird
   erst nach einem abgeschlossenen BUSY-Zyklus aktualisiert. Nach einem normalen
@@ -546,7 +559,32 @@ Reconnect-Impuls als auch auf den wiederhergestellten Aktionsnamen und versucht
 die Zustellung innerhalb eines begrenzten Zeitfensters erneut. Nach dem
 HACS-Update muss die Display-Firmware einmalig auf 0.3.26 aktualisiert werden.
 
-Der **unveröffentlichte Stand 0.3.32** verifiziert bereits bekannte aktive
+Version **0.3.33** erweitert den Modus **Automatisch** um
+eine revisionsabhängige USB-Erkennung. E1001 v1.2 verwenden weiterhin den
+identifizierten SY6974B und dessen dediziertes `BUS_GD`-Signal. Antwortet dieser
+Ladecontroller gar nicht und wurde er auf dem Gerät noch nie sicher erkannt,
+prüft die Firmware den bei E1001 v1.0 ausschließlich von `TYPEC_5V` versorgten
+USB-UART-Baustein. Vor jeder Messung pausiert sie die serielle Ausgabe, trennt
+den ESP32-Sendepin, hält ihn zum Schutz vor Rückspeisung auf Low und wertet beim
+älteren Pfad drei Messfenster aus. Nur ein roh bestätigter USB-Pegel aktiviert
+UART0 anschließend wieder; auf Akku bleibt die Brücke bis zum Deep Sleep
+elektrisch ruhig. Ein einmal sicher erkannter SY6974B wird als nicht sensible
+Hardwareeigenschaft gespeichert und bleibt bei späteren I²C-Störungen
+maßgeblich. Die neue Diagnose-Entität **Power detection method** macht den
+tatsächlich verwendeten Pfad sichtbar. Für 0.3.33 ist ein
+Display-Firmwareupdate nötig. Die Vier-Grau-Übertragung korrigiert außerdem die
+zuvor vertauschte UC8179-Polarität, damit wieder ein heller Hintergrund mit
+dunkler Schrift erscheint. Die Renderrevision steigt deshalb auf 24 und
+erzwingt einmalig einen vollständigen Neuaufbau. Der Stand wurde mit jeweils
+254 Tests gegen Home Assistant 2025.12.0 und 2026.2.3 bei 90,79 %
+Branch-Abdeckung sowie einem vollständigen Firmware-Build mit ESPHome 2026.7.4
+geprüft; im App-Partitionsreport bleiben 21 % frei. Die automatische
+Altgeräteerkennung muss noch auf realer v1.0- und v1.2-Hardware mit Akku, PC-USB, hostlosem
+Netzteil, reinem Ladekabel und Abziehen/Wiederanstecken geprüft werden. Ein
+dauerhaft auf Low gehaltener serieller Eingang ist auf v1.0 physikalisch nicht
+von einer unversorgten USB-UART-Brücke unterscheidbar.
+
+Version **0.3.32** verifiziert bereits bekannte aktive
 Reservierungen zusätzlich anhand ihrer V3-ID, wenn Guestys gefilterte Suche sie
 nach einer Einheitenzuweisung nicht mehr eindeutig zurückliefert. Die Abfrage
 erfolgt in Paketen mit höchstens zehn IDs. Ein gemeinsamer Zeitpunkt steuert
@@ -574,7 +612,7 @@ getrennte Clients teilen daher dasselbe Kontingent.
 Die zugehörige Firmware gibt beim `auto`-OTP-Test den SPI2-Bus tatsächlich frei
 und stellt ihn anschließend vollständig wieder her. Außerdem folgt sie Seeeds
 Abfolge aus 100 ms Mindestwartezeit und anschließendem Warten auf den inaktiven
-`BUSY_N`-Pegel. Die Renderrevision ist 23; bei Installation dieses Standes
+`BUSY_N`-Pegel. Die Renderrevision ist 23; bei Installation von Version
 0.3.32 ist daher zwingend auch ein Display-Firmwareupdate
 erforderlich. Der Stand wurde mit jeweils 237 Tests gegen Home Assistant
 2025.12.0 und 2026.2.3 bei 90,79 % Branch-Abdeckung sowie Ruff, Formatprüfung,

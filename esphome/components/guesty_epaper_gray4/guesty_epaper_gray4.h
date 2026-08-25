@@ -19,11 +19,12 @@ enum LutMode : uint8_t {
  * the Seeed Studio reTerminal E1001.
  *
  * The 96 KiB framebuffer stores four pixels per byte, with 0 representing
- * black and 3 white. A refresh sends the least- and most-significant pixel
- * bits as separate UC8179 DTM1 and DTM2 planes. The waveform and register
- * sequence use Seeed's permissively licensed E1001 reference implementations:
- * panel OTP waveforms where available and controller-register LUTs as the
- * compatible fallback.
+ * black and 3 white. The UC8179 uses the opposite two-bit polarity, so a
+ * refresh converts every pixel with 3-gray before sending the least- and
+ * most-significant controller bits as separate DTM1 and DTM2 planes. The
+ * waveform and register sequence use Seeed's permissively licensed E1001
+ * reference implementations: panel OTP waveforms where available and
+ * controller-register LUTs as the compatible fallback.
  */
 class GuestyEPaperGray4
     : public display::DisplayBuffer,

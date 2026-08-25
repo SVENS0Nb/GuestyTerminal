@@ -13,6 +13,12 @@ psram:
 
 esphome:
   on_boot:
+    - priority: 750
+      then:
+        # Stop UART0 from phantom-powering an unplugged USB-UART bridge while
+        # the board revision and cable state are still unknown.
+        - script.execute: guesty_quiesce_uart0
+        - script.wait: guesty_quiesce_uart0
     - priority: 700
       then:
         # Keep every user-visible/audible peripheral off. The SY6974B STAT
@@ -23,7 +29,17 @@ esphome:
         - output.turn_off: guesty_microphone_power
         - lambda: |-
             auto *bus = id(guesty_power_i2c);
-            uint8_t reg = 0x05;
+            uint8_t reg = 0x0B;
+            uint8_t part_id = 0;
+            if (bus->write_readv(0x6B, &reg, 1, &part_id, 1)
+                    != esphome::i2c::ERROR_OK
+                || (part_id & 0x78) != 0x40) {
+              // E1001 v1.0 uses an ETA6003 without I2C. Do not write to an
+              // unverified device that happens to share the touch-panel bus.
+              return;
+            }
+            id(guesty_sy6974_seen_this_boot) = true;
+            reg = 0x05;
             uint8_t value = 0;
             if (bus->write_readv(0x6B, &reg, 1, &value, 1)
                 == esphome::i2c::ERROR_OK) {
@@ -55,6 +71,9 @@ esphome:
     # fail-safe battery path during a very fast Home Assistant reconnect.
     - priority: 500
       then:
+        # WCH specifies a short power-on-reset interval. Waiting here also
+        # keeps a hostless wall adapter and a USB data host on the same path.
+        - delay: 100ms
         - script.execute: guesty_read_external_power
         - script.wait: guesty_read_external_power
     - priority: -100
@@ -132,7 +151,7 @@ api:
       then:
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            const bool renderer_current = id(guesty_render_revision) == 23;
+            const bool renderer_current = id(guesty_render_revision) == 24;
             int battery_percent = -1;
             if (id(guesty_battery_level).has_state()
                 && std::isfinite(id(guesty_battery_level).state)) {
@@ -255,7 +274,7 @@ api:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
-                        id(guesty_render_revision) = 23;
+                        id(guesty_render_revision) = 24;
                         id(guesty_screen_sensitive) = mode != "idle";
                         id(guesty_valid_until_epoch) =
                             mode == "idle" ? 0 : valid_until_epoch;
@@ -477,19 +496,142 @@ globals:
   - id: guesty_update_received_this_boot
     type: bool
     initial_value: "false"
-  # Volatile confidence counter for the charger status. External power is
-  # accepted only after three complete, consistent REG0A.BUS_GD samples.
-  - id: guesty_external_power_valid_reads
+  # Volatile confidence counters for the revision-aware power detector.
+  # E1001 v1.2 uses the identified SY6974B plus REG0A.BUS_GD. Once that part
+  # has been observed during a boot, transient status failures must never
+  # divert the board to the USB-UART fallback.
+  - id: guesty_sy6974_detected
+    type: bool
+    restore_value: true
+    initial_value: "false"
+  - id: guesty_sy6974_seen_this_boot
+    type: bool
+    initial_value: "false"
+  - id: guesty_sy6974_id_matches
     type: uint8_t
     initial_value: "0"
+  - id: guesty_sy6974_status_reads
+    type: uint8_t
+    initial_value: "0"
+  - id: guesty_sy6974_bus_good_reads
+    type: uint8_t
+    initial_value: "0"
+  # E1001 v1.0 has no readable charger status. Its CH340C bridge is powered
+  # only by TYPEC_5V. Three sampled windows distinguish that driven TXD signal
+  # from the pulled-down line of an unpowered bridge.
+  - id: guesty_usb_uart_powered_windows
+    type: uint8_t
+    initial_value: "0"
+  - id: guesty_usb_uart_unpowered_windows
+    type: uint8_t
+    initial_value: "0"
+  - id: guesty_uart0_tx_quiesced
+    type: bool
+    initial_value: "false"
+  - id: guesty_usb_uart_power_probe_ready
+    type: bool
+    initial_value: "false"
+  - id: guesty_uart_logger_baud_rate
+    type: uint32_t
+    initial_value: "0"
+  - id: guesty_uart0_restore_ok
+    type: bool
+    initial_value: "false"
+  - id: guesty_uart0_restore_warning_active
+    type: bool
+    initial_value: "false"
   # A previously confirmed cable survives one failed measurement group. This
   # avoids sleeping on USB because of a transient I2C error while still
   # detecting an actual unplug within two 15-second checks.
   - id: guesty_external_power_invalid_batches
     type: uint8_t
     initial_value: "0"
+  - id: guesty_power_detection_method_code
+    type: uint8_t
+    initial_value: "255"
+  - id: guesty_power_detection_warning_active
+    type: bool
+    initial_value: "false"
 
 script:
+  # Pause only the physical UART0 console path (API log listeners keep
+  # working), disconnect ESP TX from the USB-UART bridge and drive both sides
+  # to defined levels. This prevents older CH340C lots from being phantom-
+  # powered by an idle-high GPIO43 while USB is absent.
+  - id: guesty_quiesce_uart0
+    mode: single
+    then:
+      - lambda: |-
+          auto *logger = esphome::logger::global_logger;
+          const bool logger_uart0 = logger != nullptr
+              && logger->get_uart() ==
+                  esphome::logger::UART_SELECTION_UART0
+              && logger->get_uart_num() == UART_NUM_0
+              && uart_is_driver_installed(UART_NUM_0);
+          if (!logger_uart0) {
+            id(guesty_usb_uart_power_probe_ready) = false;
+            return;
+          }
+
+          const uint32_t baud_rate = logger->get_baud_rate();
+          if (baud_rate != 0) {
+            if (id(guesty_uart_logger_baud_rate) == 0) {
+              id(guesty_uart_logger_baud_rate) = baud_rate;
+            }
+            logger->set_baud_rate(0);
+          }
+          uart_wait_tx_done(UART_NUM_0, pdMS_TO_TICKS(20));
+
+          bool ready = gpio_reset_pin(GPIO_NUM_43) == ESP_OK;
+          ready = gpio_pullup_dis(GPIO_NUM_43) == ESP_OK && ready;
+          ready = gpio_pulldown_dis(GPIO_NUM_43) == ESP_OK && ready;
+          ready = gpio_set_level(GPIO_NUM_43, 0) == ESP_OK && ready;
+          ready = gpio_set_direction(GPIO_NUM_43, GPIO_MODE_OUTPUT)
+              == ESP_OK && ready;
+          ready = gpio_set_level(GPIO_NUM_43, 0) == ESP_OK && ready;
+          ready = gpio_input_enable(GPIO_NUM_44) == ESP_OK && ready;
+          ready = gpio_pullup_dis(GPIO_NUM_44) == ESP_OK && ready;
+          ready = gpio_pulldown_en(GPIO_NUM_44) == ESP_OK && ready;
+          id(guesty_uart0_tx_quiesced) = ready;
+          id(guesty_usb_uart_power_probe_ready) = ready;
+
+  # Reattach the existing, still-configured UART0 driver. Never reinstall or
+  # reconfigure it: ESPHome owns its buffers and baud configuration.
+  - id: guesty_restore_uart0
+    mode: single
+    then:
+      - lambda: |-
+          id(guesty_uart0_restore_ok) = false;
+          auto *logger = esphome::logger::global_logger;
+          const bool can_restore = id(guesty_uart0_tx_quiesced)
+              && id(guesty_uart_logger_baud_rate) != 0
+              && logger != nullptr
+              && logger->get_uart() ==
+                  esphome::logger::UART_SELECTION_UART0
+              && logger->get_uart_num() == UART_NUM_0
+              && uart_is_driver_installed(UART_NUM_0);
+          if (!can_restore) {
+            return;
+          }
+
+          uart_wait_tx_done(UART_NUM_0, pdMS_TO_TICKS(20));
+          const bool restored = uart_set_pin(
+              UART_NUM_0, GPIO_NUM_43, GPIO_NUM_44,
+              UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE) == ESP_OK;
+          if (restored) {
+            gpio_input_enable(GPIO_NUM_44);
+            gpio_pullup_dis(GPIO_NUM_44);
+            gpio_pulldown_dis(GPIO_NUM_44);
+            id(guesty_uart0_tx_quiesced) = false;
+            logger->set_baud_rate(id(guesty_uart_logger_baud_rate));
+            id(guesty_uart0_restore_ok) = true;
+            id(guesty_uart0_restore_warning_active) = false;
+          } else if (!id(guesty_uart0_restore_warning_active)) {
+            id(guesty_uart0_restore_warning_active) = true;
+            ESP_LOGW("guesty_power",
+                     "UART0 restore failed; API logging remains available");
+          }
+
   # Keep every battery sleep entry identical. Publishing the actual awake time
   # before shutdown makes failed delivery, wake loops and exhausted timeout
   # windows visible in Home Assistant without retaining another flash value.
@@ -502,45 +644,185 @@ script:
       - output.turn_off: guesty_microphone_power
       - component.update: guesty_awake_duration
       - delay: 300ms
+      # Leave the USB-UART bridge electrically quiet on every sleep path,
+      # including explicit battery mode on otherwise externally powered units.
+      - script.execute: guesty_quiesce_uart0
+      - script.wait: guesty_quiesce_uart0
+      - delay: 60ms
       # ESPHome 2026.7 and earlier do not count an orderly deep-sleep entry as
       # a successful OTA boot. Mark it explicitly so short battery wake cycles
       # do not roll back working firmware.
       - safe_mode.mark_successful
       - deep_sleep.enter: guesty_deep_sleep
   - id: guesty_read_external_power
-    mode: restart
+    # Concurrent callers share the running observation instead of cancelling
+    # it or queueing a stale second cable decision.
+    mode: single
     then:
-      - lambda: id(guesty_external_power_valid_reads) = 0;
+      - lambda: |-
+          id(guesty_sy6974_id_matches) = 0;
+          id(guesty_sy6974_status_reads) = 0;
+          id(guesty_sy6974_bus_good_reads) = 0;
+          id(guesty_usb_uart_powered_windows) = 0;
+          id(guesty_usb_uart_unpowered_windows) = 0;
+          id(guesty_usb_uart_power_probe_ready) = false;
+          id(guesty_uart0_restore_ok) = false;
+      # Quiesce first on both revisions. The USB-UART bridge exists on each,
+      # and a total charger-bus failure must not leave a phantom-powered path.
+      - script.execute: guesty_quiesce_uart0
+      - script.wait: guesty_quiesce_uart0
+      - delay: 60ms
       - repeat:
           count: 3
           then:
             - lambda: |-
-                // REG0A.BUS_GD is the SY6974B's dedicated indication that an
-                // external BUS input is attached. Unlike REG08.BUS_STAT it is
-                // independent of whether BC1.2 classified the source as SDP,
-                // CDP, DCP, unknown or non-standard.
-                uint8_t reg = 0x0A;
-                uint8_t status = 0;
-                const auto error = id(guesty_power_i2c)->write_readv(
-                    0x6B, &reg, 1, &status, 1);
-                if (error != esphome::i2c::ERROR_OK) {
-                  return;
+                // First identify the v1.2 charger. This prevents an unrelated
+                // device at 0x6B from being accepted on an older board.
+                uint8_t reg = 0x0B;
+                uint8_t part_id = 0;
+                const auto id_error = id(guesty_power_i2c)->write_readv(
+                    0x6B, &reg, 1, &part_id, 1);
+                if (id_error == esphome::i2c::ERROR_OK
+                    && (part_id & 0x78) == 0x40) {
+                  id(guesty_sy6974_seen_this_boot) = true;
+                  id(guesty_sy6974_id_matches)++;
                 }
 
-                const bool bus_good = (status & 0x80) != 0;
-                if (bus_good) {
-                  id(guesty_external_power_valid_reads)++;
+                // A known v1.2 board still gets a status read when the part-ID
+                // read in this iteration glitches. Otherwise one I2C error
+                // would incorrectly make the modern observation incomplete.
+                if (id(guesty_sy6974_detected)
+                    || id(guesty_sy6974_seen_this_boot)) {
+                  // REG0A.BUS_GD is independent of the BC1.2 source class in
+                  // REG08 and therefore includes every valid USB adapter.
+                  reg = 0x0A;
+                  uint8_t status = 0;
+                  const auto status_error =
+                      id(guesty_power_i2c)->write_readv(
+                          0x6B, &reg, 1, &status, 1);
+                  if (status_error == esphome::i2c::ERROR_OK) {
+                    id(guesty_sy6974_status_reads)++;
+                    if ((status & 0x80) != 0) {
+                      id(guesty_sy6974_bus_good_reads)++;
+                    }
+                  }
                 }
             - delay: 25ms
       - lambda: |-
-          const bool batch_confirmed =
-              id(guesty_external_power_valid_reads) == 3;
-          if (batch_confirmed) {
+          if (!id(guesty_sy6974_detected)
+              && id(guesty_sy6974_id_matches) == 3) {
+            // The hardware revision is stable. Persist this one non-sensitive
+            // fact so later deep-sleep boots never enter the legacy path only
+            // because the charger bus is temporarily unavailable.
+            id(guesty_sy6974_detected) = true;
+          }
+      - if:
+          condition:
+            lambda: |-
+              return !id(guesty_sy6974_detected)
+                  && !id(guesty_sy6974_seen_this_boot);
+          then:
+            # E1001 v1.0 has no readable VBUS register. GPIO43 has already
+            # been low for more than WCH's maximum reset interval, and the
+            # GPIO44 pull-down remains active throughout all sample windows.
+            - repeat:
+                count: 3
+                then:
+                  - lambda: |-
+                      if (!id(guesty_usb_uart_power_probe_ready)) {
+                        return;
+                      }
+                      uint8_t high_samples = 0;
+                      for (uint8_t sample = 0; sample < 64; sample++) {
+                        if (gpio_get_level(GPIO_NUM_44) != 0) {
+                          high_samples++;
+                        }
+                        // Avoid repeatedly sampling the same UART bit phase.
+                        delayMicroseconds(113 + ((sample * 17) % 31));
+                      }
+                      if (high_samples >= 4) {
+                        id(guesty_usb_uart_powered_windows)++;
+                      } else if (high_samples == 0) {
+                        id(guesty_usb_uart_unpowered_windows)++;
+                      }
+                  - delay: 7ms
+      # Restore serial output only when a raw signal proves that the bridge is
+      # powered. ABSENT and UNKNOWN leave GPIO43 low until the next probe or
+      # deep sleep.
+      - if:
+          condition:
+            lambda: |-
+              const bool modern_external =
+                  (id(guesty_sy6974_detected)
+                      || id(guesty_sy6974_seen_this_boot))
+                  && id(guesty_sy6974_status_reads) == 3
+                  && id(guesty_sy6974_bus_good_reads) == 3;
+              const bool legacy_external =
+                  !id(guesty_sy6974_detected)
+                  && !id(guesty_sy6974_seen_this_boot)
+                  && id(guesty_usb_uart_power_probe_ready)
+                  && id(guesty_usb_uart_powered_windows) == 3;
+              return modern_external || legacy_external;
+          then:
+            - script.execute: guesty_restore_uart0
+            - script.wait: guesty_restore_uart0
+      - lambda: |-
+          bool measurement_valid = false;
+          bool external_power = false;
+          uint8_t method_code = 0;  // unavailable
+
+          if ((id(guesty_sy6974_detected)
+                  || id(guesty_sy6974_seen_this_boot))
+              && id(guesty_sy6974_status_reads) == 3) {
+            // A fully readable v1.2 charger is authoritative. A mixed BUS_GD
+            // batch represents a cable transition and remains unresolved.
+            if (id(guesty_sy6974_bus_good_reads) == 3) {
+              measurement_valid = true;
+              external_power = true;
+              method_code = 1;  // SY6974B BUS_GD
+            } else if (id(guesty_sy6974_bus_good_reads) == 0) {
+              measurement_valid = true;
+              external_power = false;
+              method_code = 1;
+            }
+          } else if (!id(guesty_sy6974_detected)
+                     && !id(guesty_sy6974_seen_this_boot)
+                     && id(guesty_usb_uart_power_probe_ready)) {
+            // No identified v1.2 charger means the official v1.0 CH340C path
+            // is the only software-readable indication of TYPEC_5V. Three
+            // consistent sample windows are required in either direction.
+            if (id(guesty_usb_uart_powered_windows) == 3) {
+              measurement_valid = true;
+              external_power = true;
+              method_code = 2;  // USB-UART
+            } else if (id(guesty_usb_uart_unpowered_windows) == 3) {
+              measurement_valid = true;
+              external_power = false;
+              method_code = 2;
+            }
+          }
+
+          if (measurement_valid) {
             id(guesty_external_power_invalid_batches) = 0;
-            id(guesty_external_power).publish_state(true);
+            id(guesty_power_detection_warning_active) = false;
+            if (id(guesty_power_detection_method_code) != method_code) {
+              id(guesty_power_detection_method_code) = method_code;
+              const char *method = method_code == 1
+                  ? "SY6974B BUS_GD" : "USB-UART";
+              id(guesty_power_detection_method).publish_state(method);
+              ESP_LOGI("guesty_power", "Power detection method: %s", method);
+            }
+            if (!id(guesty_external_power).has_state()
+                || id(guesty_external_power).state != external_power) {
+              id(guesty_external_power).publish_state(external_power);
+            }
             return;
           }
 
+          if (id(guesty_power_detection_method_code) != 0) {
+            id(guesty_power_detection_method_code) = 0;
+            id(guesty_power_detection_method).publish_state("Unavailable");
+          }
           if (id(guesty_external_power_invalid_batches) < 2) {
             id(guesty_external_power_invalid_batches)++;
           }
@@ -549,10 +831,16 @@ script:
               && id(guesty_external_power).state;
           if (!was_confirmed
               || id(guesty_external_power_invalid_batches) >= 2) {
-            // Failed or inconsistent charger responses fail safe to battery
-            // behavior. A confirmed cable gets one retry so a single I2C
-            // glitch cannot put a USB-powered device to sleep.
-            id(guesty_external_power).publish_state(false);
+            if (!id(guesty_external_power).has_state()
+                || id(guesty_external_power).state) {
+              id(guesty_external_power).publish_state(false);
+            }
+          }
+          if (id(guesty_external_power_invalid_batches) >= 2
+              && !id(guesty_power_detection_warning_active)) {
+            id(guesty_power_detection_warning_active) = true;
+            ESP_LOGW("guesty_power",
+                     "External power detection unavailable; using battery behavior");
           }
 
 font:
@@ -799,6 +1087,15 @@ text_sensor:
         default:
           return {"other"};
       }
+  # Identifies which revision-safe signal produced External power. The state
+  # contains no credentials or user data and changes only when the detector
+  # switches between the v1.2 charger, the v1.0 fallback, and no valid signal.
+  - platform: template
+    id: guesty_power_detection_method
+    name: Power detection method
+    icon: mdi:power-plug-battery
+    entity_category: diagnostic
+    update_interval: never
   # This diagnostic state is published only after a successful physical panel
   # refresh, or when a matching successful content ID is restored after wake.
   - platform: template

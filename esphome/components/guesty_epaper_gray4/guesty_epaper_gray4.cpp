@@ -611,19 +611,18 @@ void GuestyEPaperGray4::write_plane_(uint8_t command, uint8_t bit_index) {
   for (uint16_t row = 0; row < HEIGHT; row++) {
     const uint8_t *source = this->buffer_ + static_cast<uint32_t>(row) * (WIDTH / 4U);
     for (uint16_t column = 0; column < BYTES_PER_ROW; column++) {
-      const uint8_t first = source[column * 2U];
-      const uint8_t second = source[column * 2U + 1U];
       uint8_t output = 0;
-      // The register-LUT four-gray mode uses the levels directly:
-      // 00=black, 01=dark gray, 10=light gray, 11=white.
-      output |= ((first >> (6U + bit_index)) & 0x01U) << 7U;
-      output |= ((first >> (4U + bit_index)) & 0x01U) << 6U;
-      output |= ((first >> (2U + bit_index)) & 0x01U) << 5U;
-      output |= ((first >> bit_index) & 0x01U) << 4U;
-      output |= ((second >> (6U + bit_index)) & 0x01U) << 3U;
-      output |= ((second >> (4U + bit_index)) & 0x01U) << 2U;
-      output |= ((second >> (2U + bit_index)) & 0x01U) << 1U;
-      output |= (second >> bit_index) & 0x01U;
+      for (uint8_t pixel = 0; pixel < 8U; pixel++) {
+        const uint8_t packed = source[column * 2U + pixel / 4U];
+        const uint8_t shift = (3U - (pixel & 0x03U)) * 2U;
+        const uint8_t framebuffer_gray = (packed >> shift) & 0x03U;
+        // ESPHome/framebuffer: 0=black, 3=white. UC8179 four-gray DTM data
+        // uses the opposite two-bit polarity. Seeed's E1001 reference applies
+        // this same 3-gray conversion before splitting the two planes.
+        const uint8_t controller_gray = 3U - framebuffer_gray;
+        if ((controller_gray & (1U << bit_index)) != 0U)
+          output |= 1U << (7U - pixel);
+      }
       row_buffer[column] = output;
     }
     this->write_array(row_buffer, BYTES_PER_ROW);
@@ -841,8 +840,8 @@ bool GuestyEPaperGray4::display_() {
     return false;
   }
   this->log_frame_levels_();
-  this->write_plane_(0x10, 0);  // DTM1: least-significant grayscale bit
-  this->write_plane_(0x13, 1);  // DTM2: most-significant grayscale bit
+  this->write_plane_(0x10, 0);  // DTM1: inverted least-significant gray bit
+  this->write_plane_(0x13, 1);  // DTM2: inverted most-significant gray bit
   const bool refreshed = this->refresh_();
   this->deep_sleep_panel_();
   return refreshed;

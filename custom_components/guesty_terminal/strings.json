@@ -142,7 +142,7 @@
       },
       "firmware": {
         "title": "Create E1001 firmware",
-        "description": "Creates a secure ESPHome configuration under /config/esphome. Automatic mode sleeps on battery and stays online on USB power. The status and charging LEDs, buzzer, and microphone are disabled.",
+        "description": "Creates a secure ESPHome configuration under /config/esphome. Automatic mode detects USB power on E1001 hardware revisions v1.0 and v1.2, sleeps on battery, and stays online on external power. The status LED, buzzer, and microphone are disabled; the charging LED is also disabled on v1.2.",
         "data": {
           "firmware_device_name": "Device name",
           "firmware_friendly_name": "Display name",
@@ -153,7 +153,7 @@
         },
         "data_description": {
           "firmware_device_name": "1-24 lowercase letters, numbers, or hyphens. Unique for every display.",
-          "firmware_power_mode": "Automatic is recommended for the E1001.",
+          "firmware_power_mode": "Automatic detects USB power on E1001 v1.0 through the USB-UART bridge and on v1.2 through the charger.",
           "firmware_awake_seconds": "The display sleeps earlier as soon as Home Assistant has delivered new data."
         }
       }

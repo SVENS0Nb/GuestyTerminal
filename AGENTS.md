@@ -246,6 +246,11 @@ incomplete change.
 
 ### E-paper refresh behavior
 
+- Keep logical and controller color polarity separate. The ESPHome framebuffer
+  stores `0=black` through `3=white`; UC8179 four-gray DTM data must receive
+  `3 - framebuffer_gray` before its least- and most-significant bits are sent
+  to `0x10` and `0x13`. The monochrome differential path keeps its independent
+  convention of `0=black`, `1=white`.
 - Do not refresh the physical panel when visible content is unchanged. The
   `content_id` includes every visible field and a high-entropy reservation ID;
   `base_content_id` intentionally excludes weather.
@@ -287,7 +292,7 @@ incomplete change.
 - `guesty_render_revision` invalidates otherwise-identical images after a
   rendering or driver change. When a visible rendering change requires one
   repaint, increment the expected value and the stored-success value together,
-  and update their tests. The current source revision is 23.
+  and update their tests. The current source revision is 24.
 - Publish the displayed-booking confirmation only after a successful physical
   refresh, or when a restored matching fingerprint proves the same content was
   previously drawn.
@@ -302,12 +307,31 @@ incomplete change.
 
 - `auto` mode sleeps on battery and remains online on external power. `battery`
   always sleeps; `mains` always remains online.
-- Detect external power through the SY6974B charger's dedicated
-  `REG0A.BUS_GD` bit on `guesty_power_i2c`. Do not substitute the BC1.2 source
-  classification in `REG08.BUS_STAT`: CDP, unknown, and non-standard adapters
-  are still valid external power. Require three consistent positive samples;
-  a previously confirmed cable may survive one invalid measurement batch, but
-  two invalid batches fail safely to battery behavior.
+- Detect E1001 v1.2 through an identified SY6974B (`REG0B` part-ID mask) and
+  its dedicated `REG0A.BUS_GD` bit on `guesty_power_i2c`. Do not substitute the
+  BC1.2 source classification in `REG08.BUS_STAT`: CDP, unknown, and
+  non-standard adapters are still valid external power. One exact ID match is
+  sticky for that boot; three matches may persist the non-sensitive hardware
+  revision. A known v1.2 board must still attempt `REG0A` when an individual
+  later ID read fails, and it must never enter the legacy fallback.
+- E1001 v1.0 has an ETA6003 without a readable VBUS status. Only while no
+  SY6974B has been identified, use the TYPEC_5V-powered USB-UART bridge TXD on
+  UART0 RX/GPIO44 as the legacy signal. Before every power observation, pause
+  UART0 console writes, detach GPIO43 from UART0, drive it low for at least 50
+  ms to prevent phantom power through bridge RX, and enable GPIO44 input with a
+  pull-down. Require three consistent multi-sample windows. Restore UART0
+  through `uart_set_pin()` only after a raw external-power observation; absent
+  or unresolved observations leave GPIO43 low. Quiesce UART0 again immediately
+  before every deep-sleep entry. A single-mode script prevents cancellation or
+  stale queued observations while another caller waits for the active probe.
+  A continuously asserted UART BREAK is physically indistinguishable from an
+  unpowered legacy bridge through GPIO44 alone; keep that limitation in the
+  hardware test matrix and release notes.
+- Require three consistent samples or windows. A previously confirmed cable
+  may survive one unresolved measurement batch, but two unresolved batches
+  fail safely to battery behavior. Preserve the diagnostic entities
+  `External power` and `Power detection method` so the active hardware path is
+  observable without exposing sensitive data.
 - The default battery cycle is 30 minutes with a maximum awake window of 90
   seconds. After Home Assistant delivers a payload, the device may sleep
   earlier.
@@ -316,9 +340,10 @@ incomplete change.
   from 3.27 V/0% through 4.15 V/100%; do not replace them with a least-squares
   line. This remains a voltage estimate rather than a coulomb counter.
 - Preserve the diagnostic entities `Battery voltage`, `Battery level`,
-  `Wake-up reason`, and `Awake duration`. Publish awake duration through the
-  shared sleep script immediately before deep sleep, and keep timer, button,
-  cold-boot, and other wake reasons distinguishable.
+  `Wake-up reason`, and `Awake duration`, plus `External power` and
+  `Power detection method`. Publish awake duration through the shared sleep
+  script immediately before deep sleep, and keep timer, button, cold-boot, and
+  other wake reasons distinguishable.
 - Route every normal battery sleep entry through that shared script. It must
   disable the battery measurement circuit and unused peripherals, publish the
   awake duration, mark the OTA boot successful, and only then enter deep sleep;
@@ -330,9 +355,11 @@ incomplete change.
 - If a battery wake receives no payload while sensitive content may still be on
   screen, clear to the localized idle screen before sleeping. On permanent
   power, enforce lease expiry continuously because no next wake is guaranteed.
-- Keep the status/charging LEDs, buzzer, and microphone power disabled. The
-  charger STAT output is disabled over its dedicated I2C bus; GPIO-only changes
-  are insufficient.
+- Keep the status LED, buzzer, and microphone power disabled. On v1.2 the
+  charging LED's STAT output is disabled over the charger's dedicated I2C bus;
+  GPIO-only changes are insufficient. The v1.0 ETA6003 has no equivalent
+  software-disable bit, so documentation must not promise that its hardware
+  charging LED is off.
 - Preserve the E1001 pin assignments and the non-inverted active-low BUSY
   interpretation unless verified against the hardware schematic and device.
 
@@ -413,7 +440,7 @@ Use the smallest applicable row, then inspect all named layers:
 | Layout/font/logo/weather rendering | package YAML, `content_id`, render revision, partial-window containment, firmware tests, hardware check |
 | Panel/LUT/partial-refresh code | component Python schema, C++/header, SPI2 teardown/reinitialization, 100-ms/BUSY timing, render revision, package geometry, compile, hardware full/partial/deep-sleep tests |
 | Power/deep-sleep behavior | boot/action/interval paths, privacy fallback, external-power detection, README, firmware tests, battery and USB hardware checks |
-| Battery estimate, VBUS detection, or power diagnostics | 16-sample ADC path, exact piecewise curve, `REG0A.BUS_GD` confidence/fallback logic, sleep script, diagnostic entities, firmware contract tests, battery and USB hardware checks |
+| Battery estimate, VBUS detection, or power diagnostics | 16-sample ADC path, exact piecewise curve, sticky `REG0B`/`REG0A.BUS_GD` v1.2 path, UART0 GPIO43/GPIO44 anti-backfeed v1.0 path, sleep script, diagnostic entities, firmware contract tests, battery and USB hardware checks on both revisions |
 | Home Assistant entity/service | platform forwarding, entity IDs/unique IDs, strings/translations, tests, README |
 | Firmware generation/update | managed header, exact template structure, credential preservation, atomic writes, updater parser, tests |
 

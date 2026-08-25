@@ -73,7 +73,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.32") == 2
+    assert rendered.count("ref: v0.3.33") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
@@ -88,7 +88,7 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     stored_revision = re.search(r"id\(guesty_render_revision\) = (\d+);", package)
     assert expected_revision is not None
     assert stored_revision is not None
-    assert expected_revision.group(1) == "23"
+    assert expected_revision.group(1) == "24"
     assert expected_revision.group(1) == stored_revision.group(1)
     assert "guesty_terminal_update_display_v9" in package
     assert '"Bei Fragen sind wir für dich da."' not in package
@@ -269,7 +269,7 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     )
     assert "sleep_duration: ${battery_sleep_duration}" in package
     assert "id: guesty_read_external_power" in package
-    assert "id(guesty_external_power).publish_state(true)" in package
+    assert "id(guesty_external_power).publish_state(external_power)" in package
     gray_driver_path = (
         Path(__file__).parents[1]
         / "esphome"
@@ -295,7 +295,8 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     )
     driver = driver_path.read_text(encoding="utf-8")
     assert '"Framebuffer levels:' in driver
-    assert "00=black, 01=dark gray, 10=light gray, 11=white" in driver
+    assert "const uint8_t controller_gray = 3U - framebuffer_gray" in driver
+    assert "0=black, 3=white" in driver
     assert "1U - ((first >>" not in driver
     assert "probe_otp_support_" in driver
     assert "read_otp_marker_(0x0BED, 0x0BE3" in driver
@@ -308,6 +309,8 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "LUT_BORDER_GRAY" not in driver
     assert "write_plane_(0x10, 0)" in driver
     assert "write_plane_(0x13, 1)" in driver
+    assert "inverted least-significant gray bit" in driver
+    assert "inverted most-significant gray bit" in driver
     assert "GxEPD2" not in driver
     assert "Display BUSY never asserted" not in driver
     assert "wait_after_controller_command_" in driver
@@ -329,6 +332,23 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     )
     assert "Copyright (c) 2023 Bodmer" in seeed_gfx_license
     assert "Copyright (c) 2012 Adafruit Industries" in seeed_gfx_license
+
+
+def test_grayscale_framebuffer_polarity_matches_uc8179_wire_format() -> None:
+    """Keep ESPHome colors logical while inverting both controller DTM bits."""
+    controller_codes = {
+        "black": 3 - 0,
+        "dark_gray": 3 - 1,
+        "light_gray": 3 - 2,
+        "white": 3 - 3,
+    }
+
+    assert controller_codes == {
+        "black": 0b11,
+        "dark_gray": 0b10,
+        "light_gray": 0b01,
+        "white": 0b00,
+    }
 
 
 def test_otp_probe_releases_and_reinitializes_the_esp32_spi_bus() -> None:
@@ -437,22 +457,194 @@ def test_four_gray_tables_match_the_licensed_seeed_reference() -> None:
         assert actual == expected_hex
 
 
-def test_battery_wake_cycle_requires_confirmed_bus_good_and_cannot_wake_loop() -> None:
+def test_auto_power_detection_supports_both_e1001_hardware_revisions() -> None:
     package = PACKAGE_FILE.read_text(encoding="utf-8")
 
+    quiesce_start = package.index("  - id: guesty_quiesce_uart0\n")
+    restore_start = package.index("  - id: guesty_restore_uart0\n", quiesce_start)
+    sleep_start = package.index("  - id: guesty_enter_battery_sleep\n", restore_start)
     power_start = package.index("  - id: guesty_read_external_power\n")
     power_end = package.index("\nfont:\n", power_start)
+    quiesce_script = package[quiesce_start:restore_start]
+    restore_script = package[restore_start:sleep_start]
+    sleep_script = package[sleep_start:power_start]
     power_script = package[power_start:power_end]
+
+    boot = package[:quiesce_start]
+    assert boot.index("script.execute: guesty_quiesce_uart0") < boot.index(
+        "priority: 700"
+    )
+    assert "(part_id & 0x78) != 0x40" in boot
+    assert "id(guesty_sy6974_seen_this_boot) = true" in boot
+
+    globals_start = package.index("\nglobals:\n")
+    globals_block = package[globals_start:quiesce_start]
+    detected_start = globals_block.index("  - id: guesty_sy6974_detected\n")
+    detected_end = globals_block.index(
+        "  - id: guesty_sy6974_seen_this_boot\n", detected_start
+    )
+    assert "restore_value: true" in globals_block[detected_start:detected_end]
+
+    assert "mode: single" in quiesce_script
+    assert "uart_is_driver_installed(UART_NUM_0)" in quiesce_script
+    assert "logger->set_baud_rate(0)" in quiesce_script
+    assert "uart_wait_tx_done(UART_NUM_0" in quiesce_script
+    assert "gpio_reset_pin(GPIO_NUM_43)" in quiesce_script
+    assert "gpio_pullup_dis(GPIO_NUM_43)" in quiesce_script
+    assert "gpio_pulldown_dis(GPIO_NUM_43)" in quiesce_script
+    assert "gpio_input_enable(GPIO_NUM_44)" in quiesce_script
+    assert "gpio_pullup_dis(GPIO_NUM_44)" in quiesce_script
+    assert "gpio_pulldown_en(GPIO_NUM_44)" in quiesce_script
+    assert "gpio_pulldown_dis(GPIO_NUM_44)" not in quiesce_script
+    first_low = quiesce_script.index("gpio_set_level(GPIO_NUM_43, 0)")
+    output_enable = quiesce_script.index(
+        "gpio_set_direction(GPIO_NUM_43, GPIO_MODE_OUTPUT)"
+    )
+    assert first_low < output_enable
+
+    assert "mode: single" in restore_script
+    assert "uart_is_driver_installed(UART_NUM_0)" in restore_script
+    assert "uart_set_pin(" in restore_script
+    assert "gpio_pulldown_dis(GPIO_NUM_44)" in restore_script
+    assert "gpio_pullup_en(GPIO_NUM_44)" not in restore_script
+    assert restore_script.index("uart_set_pin(") < restore_script.index(
+        "logger->set_baud_rate(id(guesty_uart_logger_baud_rate))"
+    )
+
+    assert "script.execute: guesty_quiesce_uart0" in sleep_script
+    assert sleep_script.index("script.wait: guesty_quiesce_uart0") < sleep_script.index(
+        "deep_sleep.enter: guesty_deep_sleep"
+    )
+
+    assert "mode: single" in power_script
+    assert "id(guesty_uart_logger_baud_rate) = 0" not in power_script
+    assert power_script.index(
+        "script.execute: guesty_quiesce_uart0"
+    ) < power_script.index("count: 3")
+    assert "delay: 60ms" in power_script
     assert "count: 3" in power_script
-    assert "uint8_t reg = 0x0A" in power_script
-    assert "const bool bus_good = (status & 0x80) != 0" in power_script
+    assert "uint8_t reg = 0x0B" in power_script
+    assert "(part_id & 0x78) == 0x40" in power_script
+    assert "reg = 0x0A" in power_script
+    assert "(status & 0x80) != 0" in power_script
     assert "uint8_t reg = 0x08" not in power_script
     assert "bus_status" not in power_script
-    assert "id(guesty_external_power_valid_reads) == 3" in power_script
+    assert "id(guesty_sy6974_seen_this_boot) = true" in power_script
+    assert "id(guesty_sy6974_id_matches) == 3" in power_script
+    assert "id(guesty_sy6974_detected) = true" in power_script
+    assert "id(guesty_sy6974_status_reads) == 3" in power_script
+    assert "id(guesty_sy6974_bus_good_reads) == 3" in power_script
+    assert "id(guesty_sy6974_bus_good_reads) == 0" in power_script
+    assert "&& !id(guesty_sy6974_seen_this_boot)" in power_script
+    assert "gpio_get_level(GPIO_NUM_44)" in power_script
+    assert "for (uint8_t sample = 0; sample < 64; sample++)" in power_script
+    assert "high_samples >= 4" in power_script
+    assert "id(guesty_usb_uart_powered_windows) == 3" in power_script
+    assert "id(guesty_usb_uart_unpowered_windows) == 3" in power_script
+    sample_position = power_script.index("gpio_get_level(GPIO_NUM_44)")
+    restore_request = power_script.index("script.execute: guesty_restore_uart0")
+    assert sample_position < restore_request
+    restore_condition = power_script[
+        power_script.rfind("      - if:", 0, restore_request) : restore_request
+    ]
+    assert "modern_external || legacy_external" in restore_condition
+    assert "guesty_usb_uart_unpowered_windows" not in restore_condition
+    assert "method_code = 1;  // SY6974B BUS_GD" in power_script
+    assert "method_code = 2;  // USB-UART" in power_script
     assert "id(guesty_external_power_invalid_batches) >= 2" in power_script
-    assert "publish_state(true)" in power_script
+    assert "publish_state(external_power)" in power_script
     assert "publish_state(false)" in power_script
     assert "publish_state((status & 0x80) != 0)" not in power_script
+
+    detector_start = package.index("    id: guesty_power_detection_method\n")
+    detector_end = package.index("  # This diagnostic state", detector_start)
+    detector = package[detector_start:detector_end]
+    assert "name: Power detection method" in detector
+    assert "entity_category: diagnostic" in detector
+    assert "update_interval: never" in detector
+
+
+@pytest.mark.parametrize(
+    (
+        "charger_detected",
+        "charger_seen_this_boot",
+        "status_reads",
+        "bus_good",
+        "uart_powered_windows",
+        "uart_unpowered_windows",
+        "expected",
+    ),
+    [
+        (True, False, 3, 3, 0, 3, (True, True, "SY6974B BUS_GD")),
+        (True, False, 3, 0, 3, 0, (True, False, "SY6974B BUS_GD")),
+        (False, False, 0, 0, 3, 0, (True, True, "USB-UART")),
+        (False, False, 0, 0, 0, 3, (True, False, "USB-UART")),
+        (True, False, 3, 1, 3, 0, (False, False, "Unavailable")),
+        # Once identified, a transient v1.2 status failure must not enter the
+        # legacy path even when that path happens to read high.
+        (True, False, 0, 0, 3, 0, (False, False, "Unavailable")),
+        (True, False, 2, 2, 3, 0, (False, False, "Unavailable")),
+        # A single exact part-ID match is already sticky for the current boot,
+        # even before three matches persist the hardware revision.
+        (False, True, 3, 3, 0, 3, (True, True, "SY6974B BUS_GD")),
+        (False, True, 0, 0, 3, 0, (False, False, "Unavailable")),
+        (False, False, 0, 0, 2, 1, (False, False, "Unavailable")),
+    ],
+)
+def test_revision_aware_power_classifier_contract(
+    charger_detected: bool,
+    charger_seen_this_boot: bool,
+    status_reads: int,
+    bus_good: int,
+    uart_powered_windows: int,
+    uart_unpowered_windows: int,
+    expected: tuple[bool, bool, str],
+) -> None:
+    """Exercise the documented decision table independently of hardware I/O."""
+    valid = False
+    external = False
+    method = "Unavailable"
+    charger_known = charger_detected or charger_seen_this_boot
+    if charger_known and status_reads == 3:
+        if bus_good == 3:
+            valid, external, method = True, True, "SY6974B BUS_GD"
+        elif bus_good == 0:
+            valid, external, method = True, False, "SY6974B BUS_GD"
+    elif not charger_known:
+        if uart_powered_windows == 3:
+            valid, external, method = True, True, "USB-UART"
+        elif uart_unpowered_windows == 3:
+            valid, external, method = True, False, "USB-UART"
+
+    assert (valid, external, method) == expected
+
+
+@pytest.mark.parametrize(
+    ("previous_external", "invalid_batches", "expected_external", "expected_batches"),
+    [
+        (None, 0, False, 1),
+        (False, 0, False, 1),
+        (True, 0, True, 1),
+        (True, 1, False, 2),
+        (True, 2, False, 2),
+    ],
+)
+def test_unresolved_power_measurements_fail_safe_after_one_retained_batch(
+    previous_external: bool | None,
+    invalid_batches: int,
+    expected_external: bool,
+    expected_batches: int,
+) -> None:
+    """Retain one confirmed cable observation, then fail safely to battery."""
+    next_batches = min(2, invalid_batches + 1)
+    was_confirmed = previous_external is True
+    next_external = was_confirmed and next_batches < 2
+
+    assert (next_external, next_batches) == (expected_external, expected_batches)
+
+
+def test_battery_wake_cycle_cannot_wake_loop() -> None:
+    package = PACKAGE_FILE.read_text(encoding="utf-8")
 
     action_start = package.index("    - action: guesty_terminal_update_display_v9\n")
     globals_start = package.index("\nglobals:\n", action_start)
@@ -617,7 +809,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.32", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.33", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -629,8 +821,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.32") == 2
-    assert 'version: "0.3.32"' in updated
+    assert updated.count("ref: v0.3.33") == 2
+    assert 'version: "0.3.33"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -661,7 +853,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
 def test_update_managed_firmware_configs_rejects_invalid_credentials(
     tmp_path, broken_line
 ) -> None:
-    valid = render_firmware_config(_options()).replace("0.3.32", "0.3.10")
+    valid = render_firmware_config(_options()).replace("0.3.33", "0.3.10")
     if "key:" in broken_line:
         invalid = valid.replace(
             next(line for line in valid.splitlines() if "key:" in line), broken_line
@@ -698,14 +890,14 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.32", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.33", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     future.chmod(0o600)
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.32", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.33", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")
