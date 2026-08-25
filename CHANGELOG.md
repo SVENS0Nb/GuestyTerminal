@@ -3,6 +3,133 @@
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt. Einträge
 unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
 
+## Unveröffentlicht
+
+## 0.3.40 – 2026-08-25
+
+### Offizielle E1001-Hardwarekompatibilität
+
+- Die ungenutzte SD-Karten-Stromversorgung wird jetzt über GPIO16 bei jedem
+  Start und unmittelbar vor jedem Deep Sleep ausdrücklich ausgeschaltet. Der
+  interne Pulldown des TPS22916 bleibt damit nicht länger die einzige
+  Absicherung gegen eine versehentlich aktive SD-Versorgung.
+- Ein neuer, datenschutzneutraler **E-paper Hardwaretest** prüft auf bestätigter
+  externer Versorgung einen vollständigen Vier-Grau-Refresh, einen echten
+  differentiellen Refresh des 136×64-Statusfensters und die anschließende
+  Wiederherstellung der zuvor aktiven Gast-, Checkout- oder Leerseite. Bei
+  Abbruch bleibt der Inhaltsnachweis absichtlich ungültig, sodass der nächste
+  Payload das reale Bild zwingend neu zeichnet.
+- Die Diagnose **E-paper self-test** meldet getrennt Vollbild-, Teilbild-,
+  Wiederherstellungs-, Strom- und Zeitüberschreitungsfehler. Während des Tests
+  werden Payloadzustellung, Datenschutz-Löschung und Akkuschlaf serialisiert;
+  Gast-, Türcode- und WLAN-Werte werden nicht in Testzustände übernommen.
+
+### Kontrolliertes 32-MB-Flashlayout
+
+- Neu per USB installierte E1001 können im Firmware-Assistenten nun die
+  tatsächlich vorhandenen 32 MB Flash verwenden. Das erzeugte Layout wird als
+  neutrale Geräte-Diagnose veröffentlicht.
+- Bestehende Konfigurationen ohne `flash_size` gelten weiterhin ausdrücklich
+  als bisheriges 4-MB-Layout. Automatische Sammelupdates ändern ausschließlich
+  Versionsreferenzen und migrieren niemals still die Partitionstabelle.
+- Ein Layoutwechsel beim Überschreiben einer verwalteten Gerätekonfiguration
+  wird blockiert, bis die einmalige vollständige USB-Installation ausdrücklich
+  bestätigt wurde. Eine normale OTA-Installation ist für diesen einzelnen
+  Migrationsschritt nicht zulässig.
+- Das 32-MB-Profil aktiviert gezielt ESPHomes dafür erforderliche erweiterte
+  ESP-IDF-Unterstützung; das bestehende 4-MB-Profil übernimmt diese experimentell
+  gekennzeichnete Einstellung nicht. Bis zur Bestätigung auf echter Hardware
+  bleibt deshalb das bewährte 4-MB-Profil die Voreinstellung.
+
+### Dokumentation und Prüfstatus
+
+- README, Agenten- und Beitragsleitfaden unterscheiden jetzt die logische
+  Framebuffer-Pegelzuordnung von der invertierten UC8179-DTM-Übertragung und
+  dokumentieren ESPHome 2026.8.1 sowie den sicheren Flash-Migrationsweg.
+- ESPHome 2026.8.1 kompiliert beide Profile vollständig: Das 4-MB-Profil nutzt
+  1.510.619 von 1.835.008 App-Bytes (82,3 %), das 32-MB-Profil 1.510.299 von
+  16.515.072 Bytes (9,1 %). Beide Profile laufen künftig als parallele CI-Jobs
+  mit eigenem 95-Prozent-Limit. Die reale Wirkung des Hardwaretests, die
+  explizite SD-Abschaltung und eine vollständige 32-MB-USB-Migration müssen
+  noch auf einem E1001 bestätigt werden.
+
+### Physisch bestätigte Display-Zustellung
+
+- Die neue, rückwärtskompatible ESPHome-Aktion v10 bestätigt getrennt, dass ein
+  Payload empfangen wurde, der Renderer arbeitet und der physische E-Paper-
+  Refresh erfolgreich abgeschlossen wurde. Home Assistant wertet eine bloß
+  angenommene Service-Anfrage nicht mehr als Display-Erfolg.
+- Zufällige, datenschutzneutrale Zustellkennungen ordnen Reconnect-Meldungen dem
+  richtigen Auftrag zu. Begrenzte Empfangs-, Panel- und Wiederholungszeiten,
+  ein einzelner aktiver Payload-Handler und das Zusammenfassen überholter
+  Aufträge verhindern parallele Rendererzugriffe und Auftragsschleifen.
+- Ein fehlgeschlagener v10-Auftrag gilt nicht als empfangenes Wachfenster. Ein
+  Akku-Display bleibt dadurch für weitere Zustellversuche bis zur normalen
+  90-Sekunden-Grenze wach; ein zuvor sensitives Bild durchläuft anschließend
+  weiterhin den bestehenden datenschutzsicheren Löschpfad.
+- Der Integrationsstart wartet bei einem schlafenden oder offline befindlichen
+  Display weder den gesamten Wiederholungszeitraum noch eine bis zu
+  80-sekündige physische Bestätigung ab. Der erste Versuch läuft als sauber
+  verwaltete Hintergrundaufgabe; der echte Endpoint- oder Reconnect-Impuls
+  startet die zuverlässige Wiederholung später selbst.
+- Nach einer bestätigten Aktualisierung darf ein Akku-Display direkt schlafen.
+  Sein anschließender Status „nicht verfügbar“ beendet die Zustellung sofort,
+  statt noch fünf Sekunden auf einen Aktionsnamen zu warten, den das schlafende
+  Gerät nicht mehr veröffentlichen kann.
+- ESPHome-Transportausnahmen werden ohne fremden Ausnahmetext oder Traceback
+  protokolliert. Zusätzlich akzeptiert die Firmware für Diagnoseimpulse nur
+  das erwartete 24-stellige Hexformat der zufälligen Zustellkennung; ungültige
+  Direktaufrufe werden auf einen neutralen Ersatzwert begrenzt.
+- Lokale Datenschutz-Löschvorgänge auf Akku und Netzstrom sowie der
+  Abschlusswait des Legacy-v9-Pfads besitzen jetzt eine feste 70-Sekunden-
+  Grenze. Ein Timeout kann weder einen alten Panelerfolg bestätigen noch ein
+  Akku-Gerät während einer weiterlaufenden Paneltransaktion schlafen legen.
+
+### Panel-, Rahmen- und Neustartdiagnose
+
+- Neue neutrale ESPHome-Entitäten zeigen Zustellstatus, Resetgrund, aktuelle
+  E-Paper-Phase, letzten Controllerfehler, aktive Graustufen-Wellenform und die
+  Ansteuerungsart der separaten UC8179-Randelektrode. Gast-, Zugangs- und
+  WLAN-Daten werden darin nicht ausgegeben.
+- Der Treiber erfasst seine Phasen und Fehler thread-sicher. Damit lässt sich
+  unterscheiden, ob ein erzwungener Vollrefresh an Vorbereitung, SPI,
+  `BUSY_N` oder Panel-Refresh scheitert und welche Rahmenansteuerung dabei
+  tatsächlich gewählt wurde. Die bestehende validierte `LUTBD`-Korrektur und
+  Renderrevision 27 bleiben unverändert.
+- Download-Diagnosen enthalten zusätzlich ausschließlich neutrale
+  Zustellzeitpunkte, Erfolgsstatus und Fehleranzahl. Optionale Guesty-
+  Anreicherungsfehler protokollieren keine Reservierungs-/Gastkennungen oder
+  fremden Transporttexte mehr. Kontoweite Reservierungen außerhalb der
+  konfigurierten Listings werden als erwarteter Debug-Fall statt als
+  Mehrdeutigkeitswarnung behandelt.
+
+### Prüfstatus
+
+- Alle 283 Tests sind sowohl mit Home Assistant 2025.12.0 als auch 2026.2.3
+  erfolgreich; die Branch-Abdeckung beträgt 90,70 %. Ruff, Formatprüfung,
+  Mypy und Bytecode-Kompilierung sind fehlerfrei.
+- Die Tests decken zusätzlich den Completion-Timeout, Busy-Retry, parallele
+  Display-Zuordnung, echtes Payload-Coalescing, Entladen während einer
+  Zustellung, den nicht blockierenden Integrationsstart und die sichere
+  Protokollierung von Servicefehlern ab.
+- ESPHome 2026.8.1 hat die Referenzkonfiguration validiert und die Firmware
+  vollständig kompiliert. Das OTA-Abbild ist 1.506.528 Bytes groß und belegt
+  82,1 % der App-Partition; das festgelegte 95-%-Budget wird eingehalten.
+- Die Wirkung der bestätigten v10-Zustellung, der automatische Strompfad und
+  die Rahmenanzeige müssen nach der Installation noch auf einem realen E1001
+  geprüft werden.
+
+### Schnellere CI-Anlaufphase
+
+- Release-Metadaten, statische Analyse, beide Home-Assistant-Baselines und der
+  ESPHome-Firmwarebau starten nun sofort parallel. Die Release-Freigabe verlangt
+  weiterhin den vollständig erfolgreichen Gesamtworkflow; lediglich die zuvor
+  vorgeschaltete Wartezeit entfällt.
+- Der stabile ESPHome-Werkzeugcache und der inkrementelle projektbezogene
+  Buildcache werden getrennt gespeichert. Bei Firmwareänderungen muss dadurch
+  nicht mehr der vollständige rund 1-GB-Cache neu hochgeladen werden, während
+  bereits übersetzte Objektdateien weiterhin wiederverwendet werden können.
+
 ## 0.3.38 – 2026-08-25
 
 ### Verbindlicher Veröffentlichungsprozess

@@ -60,6 +60,14 @@ _CUSTOM_FIELD_DEFINITION_CACHE_SECONDS = 60 * 60
 type _ReservationObservation = tuple[str, dict[str, Any], bool]
 
 
+@dataclass(frozen=True, slots=True)
+class _ListingResolution:
+    """Privacy-safe outcome of routing one reservation projection group."""
+
+    listing_id: str = ""
+    reason: str = "unmapped"
+
+
 async def _async_gather_cancel_on_error[T](
     *coroutines: Coroutine[Any, Any, T],
 ) -> list[T]:
@@ -97,7 +105,7 @@ def _resolve_observation_listing_id(
     *,
     current: datetime,
     listings: Mapping[str, Listing],
-) -> str:
+) -> _ListingResolution:
     """Resolve multiple Guesty projections of one reservation exactly once."""
     for priority in range(4):
         candidates: list[str] = []
@@ -111,10 +119,10 @@ def _resolve_observation_listing_id(
                 if listing_id in allowed_listing_ids and listing_id not in candidates:
                     candidates.append(listing_id)
         if len(candidates) == 1:
-            return candidates[0]
+            return _ListingResolution(candidates[0], "resolved")
         if candidates:
             # Never copy one ambiguous reservation to several displays.
-            return ""
+            return _ListingResolution(reason="ambiguous")
 
     query_listing_ids = list(
         dict.fromkeys(
@@ -123,7 +131,11 @@ def _resolve_observation_listing_id(
             if query_listing_id in allowed_listing_ids
         )
     )
-    return query_listing_ids[0] if len(query_listing_ids) == 1 else ""
+    if len(query_listing_ids) == 1:
+        return _ListingResolution(query_listing_ids[0], "resolved")
+    if query_listing_ids:
+        return _ListingResolution(reason="ambiguous")
+    return _ListingResolution()
 
 
 def _projection_score(raw: Mapping[str, Any]) -> int:
@@ -1020,12 +1032,8 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
             )
         except (GuestyAuthenticationError, GuestyRateLimitError):
             raise
-        except GuestyError as err:
-            _LOGGER.debug(
-                "Could not load custom fields for reservation %s: %s",
-                reservation_id,
-                err,
-            )
+        except GuestyError:
+            _LOGGER.debug("Could not load optional Guesty reservation fields")
             return ""
 
         populated_mapping = populated if isinstance(populated, Mapping) else {}
@@ -1094,8 +1102,8 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
             guest = await self.client.async_get_guest(guest_id)
         except (GuestyAuthenticationError, GuestyRateLimitError):
             raise
-        except GuestyError as err:
-            _LOGGER.debug("Could not load Guesty guest %s: %s", guest_id, err)
+        except GuestyError:
+            _LOGGER.debug("Could not load optional Guesty guest details")
             return cached[1] if cached is not None else {}
         if guest:
             _bounded_cache_set(
@@ -1427,12 +1435,13 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                 observations = observations_by_reservation.get(reservation_id)
                 if not observations:
                     return False
-                resolved_listing_id = _resolve_observation_listing_id(
+                resolution = _resolve_observation_listing_id(
                     observations,
                     routable_listing_ids,
                     current=current,
                     listings=listings,
                 )
+                resolved_listing_id = resolution.listing_id
                 listing = listings.get(resolved_listing_id)
                 if not resolved_listing_id or listing is None:
                     return False
@@ -1504,12 +1513,13 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                         ("", verified_raw, True)
                     ]
 
-                    resolved_verified_listing_id = _resolve_observation_listing_id(
+                    verified_resolution = _resolve_observation_listing_id(
                         observations_by_reservation[reservation_id],
                         routable_listing_ids,
                         current=current,
                         listings=listings,
                     )
+                    resolved_verified_listing_id = verified_resolution.listing_id
                     if (
                         not resolved_verified_listing_id
                         or resolved_verified_listing_id not in refreshed_listing_ids
@@ -1527,15 +1537,24 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                 raise GuestyError("Could not refresh any mapped Guesty listing")
 
             ambiguous_reservations = 0
+            unmapped_reservations = 0
+            unverified_reservations = 0
             for observations in observations_by_reservation.values():
-                listing_id = _resolve_observation_listing_id(
+                resolution = _resolve_observation_listing_id(
                     observations,
                     routable_listing_ids,
                     current=current,
                     listings=listings,
                 )
-                if not listing_id or listing_id not in refreshed_listing_ids:
-                    ambiguous_reservations += 1
+                listing_id = resolution.listing_id
+                if not listing_id:
+                    if resolution.reason == "ambiguous":
+                        ambiguous_reservations += 1
+                    else:
+                        unmapped_reservations += 1
+                    continue
+                if listing_id not in refreshed_listing_ids:
+                    unverified_reservations += 1
                     continue
                 # Prefer the current/recent projection because that path also
                 # resolves the access code. A future projection remains a
@@ -1547,6 +1566,16 @@ class GuestyTerminalCoordinator(DataUpdateCoordinator[GuestyTerminalData]):
                     "Skipped %d Guesty reservation(s) with ambiguous listing "
                     "associations",
                     ambiguous_reservations,
+                )
+            if unmapped_reservations:
+                _LOGGER.debug(
+                    "Skipped %d Guesty reservation(s) outside configured listings",
+                    unmapped_reservations,
+                )
+            if unverified_reservations:
+                _LOGGER.debug(
+                    "Skipped %d Guesty reservation(s) for unverified listings",
+                    unverified_reservations,
                 )
 
             async def _normalized_listing(

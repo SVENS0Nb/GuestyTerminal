@@ -11,8 +11,11 @@ import pytest
 
 from custom_components.guesty_terminal.firmware import (
     FIRMWARE_HEADER,
+    FLASH_LAYOUT_EXPANDED,
+    FLASH_LAYOUT_LEGACY,
     FirmwareConfigError,
     FirmwareFileExistsError,
+    FirmwareFlashLayoutMigrationRequired,
     FirmwareOptions,
     render_firmware_config,
     update_managed_firmware_configs,
@@ -41,6 +44,7 @@ def _options(**updates) -> FirmwareOptions:
         "power_mode": "auto",
         "wake_interval_minutes": 30,
         "awake_seconds": 90,
+        "flash_layout": FLASH_LAYOUT_EXPANDED,
     }
     values.update(updates)
     return FirmwareOptions(**values)
@@ -73,10 +77,22 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.38") == 2
+    assert rendered.count("ref: v0.3.40") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
+    assert "flash_layout: expanded_32mb" in rendered
+    assert "flash_size: 32MB" in rendered
+    assert "enable_idf_experimental_features: true" in rendered
+
+
+def test_firmware_options_default_to_safe_legacy_flash_layout() -> None:
+    options = FirmwareOptions(
+        device_name="guestyterminal-display-3",
+        friendly_name="GuestyTerminal Display 3",
+    )
+
+    assert options.validated().flash_layout == FLASH_LAYOUT_LEGACY
 
 
 def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
@@ -90,7 +106,11 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert stored_revision is not None
     assert expected_revision.group(1) == "27"
     assert expected_revision.group(1) == stored_revision.group(1)
-    assert "guesty_terminal_update_display_v9" in package
+    assert "guesty_terminal_update_display_v10" in package
+    assert (
+        'std::string action = "${device_name}_guesty_terminal_update_display_v10";'
+        in package
+    )
     assert "    auto_clear_enabled: true\n" in package
     assert '"Bei Fragen sind wir für dich da."' not in package
     assert "id(guesty_logo_data).size() == logo_hex_length" in package
@@ -230,6 +250,8 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "lambda: return millis() / 1000.0f;" in package
     assert "id: guesty_wake_reason" in package
     assert "esp_sleep_get_wakeup_cause()" in package
+    assert "id: guesty_reset_reason" in package
+    assert "esp_reset_reason()" in package
     assert "id: guesty_refresh_display" in package
     assert "name: Display aktualisieren" in package
     refresh_start = package.index("    id: guesty_refresh_display\n")
@@ -239,7 +261,12 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "component.update: guesty_terminal_endpoint" in refresh_block
     assert "component.update: guesty_epaper" not in refresh_block
     assert "Page selection is runtime state and does not survive a reboot" in package
-    assert package.index("Page selection is runtime state") < package.index(
+    v10_start = package.index("    - action: guesty_terminal_update_display_v10\n")
+    v9_start = package.index(
+        "    - action: guesty_terminal_update_display_v9\n", v10_start
+    )
+    v10_action = package[v10_start:v9_start]
+    assert v10_action.index("Page selection is volatile") < v10_action.index(
         "lambda: return id(guesty_content_changed);"
     )
     assert "initial_value: '\"Willkommen\"'" not in package
@@ -249,12 +276,19 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "- interval: 5min" in package
     assert "id: guesty_last_booking" in package
     assert "name: Angezeigte Buchung" in package
+    assert "name: Display delivery status" in package
+    assert "name: E-paper phase" in package
+    assert "name: E-paper error" in package
+    assert "name: E-paper waveform" in package
+    assert "name: E-paper border mode" in package
     assert "last_update_successful()" in package
     assert 'state: "Keine aktive Buchung"' not in package
     assert "usb_power_probe_interval" not in package
     assert "id: guesty_enter_battery_sleep" in package
     assert "guesty_power_wake" not in package
-    assert package.count("script.execute: guesty_enter_battery_sleep") == 2
+    # Current v10, frozen v9 and the awake-window watchdog all route through
+    # the same cleanup/sleep script.
+    assert package.count("script.execute: guesty_enter_battery_sleep") == 3
     assert package.count("deep_sleep.enter: guesty_deep_sleep") == 1
     assert package.count("safe_mode.mark_successful") == 1
     assert "safe_mode:\n  boot_is_good_after: 10s" in package
@@ -350,6 +384,10 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     header = driver_path.with_suffix(".h").read_text(encoding="utf-8")
     assert "bool last_update_successful() const" in header
     assert "bool update_in_progress() const" in header
+    assert "const char *update_phase_name() const" in header
+    assert "const char *last_error_name() const" in header
+    assert "const char *active_lut_mode_name() const" in header
+    assert "const char *border_mode_name() const" in header
     component_dir = driver_path.parent
     assert "MIT License" in (component_dir / "LICENSE").read_text(encoding="utf-8")
     seeed_gfx_license = (component_dir / "SEEED_GFX_LICENSE.txt").read_text(
@@ -357,6 +395,154 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     )
     assert "Copyright (c) 2023 Bodmer" in seeed_gfx_license
     assert "Copyright (c) 2012 Adafruit Industries" in seeed_gfx_license
+
+
+def test_unused_sd_rail_is_explicitly_disabled_on_boot_and_sleep() -> None:
+    package = PACKAGE_FILE.read_text(encoding="utf-8")
+
+    assert "id: guesty_sd_power\n    pin: GPIO16" in package
+    boot = package[package.index("esphome:\n") : package.index("\napi:\n")]
+    assert "- output.turn_off: guesty_sd_power" in boot
+    sleep_start = package.index("  - id: guesty_enter_battery_sleep\n")
+    sleep_end = package.index("  - id: guesty_read_external_power\n", sleep_start)
+    assert "- output.turn_off: guesty_sd_power" in package[sleep_start:sleep_end]
+
+
+def test_panel_self_test_is_neutral_serialized_and_restores_payload() -> None:
+    package = PACKAGE_FILE.read_text(encoding="utf-8")
+
+    script_start = package.index("  - id: guesty_run_panel_self_test\n")
+    script_end = package.index("  # Keep every battery sleep entry", script_start)
+    self_test = package[script_start:script_end]
+    assert "id: guesty_self_test_page" in package
+    assert '"Vier Graustufen · weißer Außenbereich · Teilrefresh"' in package
+    assert "it.fill(COLOR_OFF)" in package
+    assert "id(guesty_epaper).request_partial_update()" in self_test
+    assert "id(guesty_epaper).last_update_was_partial()" in self_test
+    assert "id(guesty_content_id).clear()" in self_test
+    assert "id(guesty_self_test_saved_content_id)" in self_test
+    assert "script.execute: guesty_restore_payload_page" in self_test
+    assert '"requires_external_power"' in self_test
+    assert 'const std::string profile = "${power_mode}";' not in self_test
+    assert self_test.count("id(guesty_external_power).state") >= 2
+    assert "id(guesty_self_test_active)" in package
+    assert "|| id(guesty_self_test_active);" in package
+    assert "name: E-paper Hardwaretest" in package
+    assert "name: E-paper self-test" in package
+
+
+def test_firmware_flash_layout_requires_explicit_usb_migration(tmp_path) -> None:
+    expanded = render_firmware_config(_options(flash_layout=FLASH_LAYOUT_EXPANDED))
+    legacy = render_firmware_config(_options(flash_layout=FLASH_LAYOUT_LEGACY))
+    assert "flash_size: 32MB" in expanded
+    assert "flash_size: 4MB" in legacy
+    assert "enable_idf_experimental_features: true" in expanded
+    assert "enable_idf_experimental_features" not in legacy
+
+    destination = tmp_path / "guestyterminal-display-2.yaml"
+    # Model a managed pre-0.3.40 file: no explicit flash size means ESPHome's
+    # historic 4 MB default and must never be inferred as expanded.
+    pre_migration = legacy.replace("  flash_layout: legacy_4mb\n", "").replace(
+        "  flash_size: 4MB\n", ""
+    )
+    destination.write_text(pre_migration, encoding="utf-8")
+    destination.chmod(0o600)
+
+    with pytest.raises(FirmwareFlashLayoutMigrationRequired):
+        write_firmware_config(
+            tmp_path,
+            _options(flash_layout=FLASH_LAYOUT_EXPANDED),
+            overwrite=True,
+        )
+    assert destination.read_text(encoding="utf-8") == pre_migration
+
+    write_firmware_config(
+        tmp_path,
+        _options(flash_layout=FLASH_LAYOUT_EXPANDED),
+        overwrite=True,
+        confirm_usb_flash_migration=True,
+    )
+    migrated = destination.read_text(encoding="utf-8")
+    assert "flash_layout: expanded_32mb" in migrated
+    assert "flash_size: 32MB" in migrated
+
+
+def test_v10_action_acknowledges_only_confirmed_panel_delivery() -> None:
+    """Require bounded received/rendered/result signals for current firmware."""
+    package = PACKAGE_FILE.read_text(encoding="utf-8")
+    start = package.index("    - action: guesty_terminal_update_display_v10\n")
+    end = package.index("    - action: guesty_terminal_update_display_v9\n", start)
+    action = package[start:end]
+
+    assert "supports_response: status" in action
+    assert "delivery_id: string" in action
+    assert "delivery_id.size() == 24" in action
+    assert "character >= 'a' && character <= 'f'" in action
+    assert "std::string(24, '0')" in action
+    assert "id(guesty_active_delivery_id)" in action
+    assert '"__guesty_delivery_received__:" + delivery_id' not in action
+    assert '"__guesty_delivery_rendering__:" + delivery_id' not in action
+    assert '"__guesty_delivery_success__:" + delivery_id' not in action
+    assert "id(guesty_delivery_handler_busy)" in action
+    assert "__guesty_delivery_received__:" in action
+    assert "__guesty_delivery_rendering__:" in action
+    assert "__guesty_delivery_success__:" in action
+    assert "__guesty_delivery_unchanged__:" in action
+    assert "__guesty_delivery_error__:" in action
+    assert "timeout: 5s" in action
+    assert "timeout: 70s" in action
+    assert 'id(guesty_delivery_error) = "preparation_timeout"' in action
+    assert 'id(guesty_delivery_error) = "panel_timeout"' in action
+    assert 'id(guesty_delivery_error) = "panel_error"' in action
+    assert action.count("api.respond:") == 3
+    assert action.index("__guesty_delivery_received__:") < action.index(
+        "component.update: guesty_epaper"
+    )
+    assert action.index("component.update: guesty_epaper") < action.index(
+        "last_update_successful()"
+    )
+    assert action.index("last_update_successful()") < action.index(
+        "if (id(guesty_delivery_unchanged))"
+    )
+    # Failed v10 submissions must remain awake for the normal retry window;
+    # only physical success or a proven unchanged image counts as delivered.
+    success_check = action.index("last_update_successful()")
+    update_received_positions = [
+        match.start()
+        for match in re.finditer(
+            r"id\(guesty_update_received_this_boot\)\s*=\s*true", action
+        )
+    ]
+    assert len(update_received_positions) == 2
+    assert all(position > success_check for position in update_received_positions)
+    assert action.index("id(guesty_delivery_handler_busy) = false") > action.rindex(
+        "api.respond:"
+    )
+    assert action.index("id(guesty_delivery_handler_busy) = false") < action.rindex(
+        "component.update: guesty_terminal_endpoint"
+    )
+    assert "script.execute: guesty_enter_battery_sleep" in action
+    assert "Failed payloads stay awake for a retry" in action
+
+
+def test_panel_diagnostics_are_neutral_and_thread_safe() -> None:
+    """Expose controller progress without copying payload or identifiers."""
+    driver = DRIVER_FILE.read_text(encoding="utf-8")
+    header = DRIVER_FILE.with_suffix(".h").read_text(encoding="utf-8")
+
+    assert "std::atomic<uint8_t> update_phase_" in header
+    assert "std::atomic<uint8_t> last_error_" in header
+    assert "std::atomic<uint8_t> active_lut_diagnostic_" in header
+    assert "std::atomic<uint8_t> border_mode_" in header
+    assert 'return "busy_timeout";' in driver
+    assert 'return "panel_otp";' in driver
+    assert 'return "validated_lutbd";' in driver
+    assert 'return "high_z";' in driver
+    assert "this->update_phase_.store(UPDATE_PHASE_TRANSFER)" in driver
+    assert "this->update_phase_.store(UPDATE_PHASE_REFRESH)" in driver
+    assert "this->last_error_.store(UPDATE_ERROR_BUSY_TIMEOUT)" in driver
+    assert "this->active_lut_diagnostic_.store(LUT_MODE_AUTO)" in driver
+    assert "this->border_mode_.store(BORDER_MODE_UNKNOWN)" in driver
 
 
 def test_uc8179_border_uses_the_validated_panel_lut_in_both_full_modes() -> None:
@@ -507,9 +693,7 @@ def test_panel_io_does_not_block_the_esphome_api_loop() -> None:
     action_end = package.index("\nglobals:\n", action_start)
     action = package[action_start:action_end]
     first_mutation = action.index("id(guesty_update_received_this_boot) = true")
-    initial_wait = action.index(
-        "lambda: return !id(guesty_epaper).update_in_progress();"
-    )
+    initial_wait = action.index("return !id(guesty_self_test_active)")
     update_call = action.index("component.update: guesty_epaper", first_mutation)
     completion_wait = action.index(
         "lambda: return !id(guesty_epaper).update_in_progress();", update_call
@@ -944,6 +1128,9 @@ def test_privacy_state_changes_only_after_a_successful_physical_refresh() -> Non
     assert 'id(guesty_mode) != "idle"' in interval
     assert "!id(guesty_privacy_clear_pending)" in interval
     assert "Privacy clear failed; keeping the device awake" in interval
+    battery_wait = interval[battery_update:battery_success]
+    assert "timeout: 70s" in battery_wait
+    assert "!id(guesty_epaper).update_in_progress()" in battery_wait
 
     mains_clear = interval.index('id(guesty_mode) = "idle";', battery_commit)
     mains_update = interval.index(
@@ -956,6 +1143,9 @@ def test_privacy_state_changes_only_after_a_successful_physical_refresh() -> Non
         "id(guesty_screen_sensitive) = false;" not in interval[mains_clear:mains_update]
     )
     assert "Privacy clear failed; retrying while external power" in interval
+    mains_wait = interval[mains_update:mains_success]
+    assert "timeout: 70s" in mains_wait
+    assert "!id(guesty_epaper).update_in_progress()" in mains_wait
     assert "&& (id(guesty_privacy_clear_pending)" in interval
     assert "id: guesty_privacy_clear_pending" in package
     lease_start = package.index("  - id: guesty_valid_until_epoch\n")
@@ -995,6 +1185,7 @@ def test_partial_refresh_rehydrates_both_complete_controller_planes() -> None:
         ({"power_mode": "magic"}, "power mode"),
         ({"wake_interval_minutes": 4}, "Wake interval"),
         ({"awake_seconds": 10}, "Awake time"),
+        ({"flash_layout": "unsafe"}, "flash layout"),
     ],
 )
 def test_firmware_options_reject_invalid_values(updates, message) -> None:
@@ -1038,7 +1229,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.38", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.40", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -1050,8 +1241,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.38") == 2
-    assert 'version: "0.3.38"' in updated
+    assert updated.count("ref: v0.3.40") == 2
+    assert 'version: "0.3.40"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -1082,7 +1273,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
 def test_update_managed_firmware_configs_rejects_invalid_credentials(
     tmp_path, broken_line
 ) -> None:
-    valid = render_firmware_config(_options()).replace("0.3.38", "0.3.10")
+    valid = render_firmware_config(_options()).replace("0.3.40", "0.3.10")
     if "key:" in broken_line:
         invalid = valid.replace(
             next(line for line in valid.splitlines() if "key:" in line), broken_line
@@ -1119,14 +1310,14 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.38", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.40", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     future.chmod(0o600)
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.38", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.40", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")

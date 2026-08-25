@@ -149,12 +149,16 @@
           "firmware_power_mode": "Power mode",
           "firmware_wake_minutes": "Wake on battery every ... minutes",
           "firmware_awake_seconds": "Maximum awake time (seconds)",
+          "firmware_flash_layout": "Flash layout",
+          "firmware_confirm_usb_migration": "I will install a changed flash layout once by USB",
           "firmware_overwrite": "Replace an existing GuestyTerminal configuration"
         },
         "data_description": {
           "firmware_device_name": "1-24 lowercase letters, numbers, or hyphens. Unique for every display.",
           "firmware_power_mode": "Automatic detects USB power on E1001 v1.0 through the USB-UART bridge and on v1.2 through the charger.",
-          "firmware_awake_seconds": "The display sleeps earlier as soon as Home Assistant has delivered new data."
+          "firmware_awake_seconds": "The display sleeps earlier as soon as Home Assistant has delivered new data.",
+          "firmware_flash_layout": "Keep the safe 4 MB layout for existing devices. The optional 32 MB layout needs one complete USB installation and ESPHome's experimental large-flash support.",
+          "firmware_confirm_usb_migration": "Required only when replacing an existing configuration with a different layout. The next installation must then be a complete USB installation, not OTA."
         }
       }
     },
@@ -162,6 +166,7 @@
       "invalid_firmware_options": "The firmware settings are invalid.",
       "invalid_logo": "The logo could not be processed. Use a visible PNG or JPEG file up to 5 MB.",
       "firmware_file_exists": "An ESPHome file already uses this device name. Enable replacement only for a file previously created by GuestyTerminal; other files are never overwritten.",
+      "firmware_flash_migration_required": "Changing this display's flash layout requires explicit USB-migration confirmation. After creating the file, install it once through USB; do not use OTA for that migration.",
       "firmware_write_failed": "The ESPHome configuration could not be written. Verify that /config/esphome is available."
     },
     "abort": {
@@ -217,6 +222,12 @@
         "auto": "Automatic (recommended)",
         "battery": "Always battery mode",
         "mains": "Always online"
+      }
+    },
+    "firmware_flash_layout": {
+      "options": {
+        "expanded_32mb": "32 MB via USB (experimental ESPHome support)",
+        "legacy_4mb": "Safe 4 MB OTA layout (recommended)"
       }
     }
   }

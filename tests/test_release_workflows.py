@@ -54,7 +54,12 @@ def test_test_workflow_avoids_tag_rebuild_and_uses_exact_firmware_pin() -> None:
 
     assert "  push:\n    branches:" in tests
     assert "tags:" not in tests
-    assert "needs: preflight" in tests
+    assert "needs: preflight" not in tests
+    assert "Restore ESPHome toolchain cache" in tests
+    assert "Restore incremental firmware build cache" in tests
+    assert "esphome/.esphome/build/guestyterminal-display-1" in tests
+    assert "            ${{ runner.os }}-esphome-\n" in tests
+    assert "~/.platformio" not in tests
     assert "requirements-test-runner.txt" in tests
     assert "requirements-firmware.txt" in tests
     assert re.search(r"(?m)^esphome==\d+\.\d+\.\d+$", firmware_requirements)

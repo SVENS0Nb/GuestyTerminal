@@ -69,6 +69,10 @@ class GuestyEPaperGray4
   bool last_update_was_partial() const {
     return this->last_update_was_partial_.load();
   }
+  const char *update_phase_name() const;
+  const char *last_error_name() const;
+  const char *active_lut_mode_name() const;
+  const char *border_mode_name() const;
 
   float get_setup_priority() const override;
   void setup() override;
@@ -82,6 +86,32 @@ class GuestyEPaperGray4
   }
 
  protected:
+  enum UpdatePhase : uint8_t {
+    UPDATE_PHASE_IDLE = 0,
+    UPDATE_PHASE_PREPARING,
+    UPDATE_PHASE_PARTIAL,
+    UPDATE_PHASE_WAVEFORM,
+    UPDATE_PHASE_RESET,
+    UPDATE_PHASE_TRANSFER,
+    UPDATE_PHASE_REFRESH,
+    UPDATE_PHASE_SHUTDOWN,
+    UPDATE_PHASE_FAILED,
+  };
+  enum UpdateError : uint8_t {
+    UPDATE_ERROR_NONE = 0,
+    UPDATE_ERROR_COMPONENT,
+    UPDATE_ERROR_TASK_START,
+    UPDATE_ERROR_BUSY_TIMEOUT,
+    UPDATE_ERROR_SPI,
+    UPDATE_ERROR_PANEL,
+  };
+  enum BorderMode : uint8_t {
+    BORDER_MODE_UNKNOWN = 0,
+    BORDER_MODE_PANEL_OTP,
+    BORDER_MODE_VALIDATED_LUTBD,
+    BORDER_MODE_HIGH_Z,
+  };
+
   void draw_absolute_pixel_internal(int x, int y, Color color) override;
   int get_width_internal() override { return WIDTH; }
   int get_height_internal() override { return HEIGHT; }
@@ -144,6 +174,10 @@ class GuestyEPaperGray4
   std::atomic<bool> update_in_progress_{false};
   std::atomic<bool> last_update_successful_{false};
   std::atomic<bool> last_update_was_partial_{false};
+  std::atomic<uint8_t> update_phase_{UPDATE_PHASE_IDLE};
+  std::atomic<uint8_t> last_error_{UPDATE_ERROR_NONE};
+  std::atomic<uint8_t> active_lut_diagnostic_{LUT_MODE_AUTO};
+  std::atomic<uint8_t> border_mode_{BORDER_MODE_UNKNOWN};
   bool prepared_partial_available_{false};
   bool prepared_partial_requested_{false};
   bool partial_refresh_configured_{false};

@@ -149,12 +149,16 @@
           "firmware_power_mode": "Stromsparmodus",
           "firmware_wake_minutes": "Auf Akku alle ... Minuten aufwachen",
           "firmware_awake_seconds": "Maximal wach bleiben (Sekunden)",
+          "firmware_flash_layout": "Flash-Layout",
+          "firmware_confirm_usb_migration": "Geändertes Flash-Layout einmalig vollständig per USB installieren",
           "firmware_overwrite": "Vorhandene GuestyTerminal-Konfiguration ersetzen"
         },
         "data_description": {
           "firmware_device_name": "1-24 Kleinbuchstaben, Zahlen oder Bindestriche. Für jedes Display eindeutig.",
           "firmware_power_mode": "Automatisch erkennt USB-Strom beim E1001 v1.0 über den USB-UART-Baustein und bei v1.2 über den Ladecontroller.",
-          "firmware_awake_seconds": "Das Display schläft früher ein, sobald Home Assistant neue Daten geliefert hat."
+          "firmware_awake_seconds": "Das Display schläft früher ein, sobald Home Assistant neue Daten geliefert hat.",
+          "firmware_flash_layout": "Für bestehende Geräte das sichere 4-MB-Layout beibehalten. Das optionale 32-MB-Layout benötigt eine vollständige USB-Installation und ESPHomes experimentelle Large-Flash-Unterstützung.",
+          "firmware_confirm_usb_migration": "Nur beim Ersetzen einer vorhandenen Konfiguration mit anderem Layout erforderlich. Die nächste Installation muss danach vollständig per USB statt OTA erfolgen."
         }
       }
     },
@@ -162,6 +166,7 @@
       "invalid_firmware_options": "Die Firmware-Einstellungen sind ungültig.",
       "invalid_logo": "Das Logo konnte nicht verarbeitet werden. Verwende eine sichtbare PNG- oder JPEG-Datei mit maximal 5 MB.",
       "firmware_file_exists": "Unter diesem Gerätenamen existiert bereits eine ESPHome-Datei. Aktiviere Ersetzen nur für eine zuvor von GuestyTerminal erzeugte Datei; fremde Dateien werden nie überschrieben.",
+      "firmware_flash_migration_required": "Für den Wechsel des Flash-Layouts ist die ausdrückliche USB-Migrationsbestätigung erforderlich. Installiere die erzeugte Datei anschließend einmal vollständig per USB und nicht per OTA.",
       "firmware_write_failed": "Die ESPHome-Konfiguration konnte nicht geschrieben werden. Prüfe, ob /config/esphome verfügbar ist."
     },
     "abort": {
@@ -217,6 +222,12 @@
         "auto": "Automatisch (empfohlen)",
         "battery": "Immer Akkubetrieb",
         "mains": "Immer online"
+      }
+    },
+    "firmware_flash_layout": {
+      "options": {
+        "expanded_32mb": "32 MB per USB (experimentelle ESPHome-Unterstützung)",
+        "legacy_4mb": "Sicheres 4-MB-OTA-Layout (empfohlen)"
       }
     }
   }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -36,7 +37,9 @@ ACTION_V6 = "guestyterminal_display_1_guesty_terminal_update_display_v6"
 ACTION_V7 = "guestyterminal_display_1_guesty_terminal_update_display_v7"
 ACTION_V8 = "guestyterminal_display_1_guesty_terminal_update_display_v8"
 ACTION_V9 = "guestyterminal_display_1_guesty_terminal_update_display_v9"
+ACTION_V10 = "guestyterminal_display_1_guesty_terminal_update_display_v10"
 SECOND_ACTION_V9 = "guestyterminal_display_2_guesty_terminal_update_display_v9"
+SECOND_ACTION_V10 = "guestyterminal_display_2_guesty_terminal_update_display_v10"
 
 
 class FakeServices:
@@ -60,7 +63,9 @@ class FakeServices:
                 ACTION_V7,
                 ACTION_V8,
                 ACTION_V9,
+                ACTION_V10,
                 SECOND_ACTION_V9,
+                SECOND_ACTION_V10,
             )
         )
 
@@ -392,6 +397,312 @@ def test_v9_action_receives_empty_room_page_without_global_logo() -> None:
     assert len(sent["base_content_id"]) == 24
 
 
+def _endpoint_event(state: str, endpoint: str = ENDPOINT) -> SimpleNamespace:
+    return SimpleNamespace(
+        data={"new_state": SimpleNamespace(state=state), "entity_id": endpoint}
+    )
+
+
+def test_v10_waits_for_physical_success_acknowledgement() -> None:
+    runtime, hass, _coordinator = _runtime(state=ACTION_V10)
+
+    async def exercise() -> bool:
+        delivery = asyncio.create_task(runtime.async_push_endpoint(ENDPOINT))
+        while not hass.services.calls:
+            await asyncio.sleep(0)
+        sent = hass.services.calls[0][2]
+        delivery_id = sent["delivery_id"]
+        assert len(delivery_id) == 24
+        assert hass.services.calls[0][3] is False
+        assert not delivery.done()
+
+        runtime._handle_endpoint_state(
+            _endpoint_event(f"__guesty_delivery_received__:{delivery_id}")
+        )
+        runtime._handle_endpoint_state(
+            _endpoint_event(f"__guesty_delivery_rendering__:{delivery_id}")
+        )
+        assert not delivery.done()
+        runtime._handle_endpoint_state(
+            _endpoint_event(f"__guesty_delivery_success__:{delivery_id}")
+        )
+        runtime._handle_endpoint_state(_endpoint_event(ACTION_V10))
+        return await delivery
+
+    assert asyncio.run(exercise())
+    diagnostic = runtime.delivery_diagnostic(ENDPOINT)
+    assert diagnostic.status == "success"
+    assert diagnostic.attempted_at is not None
+    assert diagnostic.confirmed_at is not None
+    assert diagnostic.failures == 0
+    assert runtime._delivery_waiters == {}
+
+
+def test_v10_device_error_fails_without_exposing_payload() -> None:
+    runtime, hass, _coordinator = _runtime(state=ACTION_V10)
+
+    async def exercise() -> bool:
+        delivery = asyncio.create_task(runtime.async_push_endpoint(ENDPOINT))
+        while not hass.services.calls:
+            await asyncio.sleep(0)
+        delivery_id = hass.services.calls[0][2]["delivery_id"]
+        runtime._handle_endpoint_state(
+            _endpoint_event(f"__guesty_delivery_received__:{delivery_id}")
+        )
+        runtime._handle_endpoint_state(
+            _endpoint_event(f"__guesty_delivery_error__:{delivery_id}:panel_timeout")
+        )
+        runtime._handle_endpoint_state(_endpoint_event(ACTION_V10))
+        return await delivery
+
+    assert not asyncio.run(exercise())
+    diagnostic = runtime.delivery_diagnostic(ENDPOINT)
+    assert diagnostic.status == "panel_timeout"
+    assert diagnostic.failures == 1
+
+
+def test_v10_reconnect_replay_does_not_start_a_duplicate_delivery() -> None:
+    runtime, hass, _coordinator = _runtime(state=ACTION_V10)
+
+    async def exercise() -> bool:
+        delivery = asyncio.create_task(runtime.async_push_endpoint(ENDPOINT))
+        while not hass.services.calls:
+            await asyncio.sleep(0)
+        delivery_id = hass.services.calls[0][2]["delivery_id"]
+        runtime._handle_endpoint_state(
+            _endpoint_event(f"__guesty_delivery_received__:{delivery_id}")
+        )
+        runtime._handle_endpoint_state(
+            _endpoint_event(f"__guesty_delivery_rendering__:{delivery_id}")
+        )
+        runtime._handle_endpoint_state(_endpoint_event(ACTION_V10))
+        assert len(hass.services.calls) == 1
+        runtime._handle_endpoint_state(
+            _endpoint_event(f"__guesty_delivery_unchanged__:{delivery_id}")
+        )
+        runtime._handle_endpoint_state(_endpoint_event(ACTION_V10))
+        return await delivery
+
+    assert asyncio.run(exercise())
+    assert len(hass.services.calls) == 1
+    assert runtime.delivery_diagnostic(ENDPOINT).status == "unchanged"
+
+
+def test_v10_receipt_timeout_is_bounded_and_cleans_waiter(monkeypatch) -> None:
+    runtime_module = sys.modules[GuestyTerminalRuntime.__module__]
+    monkeypatch.setattr(runtime_module, "_DELIVERY_RECEIPT_TIMEOUT", 0.001)
+    runtime, hass, _coordinator = _runtime(state=ACTION_V10)
+
+    assert not asyncio.run(runtime.async_push_endpoint(ENDPOINT))
+
+    assert len(hass.services.calls) == 1
+    assert runtime.delivery_diagnostic(ENDPOINT).status == "not_received"
+    assert runtime._delivery_waiters == {}
+
+
+def test_v10_completion_timeout_is_bounded_and_cleans_waiter(monkeypatch) -> None:
+    runtime_module = sys.modules[GuestyTerminalRuntime.__module__]
+    monkeypatch.setattr(runtime_module, "_DELIVERY_COMPLETION_TIMEOUT", 0.001)
+    runtime, hass, _coordinator = _runtime(state=ACTION_V10)
+
+    async def exercise() -> bool:
+        delivery = asyncio.create_task(runtime.async_push_endpoint(ENDPOINT))
+        while not hass.services.calls:
+            await asyncio.sleep(0)
+        delivery_id = hass.services.calls[0][2]["delivery_id"]
+        runtime._handle_endpoint_state(
+            _endpoint_event(f"__guesty_delivery_received__:{delivery_id}")
+        )
+        return await delivery
+
+    assert not asyncio.run(exercise())
+    assert runtime.delivery_diagnostic(ENDPOINT).status == "completion_timeout"
+    assert runtime._delivery_waiters == {}
+
+
+def test_v10_battery_unavailability_finishes_without_action_restore_wait() -> None:
+    runtime, hass, _coordinator = _runtime(state=ACTION_V10)
+
+    async def exercise() -> bool:
+        delivery = asyncio.create_task(runtime.async_push_endpoint(ENDPOINT))
+        while not hass.services.calls:
+            await asyncio.sleep(0)
+        delivery_id = hass.services.calls[0][2]["delivery_id"]
+        runtime._handle_endpoint_state(
+            _endpoint_event(f"__guesty_delivery_received__:{delivery_id}")
+        )
+        runtime._handle_endpoint_state(
+            _endpoint_event(f"__guesty_delivery_success__:{delivery_id}")
+        )
+        runtime._handle_endpoint_state(_endpoint_event("unavailable"))
+        return await asyncio.wait_for(delivery, timeout=0.1)
+
+    assert asyncio.run(exercise())
+    assert ENDPOINT not in runtime._delivery_status_restores
+
+
+def test_v10_acknowledgements_are_isolated_per_display() -> None:
+    first_listing = Listing("listing-1", "Loft One")
+    second_listing = Listing("listing-2", "Loft Two")
+    runtime, hass, coordinator = _runtime(
+        state=None,
+        payload=DisplayPayload.idle(first_listing),
+    )
+    coordinator.data.payloads[SECOND_ENDPOINT] = DisplayPayload.idle(second_listing)
+    coordinator.data.listings[second_listing.listing_id] = second_listing
+    coordinator._mappings.append(
+        MappingOptions(SECOND_ENDPOINT, second_listing.listing_id)
+    )
+    hass.states.states = {
+        ENDPOINT: SimpleNamespace(state=ACTION_V10),
+        SECOND_ENDPOINT: SimpleNamespace(state=SECOND_ACTION_V10),
+    }
+
+    async def exercise() -> tuple[bool, bool]:
+        first = asyncio.create_task(runtime.async_push_endpoint(ENDPOINT))
+        second = asyncio.create_task(runtime.async_push_endpoint(SECOND_ENDPOINT))
+        while len(hass.services.calls) < 2:
+            await asyncio.sleep(0)
+        calls = {call[1]: call[2]["delivery_id"] for call in hass.services.calls}
+        first_id = calls[ACTION_V10]
+        second_id = calls[SECOND_ACTION_V10]
+
+        runtime._handle_endpoint_state(
+            _endpoint_event(f"__guesty_delivery_received__:{first_id}")
+        )
+        runtime._handle_endpoint_state(
+            _endpoint_event(f"__guesty_delivery_success__:{first_id}")
+        )
+        runtime._handle_endpoint_state(_endpoint_event(ACTION_V10))
+        await asyncio.sleep(0)
+        assert first.done()
+        assert not second.done()
+
+        runtime._handle_endpoint_state(
+            _endpoint_event(
+                f"__guesty_delivery_received__:{second_id}", SECOND_ENDPOINT
+            )
+        )
+        runtime._handle_endpoint_state(
+            _endpoint_event(
+                f"__guesty_delivery_unchanged__:{second_id}", SECOND_ENDPOINT
+            )
+        )
+        runtime._handle_endpoint_state(
+            _endpoint_event(SECOND_ACTION_V10, SECOND_ENDPOINT)
+        )
+        return await first, await second
+
+    assert asyncio.run(exercise()) == (True, True)
+    assert runtime.delivery_diagnostic(ENDPOINT).status == "success"
+    assert runtime.delivery_diagnostic(SECOND_ENDPOINT).status == "unchanged"
+
+
+def test_v10_coalesces_obsolete_payloads_and_sends_the_newest() -> None:
+    runtime, hass, _coordinator = _runtime(state=ACTION_V10)
+    first_payload = DisplayPayload.idle(Listing("listing-1", "First"))
+    obsolete_payload = DisplayPayload.idle(Listing("listing-2", "Obsolete"))
+    newest_payload = DisplayPayload.idle(Listing("listing-3", "Newest"))
+
+    async def acknowledge(call_index: int) -> None:
+        while len(hass.services.calls) <= call_index:
+            await asyncio.sleep(0)
+        delivery_id = hass.services.calls[call_index][2]["delivery_id"]
+        runtime._handle_endpoint_state(
+            _endpoint_event(f"__guesty_delivery_received__:{delivery_id}")
+        )
+        runtime._handle_endpoint_state(
+            _endpoint_event(f"__guesty_delivery_success__:{delivery_id}")
+        )
+        runtime._handle_endpoint_state(_endpoint_event(ACTION_V10))
+
+    async def exercise() -> tuple[bool, bool, bool]:
+        first = asyncio.create_task(
+            runtime._async_send_payload(ENDPOINT, first_payload)
+        )
+        while not hass.services.calls:
+            await asyncio.sleep(0)
+        obsolete = asyncio.create_task(
+            runtime._async_send_payload(ENDPOINT, obsolete_payload)
+        )
+        newest = asyncio.create_task(
+            runtime._async_send_payload(ENDPOINT, newest_payload)
+        )
+        await acknowledge(0)
+        await acknowledge(1)
+        return await first, await obsolete, await newest
+
+    assert asyncio.run(exercise()) == (True, True, True)
+    assert len(hass.services.calls) == 2
+    assert [call[2]["property_name"] for call in hass.services.calls] == [
+        "FIRST",
+        "NEWEST",
+    ]
+
+
+def test_v10_busy_response_retries_and_then_confirms(monkeypatch) -> None:
+    runtime, hass, _coordinator = _runtime(state=ACTION_V10)
+    runtime._pending_endpoint_pushes.add(ENDPOINT)
+    real_sleep = asyncio.sleep
+    release_backoff = asyncio.Event()
+
+    async def controlled_sleep(delay: float) -> None:
+        if delay:
+            await release_backoff.wait()
+        else:
+            await real_sleep(0)
+
+    monkeypatch.setattr(asyncio, "sleep", controlled_sleep)
+
+    async def exercise() -> bool:
+        delivery = asyncio.create_task(
+            runtime._async_push_endpoint_with_retry(ENDPOINT)
+        )
+        while not hass.services.calls:
+            await real_sleep(0)
+        first_id = hass.services.calls[0][2]["delivery_id"]
+        runtime._handle_endpoint_state(
+            _endpoint_event(f"__guesty_delivery_error__:{first_id}:busy")
+        )
+        runtime._handle_endpoint_state(_endpoint_event(ACTION_V10))
+        await real_sleep(0)
+        release_backoff.set()
+        while len(hass.services.calls) < 2:
+            await real_sleep(0)
+        second_id = hass.services.calls[1][2]["delivery_id"]
+        runtime._handle_endpoint_state(
+            _endpoint_event(f"__guesty_delivery_received__:{second_id}")
+        )
+        runtime._handle_endpoint_state(
+            _endpoint_event(f"__guesty_delivery_success__:{second_id}")
+        )
+        runtime._handle_endpoint_state(_endpoint_event(ACTION_V10))
+        return await delivery
+
+    assert asyncio.run(exercise())
+    assert len(hass.services.calls) == 2
+    assert runtime.delivery_diagnostic(ENDPOINT).status == "success"
+    assert runtime.delivery_diagnostic(ENDPOINT).failures == 1
+
+
+def test_v10_stop_resolves_an_active_delivery_without_leaking_waiters() -> None:
+    runtime, hass, _coordinator = _runtime(state=ACTION_V10)
+
+    async def exercise() -> bool:
+        delivery = asyncio.create_task(runtime.async_push_endpoint(ENDPOINT))
+        while not hass.services.calls:
+            await asyncio.sleep(0)
+        delivery_id = hass.services.calls[0][2]["delivery_id"]
+        runtime._handle_endpoint_state(
+            _endpoint_event(f"__guesty_delivery_received__:{delivery_id}")
+        )
+        await runtime.async_stop()
+        return await delivery
+
+    assert not asyncio.run(exercise())
+    assert runtime._delivery_waiters == {}
+
+
 def test_v8_action_stays_compatible_without_empty_room_fields() -> None:
     runtime, hass, _coordinator = _runtime(state=ACTION_V8)
 
@@ -569,10 +880,16 @@ def test_expired_empty_room_page_does_not_resend_guest_notes() -> None:
     assert sent["special_requests"] == ""
 
 
-def test_service_errors_are_isolated() -> None:
-    runtime, hass, _ = _runtime(failure=RuntimeError("disconnected"))
-    asyncio.run(runtime.async_push_endpoint(ENDPOINT))
+def test_service_errors_are_isolated_without_logging_payload_data(caplog) -> None:
+    private_marker = "private-door-code-4827"
+    runtime, hass, _ = _runtime(failure=RuntimeError(private_marker))
+
+    with caplog.at_level(logging.DEBUG, logger=GuestyTerminalRuntime.__module__):
+        asyncio.run(runtime.async_push_endpoint(ENDPOINT))
+
     assert len(hass.services.calls) == 1
+    assert "Could not submit a GuestyTerminal display update" in caplog.text
+    assert private_marker not in caplog.text
 
 
 def test_endpoint_entity_rename_migrates_mapping_and_schedules_reload() -> None:
@@ -687,6 +1004,8 @@ def test_start_stop_and_callbacks(monkeypatch) -> None:
     asyncio.run(runtime.async_start())
     assert callbacks["endpoints"] == [ENDPOINT]
     assert callbacks.get("delay", True)
+    startup_tasks = len(hass.tasks)
+    assert startup_tasks == 1
 
     callbacks["state"](SimpleNamespace(data={"new_state": None}))
     callbacks["state"](
@@ -699,15 +1018,42 @@ def test_start_stop_and_callbacks(monkeypatch) -> None:
     )
     assert callbacks["delay"] == 2
     callbacks["later"](datetime.now(UTC))
-    assert len(hass.tasks) == 1
+    assert len(hass.tasks) == startup_tasks + 1
     assert ENDPOINT in runtime._pending_endpoint_pushes
 
     coordinator.listener()
-    assert len(hass.tasks) == 2
+    assert len(hass.tasks) == startup_tasks + 2
     asyncio.run(runtime.async_stop())
     assert runtime._unsubscribers == []
     assert "state" in unsubscribed
     assert runtime._pending_endpoint_pushes == set()
+
+
+def test_start_does_not_wait_for_physical_display_acknowledgement(monkeypatch) -> None:
+    runtime_module = sys.modules[GuestyTerminalRuntime.__module__]
+    monkeypatch.setattr(
+        runtime_module,
+        "async_track_state_change_event",
+        lambda _hass, _entities, _callback: lambda: None,
+    )
+    runtime, hass, _coordinator = _runtime(state=ACTION_V10)
+    started = asyncio.Event()
+
+    async def stalled_push(_runtime, _endpoint):
+        started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(GuestyTerminalRuntime, "async_push_endpoint", stalled_push)
+
+    async def exercise() -> None:
+        hass.async_create_task = asyncio.create_task
+        await asyncio.wait_for(runtime.async_start(), timeout=0.1)
+        await asyncio.wait_for(started.wait(), timeout=0.1)
+        assert len(runtime._tasks) == 1
+        await runtime.async_stop()
+
+    asyncio.run(exercise())
+    assert runtime._tasks == set()
 
 
 def test_reconnect_push_retries_until_esphome_action_is_registered(

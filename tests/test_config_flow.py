@@ -29,7 +29,9 @@ from custom_components.guesty_terminal.const import (
     CONF_EMPTY_PAGE_TITLE,
     CONF_ENDPOINT_ENTITY,
     CONF_FIRMWARE_AWAKE_SECONDS,
+    CONF_FIRMWARE_CONFIRM_USB_MIGRATION,
     CONF_FIRMWARE_DEVICE_NAME,
+    CONF_FIRMWARE_FLASH_LAYOUT,
     CONF_FIRMWARE_FRIENDLY_NAME,
     CONF_FIRMWARE_OVERWRITE,
     CONF_FIRMWARE_POWER_MODE,
@@ -598,6 +600,9 @@ def test_options_firmware_writes_esphome_config(tmp_path) -> None:
     form = asyncio.run(flow.async_step_firmware())
     assert form["type"] == "form"
     assert form["step_id"] == "firmware"
+    defaults = form["data_schema"]({})
+    assert defaults[CONF_FIRMWARE_FLASH_LAYOUT] == "legacy_4mb"
+    assert defaults[CONF_FIRMWARE_CONFIRM_USB_MIGRATION] is False
 
     result = asyncio.run(
         flow.async_step_firmware(
@@ -607,6 +612,8 @@ def test_options_firmware_writes_esphome_config(tmp_path) -> None:
                 CONF_FIRMWARE_POWER_MODE: "auto",
                 CONF_FIRMWARE_WAKE_MINUTES: 30,
                 CONF_FIRMWARE_AWAKE_SECONDS: 90,
+                CONF_FIRMWARE_FLASH_LAYOUT: "expanded_32mb",
+                CONF_FIRMWARE_CONFIRM_USB_MIGRATION: False,
                 CONF_FIRMWARE_OVERWRITE: False,
             }
         )
@@ -615,7 +622,10 @@ def test_options_firmware_writes_esphome_config(tmp_path) -> None:
     assert result["reason"] == "firmware_created"
     generated = tmp_path / "esphome" / "guestyterminal-lobby.yaml"
     assert generated.exists()
-    assert "battery_sleep_duration: 30min" in generated.read_text(encoding="utf-8")
+    generated_content = generated.read_text(encoding="utf-8")
+    assert "battery_sleep_duration: 30min" in generated_content
+    assert "flash_layout: expanded_32mb" in generated_content
+    assert "flash_size: 32MB" in generated_content
 
 
 def test_options_mapping_aborts_without_displays_or_listings(monkeypatch) -> None:

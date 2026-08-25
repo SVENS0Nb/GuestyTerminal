@@ -149,12 +149,16 @@
           "firmware_power_mode": "Modo de alimentación",
           "firmware_wake_minutes": "Despertar con batería cada … minutos",
           "firmware_awake_seconds": "Tiempo máximo despierto (segundos)",
+          "firmware_flash_layout": "Distribución de memoria flash",
+          "firmware_confirm_usb_migration": "Instalaré una distribución modificada una vez completamente por USB",
           "firmware_overwrite": "Sustituir una configuración GuestyTerminal existente"
         },
         "data_description": {
           "firmware_device_name": "Entre 1 y 24 letras minúsculas, números o guiones. Debe ser único para cada pantalla.",
           "firmware_power_mode": "Automático detecta el USB mediante el puente USB-UART en el E1001 v1.0 y mediante el controlador de carga en v1.2.",
-          "firmware_awake_seconds": "La pantalla vuelve a dormir antes en cuanto Home Assistant entrega los datos nuevos."
+          "firmware_awake_seconds": "La pantalla vuelve a dormir antes en cuanto Home Assistant entrega los datos nuevos.",
+          "firmware_flash_layout": "Mantén la distribución segura de 4 MB en los dispositivos existentes. La distribución opcional de 32 MB requiere una instalación USB completa y el soporte experimental de ESPHome para flash grande.",
+          "firmware_confirm_usb_migration": "Solo es necesario al sustituir una configuración existente por otra distribución. La siguiente instalación debe ser completa por USB, no OTA."
         }
       }
     },
@@ -162,6 +166,7 @@
       "invalid_firmware_options": "Los ajustes del firmware no son válidos.",
       "invalid_logo": "No se pudo procesar el logotipo. Usa un PNG o JPEG visible de hasta 5 MB.",
       "firmware_file_exists": "Ya existe un archivo ESPHome con este nombre. Activa la sustitución solo para una configuración creada por GuestyTerminal.",
+      "firmware_flash_migration_required": "Cambiar la distribución flash requiere confirmar explícitamente la migración USB. Instala después el archivo una vez completamente por USB, no mediante OTA.",
       "firmware_write_failed": "No se pudo escribir la configuración ESPHome. Comprueba que /config/esphome esté disponible."
     },
     "abort": {
@@ -197,6 +202,12 @@
         "auto": "Automático (recomendado)",
         "battery": "Siempre con batería",
         "mains": "Siempre conectado"
+      }
+    },
+    "firmware_flash_layout": {
+      "options": {
+        "expanded_32mb": "32 MB por USB (soporte experimental de ESPHome)",
+        "legacy_4mb": "Distribución OTA segura de 4 MB (recomendada)"
       }
     }
   }

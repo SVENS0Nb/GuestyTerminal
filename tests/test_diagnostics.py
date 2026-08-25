@@ -13,6 +13,7 @@ from custom_components.guesty_terminal.models import (
     Listing,
     MappingOptions,
 )
+from custom_components.guesty_terminal.runtime import DisplayDeliveryDiagnostic
 
 
 def test_diagnostics_allow_list_excludes_guest_and_credentials() -> None:
@@ -50,14 +51,23 @@ def test_diagnostics_allow_list_excludes_guest_and_credentials() -> None:
         last_update_success=False,
         last_exception=RuntimeError("must-not-appear"),
     )
+    runtime = SimpleNamespace(
+        coordinator=coordinator,
+        delivery_diagnostic=lambda _endpoint: DisplayDeliveryDiagnostic(
+            status="success",
+            attempted_at="2026-08-25T18:00:00+00:00",
+            confirmed_at="2026-08-25T18:00:20+00:00",
+            failures=1,
+        ),
+    )
     entry = SimpleNamespace(
         options={"client_secret": "guesty-secret", "logo_data": "opaque-logo"},
-        runtime_data=SimpleNamespace(coordinator=coordinator),
+        runtime_data=runtime,
     )
     hass = SimpleNamespace(
         states=SimpleNamespace(
             get=lambda _entity: SimpleNamespace(
-                state="display_guesty_terminal_update_display_v9"
+                state="display_guesty_terminal_update_display_v10"
             )
         )
     )
@@ -69,6 +79,9 @@ def test_diagnostics_allow_list_excludes_guest_and_credentials() -> None:
     assert diagnostics["coordinator"]["last_exception_type"] == "RuntimeError"
     assert diagnostics["displays"][0]["contains_door_code"] is True
     assert diagnostics["displays"][0]["contains_wifi"] is True
+    assert diagnostics["displays"][0]["action_version"] == 10
+    assert diagnostics["displays"][0]["delivery_status"] == "success"
+    assert diagnostics["displays"][0]["delivery_failures"] == 1
     for secret in (
         "guesty-secret",
         "wifi-secret",

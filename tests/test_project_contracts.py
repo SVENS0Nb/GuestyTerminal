@@ -50,8 +50,10 @@ def test_ci_exercises_minimum_home_assistant_and_real_firmware_build() -> None:
     )
     assert "litellm==1.94.3" in minimum_constraints
     assert "pycares<5" in minimum_constraints
-    assert "esphome config esphome/guestyterminal-display-1.yaml" in workflow
-    assert "esphome compile esphome/guestyterminal-display-1.yaml" in workflow
+    assert "flash_layout: legacy_4mb" in workflow
+    assert "flash_layout: expanded_32mb" in workflow
+    assert "config esphome/guestyterminal-display-1.yaml" in workflow
+    assert "compile esphome/guestyterminal-display-1.yaml" in workflow
     assert "-name firmware.ota.bin" in workflow
     assert 'test "$firmware_size" -le "$maximum_budget"' in workflow
     assert "GENERATE_A_32_BYTE_BASE64_KEY" in (

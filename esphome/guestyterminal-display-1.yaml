@@ -5,6 +5,11 @@ substitutions:
   battery_sleep_duration: 30min
   awake_duration_seconds: "90"
   gray_lut_mode: auto
+  # Keep this existing OTA device on its current partition table. Select
+  # expanded_32mb only together with a one-time complete USB installation.
+  flash_layout: legacy_4mb
+  flash_size: 4MB
+  large_flash_experimental: "false"
 
 external_components:
   - source:
@@ -21,12 +26,15 @@ esphome:
   friendly_name: ${friendly_name}
   project:
     name: guestyterminal.reterminal-e1001
-    version: "0.3.38"
+    version: "0.3.40"
 
 esp32:
   board: esp32-s3-devkitc-1
+  flash_size: ${flash_size}
   framework:
     type: arduino
+    advanced:
+      enable_idf_experimental_features: ${large_flash_experimental}
 
 logger:
   hardware_uart: UART0

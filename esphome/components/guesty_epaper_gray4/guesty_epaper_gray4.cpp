@@ -82,10 +82,76 @@ static constexpr uint8_t LUT_KK_GRAY[42] = {
 
 float GuestyEPaperGray4::get_setup_priority() const { return setup_priority::PROCESSOR; }
 
+const char *GuestyEPaperGray4::update_phase_name() const {
+  switch (this->update_phase_.load()) {
+    case UPDATE_PHASE_PREPARING:
+      return "preparing";
+    case UPDATE_PHASE_PARTIAL:
+      return "partial";
+    case UPDATE_PHASE_WAVEFORM:
+      return "waveform";
+    case UPDATE_PHASE_RESET:
+      return "reset";
+    case UPDATE_PHASE_TRANSFER:
+      return "transfer";
+    case UPDATE_PHASE_REFRESH:
+      return "refresh";
+    case UPDATE_PHASE_SHUTDOWN:
+      return "shutdown";
+    case UPDATE_PHASE_FAILED:
+      return "failed";
+    default:
+      return "idle";
+  }
+}
+
+const char *GuestyEPaperGray4::last_error_name() const {
+  switch (this->last_error_.load()) {
+    case UPDATE_ERROR_COMPONENT:
+      return "component";
+    case UPDATE_ERROR_TASK_START:
+      return "task_start";
+    case UPDATE_ERROR_BUSY_TIMEOUT:
+      return "busy_timeout";
+    case UPDATE_ERROR_SPI:
+      return "spi";
+    case UPDATE_ERROR_PANEL:
+      return "panel";
+    default:
+      return "none";
+  }
+}
+
+const char *GuestyEPaperGray4::active_lut_mode_name() const {
+  switch (this->active_lut_diagnostic_.load()) {
+    case LUT_MODE_CUSTOM:
+      return "custom";
+    case LUT_MODE_OTP:
+      return "otp";
+    default:
+      return "undetermined";
+  }
+}
+
+const char *GuestyEPaperGray4::border_mode_name() const {
+  switch (this->border_mode_.load()) {
+    case BORDER_MODE_PANEL_OTP:
+      return "panel_otp";
+    case BORDER_MODE_VALIDATED_LUTBD:
+      return "validated_lutbd";
+    case BORDER_MODE_HIGH_Z:
+      return "high_z";
+    default:
+      return "undetermined";
+  }
+}
+
 void GuestyEPaperGray4::setup() {
   this->init_internal_(this->get_buffer_length_());
   if (this->buffer_ == nullptr) {
     ESP_LOGE(TAG, "Could not allocate the 96 KiB grayscale framebuffer");
+    this->last_error_.store(UPDATE_ERROR_COMPONENT);
+    this->update_phase_.store(UPDATE_PHASE_FAILED);
     this->mark_failed();
     return;
   }
@@ -103,6 +169,8 @@ void GuestyEPaperGray4::update() {
     ESP_LOGW(TAG, "Ignoring overlapping E-paper update request");
     return;
   }
+  this->update_phase_.store(UPDATE_PHASE_PREPARING);
+  this->last_error_.store(UPDATE_ERROR_NONE);
   this->last_update_successful_.store(false);
   this->last_update_was_partial_.store(false);
 
@@ -118,6 +186,8 @@ void GuestyEPaperGray4::update() {
 
   this->do_update_();
   if (this->is_failed()) {
+    this->last_error_.store(UPDATE_ERROR_COMPONENT);
+    this->update_phase_.store(UPDATE_PHASE_FAILED);
     this->update_in_progress_.store(false);
     return;
   }
@@ -135,6 +205,8 @@ void GuestyEPaperGray4::update() {
       GuestyEPaperGray4::update_task_, "guesty_epaper", 8192, this, 1, nullptr);
   if (task_created != pdPASS) {
     ESP_LOGE(TAG, "Could not start the E-paper refresh task");
+    this->last_error_.store(UPDATE_ERROR_TASK_START);
+    this->update_phase_.store(UPDATE_PHASE_FAILED);
     this->status_set_warning();
     this->update_in_progress_.store(false);
   }
@@ -148,10 +220,12 @@ void GuestyEPaperGray4::perform_prepared_update_() {
   const bool partial_requested = this->prepared_partial_requested_;
 
   if (partial_available) {
+    this->update_phase_.store(UPDATE_PHASE_PARTIAL);
     this->extract_partial_bitmap_(this->partial_current_.data());
     if (std::memcmp(this->partial_previous_.data(), this->partial_current_.data(),
                     this->partial_buffer_length_()) == 0) {
       this->last_update_successful_.store(true);
+      this->update_phase_.store(UPDATE_PHASE_IDLE);
       this->update_in_progress_.store(false);
       return;
     }
@@ -159,6 +233,7 @@ void GuestyEPaperGray4::perform_prepared_update_() {
                                this->partial_current_.data())) {
       this->last_update_successful_.store(true);
       this->last_update_was_partial_.store(true);
+      this->update_phase_.store(UPDATE_PHASE_IDLE);
       this->store_retained_partial_frame_(retained_partial_frame.partial_count + 1);
       this->update_in_progress_.store(false);
       return;
@@ -172,10 +247,15 @@ void GuestyEPaperGray4::perform_prepared_update_() {
 
   const bool successful = this->display_();
   this->last_update_successful_.store(successful);
-  if (successful)
+  if (successful) {
+    this->update_phase_.store(UPDATE_PHASE_IDLE);
     this->store_retained_partial_frame_(0);
-  else
+  } else {
+    if (this->last_error_.load() == UPDATE_ERROR_NONE)
+      this->last_error_.store(UPDATE_ERROR_PANEL);
+    this->update_phase_.store(UPDATE_PHASE_FAILED);
     this->invalidate_retained_partial_frame_();
+  }
   this->update_in_progress_.store(false);
 }
 
@@ -289,6 +369,7 @@ bool GuestyEPaperGray4::wait_until_idle_(const char *phase,
   while (!this->busy_pin_->digital_read()) {
     if (millis() - started > timeout_ms) {
       ESP_LOGE(TAG, "Display BUSY timeout (%s)", phase);
+      this->last_error_.store(UPDATE_ERROR_BUSY_TIMEOUT);
       this->status_set_warning();
       return false;
     }
@@ -340,6 +421,7 @@ bool GuestyEPaperGray4::release_spi_bus_for_gpio_read_() {
     this->spi_setup();
     if (!this->spi_is_ready()) {
       ESP_LOGE(TAG, "Could not recover the E-paper SPI device");
+      this->last_error_.store(UPDATE_ERROR_SPI);
       this->status_set_warning();
       this->mark_failed();
     }
@@ -375,6 +457,7 @@ bool GuestyEPaperGray4::restore_spi_bus_after_gpio_read_() {
   if (error != ESP_OK) {
     ESP_LOGE(TAG, "Could not restore SPI2 after OTP read (error 0x%X)",
              static_cast<unsigned int>(error));
+    this->last_error_.store(UPDATE_ERROR_SPI);
     this->status_set_warning();
     this->mark_failed();
     return false;
@@ -382,6 +465,7 @@ bool GuestyEPaperGray4::restore_spi_bus_after_gpio_read_() {
   this->spi_setup();
   if (!this->spi_is_ready()) {
     ESP_LOGE(TAG, "Could not restore the E-paper SPI device after OTP read");
+    this->last_error_.store(UPDATE_ERROR_SPI);
     this->status_set_warning();
     this->mark_failed();
     return false;
@@ -640,6 +724,7 @@ bool GuestyEPaperGray4::select_lut_mode_() {
   }
 
   this->lut_mode_selected_ = true;
+  this->active_lut_diagnostic_.store(this->active_lut_mode_);
   ESP_LOGI(TAG, "Selected grayscale waveform: %s",
            this->active_lut_mode_ == LUT_MODE_OTP ? "panel OTP"
                                                   : "Seeed register LUTs");
@@ -654,6 +739,9 @@ void GuestyEPaperGray4::write_lut_(uint8_t command, const uint8_t *lut, size_t l
 }
 
 bool GuestyEPaperGray4::init_custom_gray_mode_() {
+  this->border_mode_.store(this->border_lut_available_
+                               ? BORDER_MODE_VALIDATED_LUTBD
+                               : BORDER_MODE_HIGH_Z);
   this->command_(0x01);  // POWER SETTING
   this->data_(0x07);
   this->data_(0x17);
@@ -715,6 +803,7 @@ bool GuestyEPaperGray4::init_custom_gray_mode_() {
 }
 
 bool GuestyEPaperGray4::init_otp_gray_mode_() {
+  this->border_mode_.store(BORDER_MODE_PANEL_OTP);
   this->command_(0x01);  // POWER SETTING
   this->data_(0x07);
   this->data_(0x07);
@@ -1024,11 +1113,17 @@ bool GuestyEPaperGray4::display_() {
   // cannot immediately consume a second 45-second BUSY timeout. A later full
   // refresh may retry; partial and unchanged-content paths never read OTP.
   this->otp_profile_attempted_this_refresh_ = false;
+  // Never report a previous full refresh's waveform or border path while the
+  // current attempt is still selecting and validating its controller profile.
+  this->active_lut_diagnostic_.store(LUT_MODE_AUTO);
+  this->border_mode_.store(BORDER_MODE_UNKNOWN);
+  this->update_phase_.store(UPDATE_PHASE_WAVEFORM);
   if (!this->select_lut_mode_())
     return false;
   if (this->active_lut_mode_ == LUT_MODE_CUSTOM &&
       !this->ensure_custom_border_lut_())
     return false;
+  this->update_phase_.store(UPDATE_PHASE_RESET);
   if (!this->reset_panel_()) {
     this->deep_sleep_panel_();
     return false;
@@ -1041,8 +1136,10 @@ bool GuestyEPaperGray4::display_() {
     return false;
   }
   this->log_frame_levels_();
+  this->update_phase_.store(UPDATE_PHASE_TRANSFER);
   this->write_plane_(0x10, 0);  // DTM1: inverted least-significant gray bit
   this->write_plane_(0x13, 1);  // DTM2: inverted most-significant gray bit
+  this->update_phase_.store(UPDATE_PHASE_REFRESH);
   const bool refreshed = this->refresh_();
   this->deep_sleep_panel_();
   return refreshed;
@@ -1051,6 +1148,7 @@ bool GuestyEPaperGray4::display_() {
 void GuestyEPaperGray4::deep_sleep_panel_() {
   if (this->panel_asleep_)
     return;
+  this->update_phase_.store(UPDATE_PHASE_SHUTDOWN);
   // The UC8179 border is a separate electrode outside the 800x480 pixel RAM.
   // Its visible pigment state is established by LUTBD during DISPLAY REFRESH;
   // this step only releases the electrode before power-off. Keep the already

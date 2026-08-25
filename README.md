@@ -61,6 +61,11 @@ installiert daraus die Firmware.
    erfolgreichen RAM-Snapshot stehen, erzeugen dafür aber keine neue Payload
    und verlängern die 15-minütige Anzeigefrist nicht. Andere Listings laufen
    weiter; schlägt alles fehl, bleibt der vorherige Gesamtstand erhalten.
+   Dieser Cache überbrückt damit kurze Guesty- oder Internetstörungen in Home
+   Assistant, ist aber bewusst kein dauerhafter Offline-Speicher: Er liegt nur
+   im Arbeitsspeicher, geht bei einem Home-Assistant-Neustart verloren und darf
+   sensible Displayinhalte ohne erfolgreich erneuerte 15-Minuten-Freigabe nicht
+   unbegrenzt sichtbar halten.
    Unvollständige oder formal falsche HTTP-200-Antworten gelten nie als leere,
    autoritative Buchungsliste. Alle API-Anfragen werden pro Client innerhalb von
    Guestys Grenzen von 15 pro Sekunde, 120 pro Minute und 5.000 pro Stunde
@@ -111,7 +116,7 @@ installiert daraus die Firmware.
 - in Guesty gepflegte Listing-Felder `wifiName` und `wifiPassword`;
 - Reservierungsfeld oder Custom Field `keycode`.
 
-Die Konfiguration wurde vollständig mit ESPHome 2026.7.4 für ESP32-S3 gebaut
+Die Konfiguration wurde vollständig mit ESPHome 2026.8.1 für ESP32-S3 gebaut
 und mit Home Assistant 2026.2.3 importiert. Neuere kompatible Versionen können
 ebenfalls verwendet werden.
 
@@ -152,7 +157,12 @@ OAuth-Zugriffstoken weiter, statt bei jedem Abruf ein neues Token zu erzeugen.
 2. In Home Assistant **Einstellungen → Geräte & Dienste → GuestyTerminal →
    Konfigurieren → E1001-Firmware erstellen** öffnen.
 3. Einen eindeutigen Gerätenamen vergeben. **Automatisch** und 30 Minuten sind
-   die empfohlenen Energieeinstellungen.
+   die empfohlenen Energieeinstellungen. Das bewährte 4-MB-Flashlayout bleibt
+   bis zur realen Gerätebestätigung die sichere Voreinstellung. Das vollständige
+   32-MB-Layout nur bewusst für eine vollständige USB-Installation wählen; es
+   benötigt derzeit ESPHomes experimentell gekennzeichnete Large-Flash-
+   Unterstützung. Ein vorhandenes OTA-Display darf erst bei einer einmaligen
+   vollständigen USB-Migration das Layout wechseln.
 4. Nach dem Speichern ESPHome Device Builder öffnen. Das neue Gerät erscheint
    dort unmittelbar.
 5. **Installieren** wählen. Für die erste Installation das E1001 per USB
@@ -163,13 +173,25 @@ OTA-Passwort und ein eigenes Fallback-AP-Passwort. Eine vorhandene, nicht von
 GuestyTerminal verwaltete ESPHome-Datei wird niemals überschrieben. Beim
 bewussten Aktualisieren einer vom Assistenten erzeugten Datei bleiben diese
 Geräteschlüssel erhalten, damit der OTA-Zugriff nicht verloren geht.
+Ein Wechsel des Flashlayouts wird beim Ersetzen einer verwalteten Datei nur
+nach ausdrücklicher USB-Migrationsbestätigung zugelassen. Die anschließend
+erzeugte Konfiguration muss einmal vollständig per USB installiert werden;
+eine OTA-Installation aktualisiert die vorhandene Partitionstabelle nicht
+zuverlässig. Normale spätere Firmwareupdates funktionieren wieder OTA.
+ESPHome verlangt für OTA auf 32-MB-Flash derzeit ausdrücklich seine erweiterte
+ESP-IDF-Unterstützung; der Assistent aktiviert sie ausschließlich im gewählten
+32-MB-Profil. Das konservative 4-MB-Profil bleibt davon unberührt.
 
 ### Manuell flashen
 
 1. `esphome/secrets.example.yaml` nach `esphome/secrets.yaml` kopieren.
 2. Alle Platzhalter durch neue, zufällige Werte ersetzen.
 3. In `esphome/guestyterminal-display-1.yaml` Gerätenamen, Anzeigenamen und bei
-   Bedarf die Energieeinstellungen anpassen.
+   Bedarf die Energieeinstellungen anpassen. Für bestehende OTA-Geräte
+   `flash_layout: legacy_4mb`, `flash_size: 4MB` und
+   `large_flash_experimental: "false"` unverändert lassen. Nur für eine
+   vollständige Neu-/USB-Installation gemeinsam auf `expanded_32mb`, `32MB`
+   und `"true"` umstellen.
 4. Konfiguration installieren:
 
    ```bash
@@ -205,8 +227,10 @@ E1001-Konfiguration neu. Nach `POWER ON` und `DISPLAY REFRESH` wartet er gemäß
 der Seeed-Sequenz zunächst fest 100 ms und anschließend bis `BUSY_N` inaktiv
 ist; eine bereits vor der ersten Abfrage erfolgte BUSY-Flanke muss nicht noch
 einmal beobachtet werden.
-Die beiden UC8179-Bitebenen verwenden die direkte Pegelzuordnung
-`00 = Schwarz`, `01 = Dunkelgrau`, `10 = Hellgrau` und `11 = Weiß`.
+Der logische ESPHome-Framebuffer verwendet
+`00 = Schwarz`, `01 = Dunkelgrau`, `10 = Hellgrau` und `11 = Weiß`. Vor der
+Übertragung invertiert der Treiber jeden Pegel mit `3 - gray`; erst danach
+werden nieder- und höherwertiges Bit getrennt an UC8179-DTM1 und DTM2 gesendet.
 Quellen, feste Revisionen und Lizenztexte sind in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) dokumentiert.
 
@@ -380,6 +404,10 @@ Symbol folgt ihm in Zehn-Prozent-Stufen.
   entsprechenden Software-Schalter; dort kann die rote, hardwaregesteuerte
   Lade-LED während des Ladens sichtbar bleiben. Auch auf v1.2 kann sie nach
   einem vollständig stromlosen Neustart bis zum Firmwarestart kurz aufleuchten.
+- Die ungenutzte SD-Karten-Stromversorgung wird über GPIO16 beim Start und vor
+  jedem Deep Sleep ausdrücklich ausgeschaltet. Der interne Pulldown des
+  Lastschalters ist dadurch nicht die einzige Absicherung gegen unnötigen
+  Ruhestrom.
 - Weil E-Paper das letzte Bild stromlos behält, erhält jeder Gastbildschirm eine
   erneuerbare 15-Minuten-Freigabe. Home Assistant erneuert sie beim regulären
   Abruf bis 30 Minuten nach Check-out. Nach dem Entfernen einer Zuordnung oder
@@ -404,8 +432,9 @@ Symbol folgt ihm in Zehn-Prozent-Stufen.
   einen vollständigen Refresh zurück. Unveränderte Wetterdaten lösen weiterhin
   überhaupt keine E-Paper-Aktualisierung aus.
 - Jedes Display stellt in Home Assistant Batteriespannung, geschätzten
-  Batteriestand, **Wake-up reason** und **Awake duration** sowie die Buttons
-  **Display aktualisieren** und **Neustart** bereit. Der Aktualisieren-Button
+  Batteriestand, **Wake-up reason**, **Reset reason** und **Awake duration**
+  sowie die Buttons **Display aktualisieren** und **Neustart** bereit. Der
+  Aktualisieren-Button
   stößt zuerst einen sofortigen Guesty-Abgleich an, übernimmt den danach
   ermittelten Seitenmodus und zeichnet anschließend genau dieses aktuelle Bild
   neu. Im Deep Sleep sind die beiden Buttons bis zum nächsten Aufwachen nicht
@@ -413,6 +442,24 @@ Symbol folgt ihm in Zehn-Prozent-Stufen.
   alle fünf Minuten aus 16 gemittelten Spannungsmessungen neu geschätzt. Die
   Prozentanzeige basiert nicht auf einem Coulomb-Counter, sondern auf einer
   stückweisen Li-Ion-Spannungskennlinie und kann deshalb unter Last schwanken.
+- **Display delivery status** unterscheidet Annahme, Rendern, bestätigten
+  Erfolg, ein nachweislich unverändertes Bild und begrenzte Fehlerzustände.
+  **E-paper phase**, **E-paper error**, **E-paper waveform** und
+  **E-paper border mode** zeigen neutral, in welcher Controllerphase ein
+  Vollrefresh steht und ob die Randelektrode über Panel-OTP, die validierte
+  `LUTBD` oder den sicheren hochohmigen Rückfall angesteuert wurde. Diese
+  Entitäten enthalten keine Gast-, Türcode- oder WLAN-Daten.
+- **E-paper Hardwaretest** führt den Test nur bei bestätigter externer
+  Versorgung aus. Er zeigt kurz ein neutrales Vier-Grau-Testbild, verändert danach
+  ausschließlich das 136×64-Pixel-Statusfenster per Teilrefresh und stellt die
+  vorherige Displayseite wieder her. **E-paper self-test** meldet `success`,
+  `full_failed`, `partial_failed`, `restore_failed`, `hardware_timeout`, `busy`
+  oder `requires_external_power`. Ein abgebrochener Test entwertet den
+  gespeicherten Bildnachweis, damit der nächste Guesty-Payload sicher neu
+  gezeichnet wird.
+- **Flash layout** zeigt `legacy_4mb` oder `expanded_32mb`. Dieser Wert
+  beschreibt die kompilierte Konfiguration; ein Wechsel auf 32 MB ist erst nach
+  einer vollständigen USB-Installation physisch wirksam.
 - Für die Akkudiagnose sollte **Wake-up reason** beim regulären Zyklus `timer`
   melden. **Awake duration** zeigt die Dauer des letzten Wachfensters vor dem
   Schlafen; bei schneller Home-Assistant-Zustellung liegt sie deutlich unter
@@ -453,12 +500,23 @@ vollständigen Zustellfehler sichtbar in Home Assistant, statt still erfolgreich
 zu erscheinen. Schlafende Displays bleiben beim regulären Hintergrundabgleich
 weiterhin ein erwarteter Zustand.
 
+Aktuelle Displays verwenden dafür die bestätigte Aktionsschnittstelle v10:
+Home Assistant betrachtet eine Aktualisierung erst nach der physischen
+Erfolgsmeldung des E-Paper-Treibers als abgeschlossen. Empfang, Renderphase und
+Endergebnis werden mit einer zufälligen, nicht auf Buchungsdaten rückführbaren
+Kennung korreliert. Reconnects während eines langen Vollrefreshs starten keinen
+zweiten parallelen Rendererauftrag; ausbleibende Bestätigungen werden innerhalb
+fester Grenzen erneut versucht.
+
 Die Konfigurationsentität **Alle Display-Firmwares aktualisieren** hebt zuerst
 alle durch den Firmware-Assistenten erzeugten YAML-Dateien auf die aktuelle
 GuestyTerminal-Version. Danach übergibt sie sämtliche Konfigurationen als einen
 OTA-Sammelauftrag an den ESPHome Device Builder. Gerätespezifische WiFi-, API-,
 OTA- und Fallback-Zugangsdaten bleiben unverändert. Fremde ESPHome-Dateien
 werden weder verändert noch installiert.
+Das Sammelupdate ändert absichtlich kein Flashlayout. Eine Umstellung von 4 MB
+auf 32 MB wird ausschließlich über den Firmware-Assistenten vorbereitet und
+einmal vollständig per USB installiert.
 
 Am Strom angeschlossene Displays werden nach dem Build direkt aktualisiert.
 Für schlafende Akku-Displays merkt der Device Builder den Auftrag vor und
@@ -469,6 +527,25 @@ ESPHome Device Builder sichtbar.
 Die kompakte, fortlaufende Änderungshistorie steht in
 [`CHANGELOG.md`](CHANGELOG.md). Die folgenden Hinweise erklären zusätzlich die
 Firmwareanforderungen älterer Installationen.
+
+Der derzeit unveröffentlichte Stand ergänzt die bestätigte v10-Zustellung und
+die neutralen Panel-/Rahmendiagnosen. Nach einer späteren Veröffentlichung ist
+dafür neben dem HACS-Update auch ein Display-Firmwareupdate erforderlich. Die
+vollständige Softwareprüfung ist erfolgt; die abschließende Sicht- und
+Reconnect-Prüfung auf einem realen E1001 steht noch aus.
+
+Version **0.3.40** ergänzt die ausdrückliche Abschaltung der ungenutzten
+SD-Karten-Stromversorgung, einen neutralen Voll-/Teilrefresh-Hardwaretest und
+die kontrollierte Wahl zwischen dem bisherigen 4-MB- und dem vollständigen
+32-MB-Flashlayout des E1001. Bestehende OTA-Geräte wechseln nicht automatisch
+das Layout. Für eine Umstellung ist im Firmware-Assistenten die USB-Migration
+zu bestätigen und die erzeugte Konfiguration einmal vollständig per USB zu
+installieren. Ein Display-Firmwareupdate auf 0.3.40 ist für SD-Abschaltung,
+Hardwaretest und Layoutdiagnose erforderlich; die reale Panelwirkung und eine
+32-MB-Migration sind noch am Gerät zu bestätigen. Beide Profile wurden mit
+ESPHome 2026.8.1 vollständig kompiliert; das sichere 4-MB-Profil belegt 82,3 %
+seiner App-Partition, das optionale 32-MB-Profil 9,1 %. Die CI baut beide
+Profile künftig parallel und kontrolliert für jedes das eigene Speicherlimit.
 
 Das Design mit den zwei grauen Zugangsfeldern wird auf dem E1001 gerendert und
 benötigt Firmware **0.3.11** oder neuer. Die MDI-Wettersymbole und der hybride
@@ -568,6 +645,21 @@ oder instabilen API-Verbindungen. Die Integration reagiert sowohl auf den
 Reconnect-Impuls als auch auf den wiederhergestellten Aktionsnamen und versucht
 die Zustellung innerhalb eines begrenzten Zeitfensters erneut. Nach dem
 HACS-Update muss die Display-Firmware einmalig auf 0.3.26 aktualisiert werden.
+
+Version **0.3.40** führt außerdem die physisch bestätigte Display-Zustellung
+ein. Home
+Assistant unterscheidet jetzt Empfang, Renderbeginn und den tatsächlich
+erfolgreichen E-Paper-Refresh; nur Erfolg oder ein nachweislich bereits
+gezeichnetes identisches Bild gelten als zugestellt. Aufträge pro Display
+werden serialisiert, überholte Zwischenstände zusammengefasst und mit festen
+Empfangs-, Panel- und Wiederholungszeiten begrenzt. Der Integrationsstart bleibt
+auch bei einem nicht antwortenden Display sofort verfügbar, während ein
+bestätigtes Akku-Gerät nach dem Einschlafen ohne zusätzliche Wartezeit
+abgeschlossen wird. Neutrale Panel-, Reset-, Wellenform-, Rand- und
+Zustelldiagnosen erleichtern die Ursachenanalyse, ohne Zugangsdaten oder
+Zustellkennungen in Downloads zu übernehmen. Ein Display-Firmwareupdate auf
+0.3.40 ist erforderlich; physische Zustellung, Strompfad und Randbild müssen
+anschließend noch am realen E1001 geprüft werden.
 
 Version **0.3.38** korrigiert die Watchdog-Anbindung der mit 0.3.37
 eingeführten Panel-Aufgabe. Diese Aufgabe darf ESPHomes Watchdog nicht selbst
@@ -741,10 +833,11 @@ noch Tür- oder WiFi-Codes. In den Attributen steht lediglich, ob der aktuelle
 Bildschirm solche Daten enthält. Fehlerprotokolle geben ebenfalls keine
 Zugangsdaten aus.
 
-Über Home Assistants Download-Diagnose kann zusätzlich ein strikt erlaubnisbasiertes
-Abbild mit Listingnamen, Entity-IDs, Protokollversionen, Anzeigearten und
-Lease-Zeitpunkten erzeugt werden. Gastnamen, SSIDs, Passwörter, Türcodes,
-Guesty-Zugangsdaten und Fehlermeldungstexte werden dort nicht ausgegeben.
+Über Home Assistants Download-Diagnose kann zusätzlich ein strikt
+erlaubnisbasiertes Abbild mit Listingnamen, Entity-IDs, Protokollversionen,
+Anzeigearten, Lease-Zeitpunkten und neutralem Zustellstatus erzeugt werden.
+Gastnamen, SSIDs, Passwörter, Türcodes, Guesty-Zugangsdaten und
+Fehlermeldungstexte werden dort nicht ausgegeben.
 
 Der dauerhaft gespeicherte Datenschutzstatus wird erst nach einem erfolgreich
 bestätigten physischen E-Paper-Refresh geändert. Schlägt das Löschen eines
@@ -797,11 +890,12 @@ außerdem muss angegeben werden, ob die vollständige Hardwareprüfung auf einem
 realen E1001 erfolgreich war oder noch aussteht. Die Release-Notizen, der
 annotierte Versions-Tag und das GitHub-Release entstehen danach automatisch.
 
-Der Testablauf führt die beiden unterstützten Home-Assistant-Versionen, die
-statische Prüfung und den ESPHome-Firmwarebau parallel aus. Sichere
-Abhängigkeits- und Firmware-Buildcaches verkürzen Folgeläufe. Ein Versions-Tag
-startet keinen überflüssigen zweiten Firmwarebau, weil das Release nur einen
-bereits erfolgreich geprüften Commit verwenden darf.
+Der Testablauf startet die Release-Vorprüfung, beide unterstützten
+Home-Assistant-Versionen, die statische Prüfung und den ESPHome-Firmwarebau
+sofort parallel. Der stabile ESPHome-Werkzeugcache und der inkrementelle
+Projekt-Buildcache werden getrennt wiederverwendet. Ein Versions-Tag startet
+keinen überflüssigen zweiten Firmwarebau, weil das Release nur einen bereits
+erfolgreich geprüften Commit verwenden darf.
 
 ## Tests
 

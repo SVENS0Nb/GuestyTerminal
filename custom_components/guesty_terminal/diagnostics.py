@@ -20,10 +20,12 @@ from .const import (
     DISPLAY_ACTION_V7_SUFFIX,
     DISPLAY_ACTION_V8_SUFFIX,
     DISPLAY_ACTION_V9_SUFFIX,
+    DISPLAY_ACTION_V10_SUFFIX,
 )
 from .runtime import GuestyTerminalConfigEntry
 
 _ACTION_VERSIONS = (
+    (DISPLAY_ACTION_V10_SUFFIX, 10),
     (DISPLAY_ACTION_V9_SUFFIX, 9),
     (DISPLAY_ACTION_V8_SUFFIX, 8),
     (DISPLAY_ACTION_V7_SUFFIX, 7),
@@ -64,12 +66,17 @@ async def async_get_config_entry_diagnostics(
             ),
             None,
         )
+        delivery = runtime.delivery_diagnostic(mapping.endpoint_entity)
         displays.append(
             {
                 "endpoint_entity": mapping.endpoint_entity,
                 "endpoint_id": mapping.endpoint_id,
                 "endpoint_available": endpoint_available,
                 "action_version": action_version,
+                "delivery_status": delivery.status,
+                "delivery_attempted_at": delivery.attempted_at,
+                "delivery_confirmed_at": delivery.confirmed_at,
+                "delivery_failures": delivery.failures,
                 "listing_id": mapping.listing_id,
                 "listing_name": listing.display_name if listing is not None else None,
                 "display_language": mapping.display_language,

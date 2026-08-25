@@ -1245,6 +1245,7 @@ class DisplayPayload:
         include_labels: bool = False,
         include_checkout_page: bool = False,
         include_empty_page: bool = False,
+        delivery_id: str = "",
     ) -> dict[str, Any]:
         """Return the exact ESPHome action payload."""
         data = {
@@ -1286,6 +1287,10 @@ class DisplayPayload:
             data["cleaner_notes"] = self.cleaner_notes
             data["special_requests_label"] = self.special_requests_label
             data["special_requests"] = self.special_requests
+        if delivery_id:
+            # Transport-only correlation value. It is random, contains no
+            # booking data and is intentionally excluded from fingerprints.
+            data["delivery_id"] = delivery_id
         return data
 
 

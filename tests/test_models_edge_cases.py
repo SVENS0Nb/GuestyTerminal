@@ -247,6 +247,10 @@ def test_templates_shortening_visibility_and_service_data() -> None:
     assert len(content_id) == 24
     assert len(payload.base_content_id) == 24
     assert payload.as_service_data(include_content_id=True)["content_id"] == content_id
+    delivery_data = payload.as_service_data(delivery_id="0123456789abcdef01234567")
+    assert delivery_data["delivery_id"] == "0123456789abcdef01234567"
+    assert "delivery_id" not in payload.as_service_data()
+    assert payload.content_id == content_id
     renewed = replace(payload, valid_until_epoch=payload.valid_until_epoch + 60)
     assert renewed.content_id == content_id
     assert replace(payload, door_code="different").content_id != content_id

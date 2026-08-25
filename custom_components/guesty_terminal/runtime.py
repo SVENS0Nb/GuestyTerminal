@@ -6,7 +6,9 @@ import asyncio
 import hashlib
 import logging
 import re
+import secrets
 from collections.abc import Callable, Coroutine
+from contextlib import suppress
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -32,6 +34,12 @@ from .const import (
     DISPLAY_ACTION_V7_SUFFIX,
     DISPLAY_ACTION_V8_SUFFIX,
     DISPLAY_ACTION_V9_SUFFIX,
+    DISPLAY_ACTION_V10_SUFFIX,
+    DISPLAY_DELIVERY_ERROR_PREFIX,
+    DISPLAY_DELIVERY_RECEIVED_PREFIX,
+    DISPLAY_DELIVERY_RENDERING_PREFIX,
+    DISPLAY_DELIVERY_SUCCESS_PREFIX,
+    DISPLAY_DELIVERY_UNCHANGED_PREFIX,
     DISPLAY_RECONNECT_STATE,
     DISPLAY_REFRESH_REQUEST_STATE,
     DOMAIN,
@@ -43,7 +51,48 @@ from .models import DisplayPayload, Listing, MappingOptions
 
 _LOGGER = logging.getLogger(__name__)
 _ACTION_PATTERN = re.compile(r"^[a-z0-9_]+$")
+_DISPLAY_ACTION_SUFFIXES = (
+    DISPLAY_ACTION_SUFFIX,
+    DISPLAY_ACTION_V2_SUFFIX,
+    DISPLAY_ACTION_V3_SUFFIX,
+    DISPLAY_ACTION_V4_SUFFIX,
+    DISPLAY_ACTION_V5_SUFFIX,
+    DISPLAY_ACTION_V6_SUFFIX,
+    DISPLAY_ACTION_V7_SUFFIX,
+    DISPLAY_ACTION_V8_SUFFIX,
+    DISPLAY_ACTION_V9_SUFFIX,
+    DISPLAY_ACTION_V10_SUFFIX,
+)
 _ENDPOINT_RETRY_DELAYS = (0.0, 1.0, 2.0, 4.0, 8.0, 8.0)
+_DELIVERY_ID_PATTERN = re.compile(r"^[0-9a-f]{24}$")
+_DELIVERY_RECEIPT_TIMEOUT = 5.0
+_DELIVERY_COMPLETION_TIMEOUT = 80.0
+_DELIVERY_READY_TIMEOUT = 5.0
+_DELIVERY_ERROR_CODES = {
+    "busy",
+    "panel_error",
+    "panel_timeout",
+    "preparation_timeout",
+}
+
+
+@dataclass(slots=True)
+class _DeliveryAcknowledgement:
+    """Track one privacy-safe v10 delivery across endpoint state pulses."""
+
+    received: asyncio.Event
+    ready: asyncio.Event
+    finished: asyncio.Future[bool]
+
+
+@dataclass(frozen=True, slots=True)
+class DisplayDeliveryDiagnostic:
+    """Non-sensitive delivery state exposed through diagnostics."""
+
+    status: str = "never"
+    attempted_at: str | None = None
+    confirmed_at: str | None = None
+    failures: int = 0
 
 
 def _logo_aware_content_id(content_id: str, logo_data: str) -> str:
@@ -60,8 +109,9 @@ async def async_send_display_payload(
     *,
     force_redraw: bool = False,
     logo_data: str = "",
+    delivery_id: str = "",
 ) -> bool:
-    """Send one payload directly to a reachable ESPHome display."""
+    """Submit one payload directly to a reachable ESPHome display."""
     endpoint_state = hass.states.get(endpoint_entity)
     if endpoint_state is None or endpoint_state.state in (
         STATE_UNKNOWN,
@@ -71,23 +121,15 @@ async def async_send_display_payload(
 
     action = endpoint_state.state.strip()
     if not _ACTION_PATTERN.fullmatch(action) or not action.endswith(
-        (
-            DISPLAY_ACTION_SUFFIX,
-            DISPLAY_ACTION_V2_SUFFIX,
-            DISPLAY_ACTION_V3_SUFFIX,
-            DISPLAY_ACTION_V4_SUFFIX,
-            DISPLAY_ACTION_V5_SUFFIX,
-            DISPLAY_ACTION_V6_SUFFIX,
-            DISPLAY_ACTION_V7_SUFFIX,
-            DISPLAY_ACTION_V8_SUFFIX,
-            DISPLAY_ACTION_V9_SUFFIX,
-        )
+        _DISPLAY_ACTION_SUFFIXES
     ):
-        _LOGGER.warning("Ignoring invalid ESPHome display endpoint %s", action)
+        _LOGGER.warning("Ignoring an invalid ESPHome display endpoint state")
         return False
     if not hass.services.has_service("esphome", action):
         _LOGGER.debug("ESPHome action %s is not available yet", action)
         return False
+    if action.endswith(DISPLAY_ACTION_V10_SUFFIX) and not delivery_id:
+        delivery_id = secrets.token_hex(12)
 
     send_lock = lock or asyncio.Lock()
     async with send_lock:
@@ -102,6 +144,7 @@ async def async_send_display_payload(
                     DISPLAY_ACTION_V7_SUFFIX,
                     DISPLAY_ACTION_V8_SUFFIX,
                     DISPLAY_ACTION_V9_SUFFIX,
+                    DISPLAY_ACTION_V10_SUFFIX,
                 )
             )
             service_data = payload.as_service_data(
@@ -114,6 +157,7 @@ async def async_send_display_payload(
                         DISPLAY_ACTION_V7_SUFFIX,
                         DISPLAY_ACTION_V8_SUFFIX,
                         DISPLAY_ACTION_V9_SUFFIX,
+                        DISPLAY_ACTION_V10_SUFFIX,
                     )
                 ),
                 include_weather=action.endswith(
@@ -123,6 +167,7 @@ async def async_send_display_payload(
                         DISPLAY_ACTION_V7_SUFFIX,
                         DISPLAY_ACTION_V8_SUFFIX,
                         DISPLAY_ACTION_V9_SUFFIX,
+                        DISPLAY_ACTION_V10_SUFFIX,
                     )
                 ),
                 include_labels=action.endswith(
@@ -130,12 +175,22 @@ async def async_send_display_payload(
                         DISPLAY_ACTION_V7_SUFFIX,
                         DISPLAY_ACTION_V8_SUFFIX,
                         DISPLAY_ACTION_V9_SUFFIX,
+                        DISPLAY_ACTION_V10_SUFFIX,
                     )
                 ),
                 include_checkout_page=action.endswith(
-                    (DISPLAY_ACTION_V8_SUFFIX, DISPLAY_ACTION_V9_SUFFIX)
+                    (
+                        DISPLAY_ACTION_V8_SUFFIX,
+                        DISPLAY_ACTION_V9_SUFFIX,
+                        DISPLAY_ACTION_V10_SUFFIX,
+                    )
                 ),
-                include_empty_page=action.endswith(DISPLAY_ACTION_V9_SUFFIX),
+                include_empty_page=action.endswith(
+                    (DISPLAY_ACTION_V9_SUFFIX, DISPLAY_ACTION_V10_SUFFIX)
+                ),
+                delivery_id=(
+                    delivery_id if action.endswith(DISPLAY_ACTION_V10_SUFFIX) else ""
+                ),
             )
             if action.endswith(
                 (
@@ -146,6 +201,7 @@ async def async_send_display_payload(
                     DISPLAY_ACTION_V7_SUFFIX,
                     DISPLAY_ACTION_V8_SUFFIX,
                     DISPLAY_ACTION_V9_SUFFIX,
+                    DISPLAY_ACTION_V10_SUFFIX,
                 )
             ):
                 active_logo = (
@@ -164,6 +220,7 @@ async def async_send_display_payload(
                     DISPLAY_ACTION_V7_SUFFIX,
                     DISPLAY_ACTION_V8_SUFFIX,
                     DISPLAY_ACTION_V9_SUFFIX,
+                    DISPLAY_ACTION_V10_SUFFIX,
                 )
             ):
                 service_data["base_content_id"] = _logo_aware_content_id(
@@ -174,21 +231,28 @@ async def async_send_display_payload(
                 # An empty fingerprint is the firmware's explicit one-shot
                 # recovery signal. Normal duplicate suppression remains on.
                 service_data["content_id"] = ""
+            v10_action = action.endswith(DISPLAY_ACTION_V10_SUFFIX)
+            if v10_action and not _DELIVERY_ID_PATTERN.fullmatch(delivery_id):
+                return False
             await hass.services.async_call(
                 "esphome",
                 action,
                 service_data,
-                blocking=True,
+                # v10 has an explicit endpoint acknowledgement. Do not hold
+                # Home Assistant's service task open because the minimum
+                # supported 2025.12 ESPHome integration does not yet expose
+                # native action responses, while newer versions impose a
+                # shorter response timeout than the panel's safe BUSY limit.
+                blocking=not v10_action,
             )
         except Exception:  # Home Assistant service errors vary by ESPHome version.
-            _LOGGER.debug(
-                "Could not update sleeping ESPHome display %s",
-                endpoint_entity,
-                exc_info=True,
-            )
+            # ESPHome exceptions can embed the complete service request. Never
+            # attach their text or traceback because that request contains
+            # guest-visible access data for welcome screens.
+            _LOGGER.debug("Could not submit a GuestyTerminal display update")
             return False
     _LOGGER.debug(
-        "Updated GuestyTerminal display %s in %s mode",
+        "Submitted GuestyTerminal display %s in %s mode",
         endpoint_entity,
         payload.mode,
     )
@@ -280,9 +344,90 @@ class GuestyTerminalRuntime:
     _locks: dict[str, asyncio.Lock] = field(default_factory=dict)
     _sync_requests: set[str] = field(default_factory=set)
     _pending_endpoint_pushes: set[str] = field(default_factory=set)
+    _delivery_generations: dict[str, int] = field(default_factory=dict)
+    _delivery_waiters: dict[tuple[str, str], _DeliveryAcknowledgement] = field(
+        default_factory=dict
+    )
+    _delivery_status_restores: set[str] = field(default_factory=set)
+    _delivery_diagnostics: dict[str, DisplayDeliveryDiagnostic] = field(
+        default_factory=dict
+    )
     _tasks: set[asyncio.Future[Any]] = field(default_factory=set)
     _manual_refresh_requests: int = 0
     _stopped: bool = False
+
+    def delivery_diagnostic(self, endpoint: str) -> DisplayDeliveryDiagnostic:
+        """Return a privacy-safe snapshot of the last delivery attempt."""
+        return self._delivery_diagnostics.get(endpoint, DisplayDeliveryDiagnostic())
+
+    def _record_delivery(
+        self,
+        endpoint: str,
+        status: str,
+        *,
+        attempted: bool = False,
+        confirmed: bool = False,
+        failed: bool = False,
+    ) -> None:
+        """Record bounded neutral delivery metadata without payload values."""
+        previous = self.delivery_diagnostic(endpoint)
+        now = datetime.now(UTC).isoformat(timespec="seconds")
+        self._delivery_diagnostics[endpoint] = DisplayDeliveryDiagnostic(
+            status=status,
+            attempted_at=now if attempted else previous.attempted_at,
+            confirmed_at=now if confirmed else previous.confirmed_at,
+            failures=previous.failures + int(failed),
+        )
+
+    def _endpoint_has_delivery_waiter(self, endpoint: str) -> bool:
+        """Return whether a v10 call is still awaiting device completion."""
+        return any(key[0] == endpoint for key in self._delivery_waiters)
+
+    def _handle_delivery_state(self, endpoint: str, state: str) -> bool:
+        """Resolve one v10 delivery pulse without exposing its opaque token."""
+        prefixes = (
+            (DISPLAY_DELIVERY_RECEIVED_PREFIX, "received"),
+            (DISPLAY_DELIVERY_RENDERING_PREFIX, "rendering"),
+            (DISPLAY_DELIVERY_SUCCESS_PREFIX, "success"),
+            (DISPLAY_DELIVERY_UNCHANGED_PREFIX, "unchanged"),
+            (DISPLAY_DELIVERY_ERROR_PREFIX, "error"),
+        )
+        matched = next(
+            (
+                (prefix, status)
+                for prefix, status in prefixes
+                if state.startswith(prefix)
+            ),
+            None,
+        )
+        if matched is None:
+            return False
+        prefix, status = matched
+        remainder = state[len(prefix) :]
+        delivery_id, separator, error_code = remainder.partition(":")
+        if not _DELIVERY_ID_PATTERN.fullmatch(delivery_id):
+            return True
+        acknowledgement = self._delivery_waiters.get((endpoint, delivery_id))
+        self._delivery_status_restores.add(endpoint)
+        if acknowledgement is None:
+            return True
+        acknowledgement.received.set()
+        if status in ("success", "unchanged"):
+            self._record_delivery(endpoint, status, confirmed=True)
+            if not acknowledgement.finished.done():
+                acknowledgement.finished.set_result(True)
+        elif status == "error":
+            safe_code = (
+                error_code
+                if separator and error_code in _DELIVERY_ERROR_CODES
+                else "device_error"
+            )
+            self._record_delivery(endpoint, safe_code, failed=True)
+            if not acknowledgement.finished.done():
+                acknowledgement.finished.set_result(False)
+        else:
+            self._record_delivery(endpoint, status)
+        return True
 
     def _create_task(self, coroutine: Coroutine[Any, Any, Any]) -> None:
         """Create a Home Assistant task that can be cancelled during unload."""
@@ -327,7 +472,13 @@ class GuestyTerminalRuntime:
         self._unsubscribers.append(
             self.coordinator.async_add_listener(self._handle_coordinator_update)
         )
-        await self.async_push_all()
+        # Setup must not wait for a physical E-paper acknowledgement. Start one
+        # tracked best-effort delivery per known endpoint; sleeping displays
+        # will request a fresh bounded sequence through their reconnect pulse.
+        data = getattr(self.coordinator, "data", None)
+        if data is not None:
+            for endpoint in data.payloads:
+                self._create_task(self.async_push_endpoint(endpoint))
 
     @callback
     def _handle_entity_registry_update(self, event: Event) -> None:
@@ -378,6 +529,12 @@ class GuestyTerminalRuntime:
     async def async_stop(self) -> None:
         """Stop all registered listeners."""
         self._stopped = True
+        for acknowledgement in self._delivery_waiters.values():
+            acknowledgement.received.set()
+            acknowledgement.ready.set()
+            if not acknowledgement.finished.done():
+                acknowledgement.finished.set_result(False)
+        self._delivery_waiters.clear()
         for unsubscribe in self._unsubscribers:
             unsubscribe()
         self._unsubscribers.clear()
@@ -389,23 +546,59 @@ class GuestyTerminalRuntime:
         self._tasks.clear()
         self._sync_requests.clear()
         self._pending_endpoint_pushes.clear()
+        self._delivery_status_restores.clear()
 
     @callback
     def _handle_endpoint_state(self, event: Event[EventStateChangedData]) -> None:
         new_state = event.data.get("new_state")
-        if new_state is None or new_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
-            return
         endpoint = str(event.data.get("entity_id") or "")
-        if not endpoint:
+        if new_state is None or not endpoint:
             return
-        if new_state.state == DISPLAY_RECONNECT_STATE:
+        if new_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+            # A battery device can publish its final success and enter deep
+            # sleep before restoring the callable action state. Once physical
+            # completion is known, unavailability is therefore also a valid
+            # terminal-ready signal and must not add the normal five-second
+            # restore wait to every battery wake.
+            for (waiting_endpoint, _delivery_id), acknowledgement in tuple(
+                self._delivery_waiters.items()
+            ):
+                if waiting_endpoint == endpoint and acknowledgement.finished.done():
+                    acknowledgement.ready.set()
+                    self._delivery_status_restores.discard(endpoint)
+            return
+        state = str(new_state.state)
+        if self._handle_delivery_state(endpoint, state):
+            return
+        if _ACTION_PATTERN.fullmatch(state) and state.endswith(
+            _DISPLAY_ACTION_SUFFIXES
+        ):
+            has_waiter = False
+            for (waiting_endpoint, _delivery_id), acknowledgement in tuple(
+                self._delivery_waiters.items()
+            ):
+                if waiting_endpoint == endpoint:
+                    has_waiter = True
+                    acknowledgement.ready.set()
+            if endpoint in self._delivery_status_restores:
+                # v10 restores the normal endpoint action after its final
+                # acknowledgement. That restore is not a reconnect and must
+                # not submit the same payload again.
+                self._delivery_status_restores.discard(endpoint)
+                return
+            if has_waiter:
+                # An action-state replay during a v10 refresh is discovery,
+                # not a request to submit a second credential-bearing job.
+                return
+        if state == DISPLAY_RECONNECT_STATE:
             # Current firmware emits this pulse only after Home Assistant has
             # subscribed to device states, then restores the actual action.
             # Schedule from both states for legacy firmware and for reconnects
             # where one of the two events is coalesced.
-            self._schedule_endpoint_push(endpoint)
+            if not self._endpoint_has_delivery_waiter(endpoint):
+                self._schedule_endpoint_push(endpoint)
             return
-        if new_state.state == DISPLAY_REFRESH_REQUEST_STATE:
+        if state == DISPLAY_REFRESH_REQUEST_STATE:
             if endpoint in self._sync_requests:
                 return
             self._sync_requests.add(endpoint)
@@ -442,18 +635,33 @@ class GuestyTerminalRuntime:
 
     async def _async_push_endpoint_with_retry(self, endpoint: str) -> bool:
         """Deliver one authoritative payload across ESPHome reconnect races."""
+        return await self._async_deliver_endpoint_with_retry(endpoint)
+
+    async def _async_deliver_endpoint_with_retry(
+        self,
+        endpoint: str,
+        *,
+        force_redraw: bool = False,
+        owns_sync_request: bool = False,
+    ) -> bool:
+        """Retry one acknowledged delivery without retaining stale payloads."""
         try:
             for delay in _ENDPOINT_RETRY_DELAYS:
-                if endpoint in self._sync_requests:
+                if endpoint in self._sync_requests and not owns_sync_request:
                     return False
                 if delay:
                     await asyncio.sleep(delay)
-                if endpoint in self._sync_requests:
+                if endpoint in self._sync_requests and not owns_sync_request:
                     return False
-                if await self.async_push_endpoint(endpoint):
+                delivered = (
+                    await self.async_force_redraw_endpoint(endpoint)
+                    if force_redraw
+                    else await self.async_push_endpoint(endpoint)
+                )
+                if delivered:
                     return True
-            _LOGGER.debug(
-                "ESPHome display %s stayed unavailable during reconnect",
+            _LOGGER.warning(
+                "ESPHome display %s did not confirm the display update",
                 endpoint,
             )
             return False
@@ -484,6 +692,7 @@ class GuestyTerminalRuntime:
                     DISPLAY_ACTION_V7_SUFFIX,
                     DISPLAY_ACTION_V8_SUFFIX,
                     DISPLAY_ACTION_V9_SUFFIX,
+                    DISPLAY_ACTION_V10_SUFFIX,
                 )
             ):
                 # Older firmware cannot perform the hybrid weather refresh.
@@ -491,7 +700,8 @@ class GuestyTerminalRuntime:
                 # explicitly forced payload without adding full panel flashes
                 # for every weather-entity state change.
                 continue
-            self._create_task(self.async_push_endpoint(endpoint))
+            if endpoint not in self._sync_requests:
+                self._create_task(self._async_push_endpoint_with_retry(endpoint))
 
     async def async_push_all(
         self, *, exclude: frozenset[str] = frozenset()
@@ -502,7 +712,7 @@ class GuestyTerminalRuntime:
             return DisplayDeliveryResult(0, 0)
         return await _async_delivery_result(
             [
-                self.async_push_endpoint(endpoint)
+                self._async_deliver_endpoint_with_retry(endpoint)
                 for endpoint in data.payloads
                 if endpoint not in exclude
             ]
@@ -537,7 +747,9 @@ class GuestyTerminalRuntime:
                 self.coordinator.data is not None
                 and endpoint in self.coordinator.data.payloads
             ):
-                await self.async_force_redraw_endpoint(endpoint)
+                await self._async_deliver_endpoint_with_retry(
+                    endpoint, force_redraw=True, owns_sync_request=True
+                )
             elif self._endpoint_has_stale_listing(endpoint):
                 _LOGGER.warning(
                     "Guesty refresh was incomplete; not clearing display %s",
@@ -573,7 +785,10 @@ class GuestyTerminalRuntime:
         if data is None:
             return DisplayDeliveryResult(0, 0)
         return await _async_delivery_result(
-            [self.async_force_redraw_endpoint(endpoint) for endpoint in data.payloads]
+            [
+                self._async_deliver_endpoint_with_retry(endpoint, force_redraw=True)
+                for endpoint in data.payloads
+            ]
         )
 
     async def async_force_redraw_endpoint(self, endpoint_entity: str) -> bool:
@@ -646,16 +861,91 @@ class GuestyTerminalRuntime:
         *,
         force_redraw: bool = False,
     ) -> bool:
-        """Send a prepared payload when the ESPHome endpoint is reachable."""
+        """Send only the latest payload and require a v10 device acknowledgement."""
+        generation = self._delivery_generations.get(endpoint_entity, 0) + 1
+        self._delivery_generations[endpoint_entity] = generation
         lock = self._locks.setdefault(endpoint_entity, asyncio.Lock())
-        return await async_send_display_payload(
-            self.hass,
-            endpoint_entity,
-            payload,
-            lock,
-            force_redraw=force_redraw,
-            logo_data=valid_logo_data(self.entry.options.get(CONF_LOGO_DATA)),
-        )
+        async with lock:
+            if self._delivery_generations.get(endpoint_entity) != generation:
+                # A newer payload now owns this endpoint. Coalescing is a
+                # successful outcome for the obsolete caller because the
+                # newest state will be delivered by its own waiting task.
+                return True
+
+            endpoint_state = self.hass.states.get(endpoint_entity)
+            action = str(getattr(endpoint_state, "state", "")).strip()
+            if not action.endswith(DISPLAY_ACTION_V10_SUFFIX):
+                accepted = await async_send_display_payload(
+                    self.hass,
+                    endpoint_entity,
+                    payload,
+                    force_redraw=force_redraw,
+                    logo_data=valid_logo_data(self.entry.options.get(CONF_LOGO_DATA)),
+                )
+                self._record_delivery(
+                    endpoint_entity,
+                    "legacy_submitted" if accepted else "unavailable",
+                    attempted=True,
+                    failed=not accepted,
+                )
+                return accepted
+
+            delivery_id = secrets.token_hex(12)
+            loop = asyncio.get_running_loop()
+            acknowledgement = _DeliveryAcknowledgement(
+                received=asyncio.Event(),
+                ready=asyncio.Event(),
+                finished=loop.create_future(),
+            )
+            waiter_key = (endpoint_entity, delivery_id)
+            self._delivery_waiters[waiter_key] = acknowledgement
+            self._record_delivery(endpoint_entity, "submitting", attempted=True)
+            try:
+                submitted = await async_send_display_payload(
+                    self.hass,
+                    endpoint_entity,
+                    payload,
+                    force_redraw=force_redraw,
+                    logo_data=valid_logo_data(self.entry.options.get(CONF_LOGO_DATA)),
+                    delivery_id=delivery_id,
+                )
+                if not submitted:
+                    self._record_delivery(endpoint_entity, "unavailable", failed=True)
+                    return False
+
+                try:
+                    await asyncio.wait_for(
+                        acknowledgement.received.wait(),
+                        timeout=_DELIVERY_RECEIPT_TIMEOUT,
+                    )
+                except TimeoutError:
+                    self._record_delivery(endpoint_entity, "not_received", failed=True)
+                    return False
+
+                try:
+                    successful = await asyncio.wait_for(
+                        asyncio.shield(acknowledgement.finished),
+                        timeout=_DELIVERY_COMPLETION_TIMEOUT,
+                    )
+                except TimeoutError:
+                    self._record_delivery(
+                        endpoint_entity, "completion_timeout", failed=True
+                    )
+                    return False
+
+                # The final status is published before the endpoint restores
+                # its callable action name. Wait briefly so a following
+                # coalesced payload cannot mistake that status for an action.
+                with suppress(TimeoutError):
+                    await asyncio.wait_for(
+                        acknowledgement.ready.wait(),
+                        timeout=_DELIVERY_READY_TIMEOUT,
+                    )
+                return successful
+            finally:
+                self._delivery_waiters.pop(waiter_key, None)
+                if not acknowledgement.finished.done():
+                    acknowledgement.finished.cancel()
 
 
 type GuestyTerminalConfigEntry = ConfigEntry[GuestyTerminalRuntime]

@@ -6,6 +6,9 @@ substitutions:
   battery_sleep_duration: 30min
   awake_duration_seconds: "90"
   gray_lut_mode: auto
+  # Existing OTA configurations without this substitution use ESPHome's
+  # historic 4 MB layout. Newly USB-installed devices may select expanded_32mb.
+  flash_layout: legacy_4mb
 
 psram:
   mode: octal
@@ -27,6 +30,7 @@ esphome:
         - output.turn_off: guesty_status_led
         - output.turn_off: guesty_buzzer
         - output.turn_off: guesty_microphone_power
+        - output.turn_off: guesty_sd_power
         - lambda: |-
             auto *bus = id(guesty_power_i2c);
             uint8_t reg = 0x0B;
@@ -79,6 +83,14 @@ esphome:
     - priority: -100
       then:
         - component.update: guesty_wake_reason
+        - component.update: guesty_reset_reason
+        - component.update: guesty_panel_phase
+        - component.update: guesty_panel_error
+        - component.update: guesty_waveform_mode
+        - component.update: guesty_border_mode
+        - component.update: guesty_delivery_status
+        - component.update: guesty_flash_layout
+        - component.update: guesty_self_test_status
         - delay: 500ms
         - component.update: guesty_terminal_endpoint
 
@@ -106,12 +118,403 @@ api:
                   api.connected:
                     state_subscription_only: true
                 then:
+                  # Replay the last in-RAM delivery phase before the normal
+                  # reconnect pulse. A connection loss during a physical
+                  # refresh can therefore still complete the matching Home
+                  # Assistant delivery waiter after reconnecting.
+                  - if:
+                      condition:
+                        lambda: return !id(guesty_last_delivery_state).empty();
+                      then:
+                        - lambda: |-
+                            id(guesty_terminal_endpoint).publish_state(
+                                id(guesty_last_delivery_state));
+                        - delay: 300ms
                   - text_sensor.template.publish:
                       id: guesty_terminal_endpoint
                       state: "__guesty_reconnecting__"
                   - delay: 1s
                   - component.update: guesty_terminal_endpoint
   actions:
+    # v10 is the acknowledged transport. It keeps the v9 visible payload
+    # schema and adds only a random correlation token. Home Assistant can
+    # therefore distinguish submission, rendering and physical completion.
+    - action: guesty_terminal_update_display_v10
+      supports_response: status
+      variables:
+        mode: string
+        property_name: string
+        welcome_title: string
+        welcome_text: string
+        door_code: string
+        wifi_name: string
+        wifi_password: string
+        checkout_label: string
+        door_code_label: string
+        wifi_label: string
+        wifi_name_label: string
+        wifi_key_label: string
+        idle_title: string
+        idle_text: string
+        no_active_booking_label: string
+        checkout_instructions_title: string
+        checkout_instructions: string
+        next_booking_title: string
+        next_booking_guest: string
+        next_booking_period: string
+        general_notes_label: string
+        general_notes: string
+        cleaner_notes_label: string
+        cleaner_notes: string
+        special_requests_label: string
+        special_requests: string
+        valid_until_epoch: int
+        content_id: string
+        base_content_id: string
+        force_redraw: bool
+        logo_data: string
+        booking_summary: string
+        weather_condition: string
+        weather_temperature: string
+        delivery_id: string
+      then:
+        # Never queue several credential-bearing payload handlers. The Home
+        # Assistant runtime coalesces pending requests and retries the newest
+        # one after this bounded busy response.
+        - if:
+            condition:
+              lambda: |-
+                return id(guesty_delivery_handler_busy)
+                    || id(guesty_self_test_active);
+            then:
+              - lambda: |-
+                  bool valid_delivery_id = delivery_id.size() == 24;
+                  for (const char character : delivery_id) {
+                    valid_delivery_id = valid_delivery_id
+                        && ((character >= '0' && character <= '9')
+                            || (character >= 'a' && character <= 'f'));
+                  }
+                  const std::string safe_delivery_id = valid_delivery_id
+                      ? delivery_id : std::string(24, '0');
+                  const std::string state =
+                      "__guesty_delivery_error__:" + safe_delivery_id + ":busy";
+                  id(guesty_last_delivery_state) = state;
+                  id(guesty_terminal_endpoint).publish_state(state);
+                  id(guesty_delivery_status).publish_state("busy");
+              - delay: 250ms
+              - component.update: guesty_terminal_endpoint
+              - api.respond:
+                  success: false
+                  error_message: "busy"
+            else:
+              - lambda: |-
+                  bool valid_delivery_id = delivery_id.size() == 24;
+                  for (const char character : delivery_id) {
+                    valid_delivery_id = valid_delivery_id
+                        && ((character >= '0' && character <= '9')
+                            || (character >= 'a' && character <= 'f'));
+                  }
+                  id(guesty_active_delivery_id) = valid_delivery_id
+                      ? delivery_id : std::string(24, '0');
+                  id(guesty_delivery_handler_busy) = true;
+                  id(guesty_delivery_result) = false;
+                  id(guesty_delivery_unchanged) = false;
+                  id(guesty_delivery_error).clear();
+                  const std::string state =
+                      "__guesty_delivery_received__:"
+                      + id(guesty_active_delivery_id);
+                  id(guesty_last_delivery_state) = state;
+                  id(guesty_terminal_endpoint).publish_state(state);
+                  id(guesty_delivery_status).publish_state("received");
+              # A local privacy clear or legacy v9 refresh may already own the
+              # panel. Return a bounded preparation error quickly so the Home
+              # Assistant retry path can take over without exceeding its
+              # end-to-end completion deadline.
+              - wait_until:
+                  condition:
+                    lambda: return !id(guesty_epaper).update_in_progress();
+                  timeout: 5s
+              - if:
+                  condition:
+                    lambda: return id(guesty_epaper).update_in_progress();
+                  then:
+                    - lambda: |-
+                        id(guesty_delivery_error) = "preparation_timeout";
+                  else:
+                    - lambda: |-
+                        const bool renderer_current =
+                            id(guesty_render_revision) == 27;
+                        int battery_percent = -1;
+                        if (id(guesty_battery_level).has_state()
+                            && std::isfinite(id(guesty_battery_level).state)) {
+                          const int rounded = static_cast<int>(
+                              std::lround(id(guesty_battery_level).state));
+                          battery_percent = std::max(0, std::min(100,
+                              ((rounded + 2) / 5) * 5));
+                        }
+                        const bool empty_page =
+                            mode != "welcome" && mode != "checkout";
+                        const bool battery_changed = empty_page
+                            && battery_percent >= 0
+                            && battery_percent !=
+                                id(guesty_rendered_battery_percent);
+                        id(guesty_content_changed) = force_redraw
+                            || content_id.empty()
+                            || content_id != id(guesty_content_id)
+                            || !renderer_current
+                            || battery_changed;
+                        id(guesty_delivery_unchanged) =
+                            !id(guesty_content_changed);
+                        id(guesty_weather_only_changed) =
+                            id(guesty_content_changed)
+                            && !force_redraw
+                            && renderer_current
+                            && !content_id.empty()
+                            && !base_content_id.empty()
+                            && base_content_id == id(guesty_base_content_id)
+                            && !empty_page;
+                        id(guesty_battery_only_changed) = battery_changed
+                            && !force_redraw
+                            && renderer_current
+                            && !content_id.empty()
+                            && content_id == id(guesty_content_id);
+                        id(guesty_privacy_clear_pending) =
+                            mode == "idle" && id(guesty_content_changed);
+                        id(guesty_display_battery_percent) = battery_percent;
+                        id(guesty_mode) = mode;
+                        id(guesty_property_name) = property_name;
+                        id(guesty_welcome_title) = welcome_title;
+                        id(guesty_welcome_text) = welcome_text;
+                        id(guesty_door_code) = door_code;
+                        id(guesty_wifi_name) = wifi_name;
+                        id(guesty_wifi_password) = wifi_password;
+                        id(guesty_checkout_label) = checkout_label;
+                        id(guesty_door_code_label) = door_code_label;
+                        id(guesty_wifi_label) = wifi_label;
+                        id(guesty_wifi_name_label) = wifi_name_label;
+                        id(guesty_wifi_key_label) = wifi_key_label;
+                        id(guesty_idle_title) = idle_title;
+                        id(guesty_idle_text) = idle_text;
+                        id(guesty_no_active_booking_label) =
+                            no_active_booking_label;
+                        id(guesty_checkout_instructions_title) =
+                            checkout_instructions_title;
+                        id(guesty_checkout_instructions) = checkout_instructions;
+                        id(guesty_next_booking_title) = next_booking_title;
+                        id(guesty_next_booking_guest) = next_booking_guest;
+                        id(guesty_next_booking_period) = next_booking_period;
+                        id(guesty_general_notes_label) = general_notes_label;
+                        id(guesty_general_notes) = general_notes;
+                        id(guesty_cleaner_notes_label) = cleaner_notes_label;
+                        id(guesty_cleaner_notes) = cleaner_notes;
+                        id(guesty_special_requests_label) =
+                            special_requests_label;
+                        id(guesty_special_requests) = special_requests;
+                        id(guesty_logo_data) = logo_data;
+                        id(guesty_weather_condition) = weather_condition;
+                        id(guesty_weather_temperature) = weather_temperature;
+                        id(guesty_has_wifi) =
+                            mode == "welcome" && !wifi_name.empty();
+                        id(guesty_has_weather) =
+                            (mode == "welcome" || mode == "checkout")
+                            && (!weather_condition.empty()
+                                || !weather_temperature.empty());
+
+                        if (id(guesty_content_changed)
+                            && id(guesty_has_wifi)) {
+                          const auto escape_wifi =
+                              [](const std::string &input) {
+                            std::string escaped;
+                            escaped.reserve(input.size() + 8);
+                            for (const char character : input) {
+                              if (character == '\\' || character == ';'
+                                  || character == ',' || character == ':') {
+                                escaped.push_back('\\');
+                              }
+                              escaped.push_back(character);
+                            }
+                            return escaped;
+                          };
+                          const std::string security =
+                              wifi_password.empty() ? "nopass" : "WPA";
+                          const std::string qr_value =
+                              "WIFI:T:" + security
+                              + ";S:" + escape_wifi(wifi_name)
+                              + ";P:" + escape_wifi(wifi_password) + ";;";
+                          id(guesty_wifi_qr).set_value(qr_value);
+                          id(guesty_wifi_qr).generate_qr_code();
+                        }
+                        const std::string state =
+                            "__guesty_delivery_rendering__:"
+                            + id(guesty_active_delivery_id);
+                        id(guesty_last_delivery_state) = state;
+                        id(guesty_terminal_endpoint).publish_state(state);
+                        id(guesty_delivery_status).publish_state("rendering");
+                    # Page selection is volatile and must be restored even
+                    # when the retained fingerprint suppresses panel I/O.
+                    - if:
+                        condition:
+                          lambda: return mode == "checkout";
+                        then:
+                          - display.page.show: guesty_checkout_page
+                        else:
+                          - if:
+                              condition:
+                                lambda: return mode == "welcome";
+                              then:
+                                - display.page.show: guesty_welcome_page
+                              else:
+                                - display.page.show: guesty_idle_page
+                    - if:
+                        condition:
+                          lambda: return id(guesty_content_changed);
+                        then:
+                          - lambda: |-
+                              if (id(guesty_weather_only_changed)
+                                  || id(guesty_battery_only_changed)) {
+                                id(guesty_epaper).request_partial_update();
+                              }
+                          - component.update: guesty_epaper
+                          - wait_until:
+                              condition:
+                                lambda: |-
+                                  return !id(guesty_epaper).update_in_progress();
+                              timeout: 70s
+                          - if:
+                              condition:
+                                lambda: |-
+                                  return id(guesty_epaper).update_in_progress();
+                              then:
+                                - lambda: |-
+                                    id(guesty_delivery_error) = "panel_timeout";
+                              else:
+                                - if:
+                                    condition:
+                                      lambda: |-
+                                        return id(guesty_epaper).last_update_successful();
+                                    then:
+                                      - lambda: |-
+                                          id(guesty_content_id) = content_id;
+                                          id(guesty_base_content_id) =
+                                              base_content_id;
+                                          id(guesty_render_revision) = 27;
+                                          id(guesty_screen_sensitive) =
+                                              mode != "idle";
+                                          id(guesty_valid_until_epoch) =
+                                              mode == "idle"
+                                                  ? 0 : valid_until_epoch;
+                                          id(guesty_privacy_clear_pending) =
+                                              false;
+                                          id(guesty_update_received_this_boot) =
+                                              true;
+                                          id(guesty_delivery_result) = true;
+                                          if (mode != "welcome"
+                                              && mode != "checkout"
+                                              && id(guesty_display_battery_percent)
+                                                  >= 0) {
+                                            id(guesty_rendered_battery_percent) =
+                                                id(guesty_display_battery_percent);
+                                          }
+                                      - text_sensor.template.publish:
+                                          id: guesty_last_booking
+                                          state: !lambda return booking_summary;
+                                    else:
+                                      - lambda: |-
+                                          id(guesty_delivery_error) =
+                                              "panel_error";
+                                      - logger.log:
+                                          level: WARN
+                                          format: "E-paper refresh failed; booking confirmation was not published"
+                        else:
+                          # The matching retained fingerprint proves this page
+                          # was written by an earlier successful refresh.
+                          - text_sensor.template.publish:
+                              id: guesty_last_booking
+                              state: !lambda return booking_summary;
+                          - lambda: |-
+                              id(guesty_screen_sensitive) = mode != "idle";
+                              id(guesty_valid_until_epoch) =
+                                  mode == "idle" ? 0 : valid_until_epoch;
+                              id(guesty_privacy_clear_pending) = false;
+                              id(guesty_update_received_this_boot) = true;
+                              id(guesty_delivery_result) = true;
+                          - delay: 1200ms
+              # Publish the final result before restoring the callable endpoint
+              # name. The random token never contains reservation information.
+              - component.update: guesty_panel_phase
+              - component.update: guesty_panel_error
+              - component.update: guesty_waveform_mode
+              - component.update: guesty_border_mode
+              - lambda: |-
+                  std::string status;
+                  if (id(guesty_delivery_result)) {
+                    if (id(guesty_delivery_unchanged)) {
+                      status = "unchanged";
+                      id(guesty_last_delivery_state) =
+                          "__guesty_delivery_unchanged__:"
+                          + id(guesty_active_delivery_id);
+                    } else {
+                      status = "success";
+                      id(guesty_last_delivery_state) =
+                          "__guesty_delivery_success__:"
+                          + id(guesty_active_delivery_id);
+                    }
+                  } else {
+                    if (id(guesty_delivery_error).empty()) {
+                      id(guesty_delivery_error) = "panel_error";
+                    }
+                    status = id(guesty_delivery_error);
+                    id(guesty_last_delivery_state) =
+                        "__guesty_delivery_error__:"
+                        + id(guesty_active_delivery_id)
+                        + ":" + status;
+                  }
+                  id(guesty_terminal_endpoint).publish_state(
+                      id(guesty_last_delivery_state));
+                  id(guesty_delivery_status).publish_state(status);
+              - delay: 300ms
+              - if:
+                  condition:
+                    lambda: return id(guesty_delivery_result);
+                  then:
+                    - api.respond:
+                        success: true
+                  else:
+                    - api.respond:
+                        success: false
+                        error_message: !lambda return id(guesty_delivery_error);
+              # Failed payloads stay awake for a retry. A successful battery
+              # delivery may use the established shared sleep path. Keep the
+              # endpoint unavailable until this final power decision is done;
+              # otherwise a coalesced request could overlap it on mains.
+              - if:
+                  condition:
+                    lambda: return id(guesty_delivery_result);
+                  then:
+                    - script.execute: guesty_read_external_power
+                    - script.wait: guesty_read_external_power
+                    - if:
+                        condition:
+                          lambda: |-
+                            const std::string profile = "${power_mode}";
+                            return (profile == "battery"
+                                || (profile != "mains"
+                                    && (!id(guesty_external_power).has_state()
+                                        || !id(guesty_external_power).state)))
+                                && !(id(guesty_privacy_clear_pending)
+                                    && id(guesty_screen_sensitive));
+                        then:
+                          - lambda: id(guesty_delivery_handler_busy) = false;
+                          - script.execute: guesty_enter_battery_sleep
+                        else:
+                          - lambda: id(guesty_delivery_handler_busy) = false;
+                          - component.update: guesty_terminal_endpoint
+                  else:
+                    - lambda: id(guesty_delivery_handler_busy) = false;
+                    - component.update: guesty_terminal_endpoint
+
+    # v9 remains frozen for explicit legacy callers. The endpoint advertises
+    # v10 so current integrations always use the acknowledged path above.
     - action: guesty_terminal_update_display_v9
       variables:
         mode: string
@@ -154,7 +557,9 @@ api:
         # mutate the shared renderer state or framebuffer.
         - wait_until:
             condition:
-              lambda: return !id(guesty_epaper).update_in_progress();
+              lambda: |-
+                return !id(guesty_self_test_active)
+                    && !id(guesty_epaper).update_in_progress();
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
             const bool renderer_current = id(guesty_render_revision) == 27;
@@ -275,9 +680,12 @@ api:
               - wait_until:
                   condition:
                     lambda: return !id(guesty_epaper).update_in_progress();
+                  timeout: 70s
               - if:
                   condition:
-                    lambda: return id(guesty_epaper).last_update_successful();
+                    lambda: |-
+                      return !id(guesty_epaper).update_in_progress()
+                          && id(guesty_epaper).last_update_successful();
                   then:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
@@ -329,6 +737,7 @@ api:
                     || (profile != "mains"
                         && (!id(guesty_external_power).has_state()
                             || !id(guesty_external_power).state)))
+                    && !id(guesty_epaper).update_in_progress()
                     && !(id(guesty_privacy_clear_pending)
                         && id(guesty_screen_sensitive));
             then:
@@ -342,6 +751,26 @@ safe_mode:
   boot_is_good_after: 10s
 
 globals:
+  # v10 delivery coordination is volatile and contains only a random opaque
+  # call token plus neutral status. It is deliberately not written to flash.
+  - id: guesty_delivery_handler_busy
+    type: bool
+    initial_value: "false"
+  - id: guesty_delivery_result
+    type: bool
+    initial_value: "false"
+  - id: guesty_delivery_unchanged
+    type: bool
+    initial_value: "false"
+  - id: guesty_delivery_error
+    type: std::string
+    initial_value: '""'
+  - id: guesty_active_delivery_id
+    type: std::string
+    initial_value: '""'
+  - id: guesty_last_delivery_state
+    type: std::string
+    initial_value: '""'
   - id: guesty_mode
     type: std::string
     initial_value: '"idle"'
@@ -560,6 +989,27 @@ globals:
   - id: guesty_power_detection_warning_active
     type: bool
     initial_value: "false"
+  # The optional panel self-test is neutral and runs only on confirmed external
+  # power. Save only opaque render state while its diagnostic page temporarily
+  # replaces the current payload; no guest or access value is persisted here.
+  - id: guesty_self_test_active
+    type: bool
+    initial_value: "false"
+  - id: guesty_self_test_partial_phase
+    type: bool
+    initial_value: "false"
+  - id: guesty_self_test_result
+    type: std::string
+    initial_value: '"idle"'
+  - id: guesty_self_test_saved_content_id
+    type: std::string
+    initial_value: '""'
+  - id: guesty_self_test_saved_base_content_id
+    type: std::string
+    initial_value: '""'
+  - id: guesty_self_test_saved_render_revision
+    type: uint32_t
+    initial_value: "0"
 
 script:
   # Pause only the physical UART0 console path (API log listeners keep
@@ -640,6 +1090,145 @@ script:
                      "UART0 restore failed; API logging remains available");
           }
 
+  # Page selection is volatile. Use one shared helper after the neutral panel
+  # self-test so a welcome, checkout or empty-room payload is restored exactly
+  # as it was before the diagnostic pattern.
+  - id: guesty_restore_payload_page
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: return id(guesty_mode) == "checkout";
+          then:
+            - display.page.show: guesty_checkout_page
+          else:
+            - if:
+                condition:
+                  lambda: return id(guesty_mode) == "welcome";
+                then:
+                  - display.page.show: guesty_welcome_page
+                else:
+                  - display.page.show: guesty_idle_page
+
+  # Exercise one complete four-gray frame, one true differential header update
+  # and a final payload restore. The test is intentionally unavailable on
+  # battery and clears the retained content proof before touching the panel, so
+  # an interrupted test can never make a later payload suppress a required
+  # redraw.
+  - id: guesty_run_panel_self_test
+    mode: single
+    then:
+      - script.execute: guesty_read_external_power
+      - script.wait: guesty_read_external_power
+      - if:
+          condition:
+            lambda: |-
+              const bool external_power =
+                  id(guesty_external_power).has_state()
+                  && id(guesty_external_power).state;
+              return external_power
+                  && !id(guesty_delivery_handler_busy)
+                  && !id(guesty_epaper).update_in_progress();
+          then:
+            - lambda: |-
+                id(guesty_self_test_active) = true;
+                id(guesty_self_test_partial_phase) = false;
+                id(guesty_self_test_result) = "running";
+                id(guesty_self_test_saved_content_id) = id(guesty_content_id);
+                id(guesty_self_test_saved_base_content_id) =
+                    id(guesty_base_content_id);
+                id(guesty_self_test_saved_render_revision) =
+                    id(guesty_render_revision);
+                id(guesty_content_id).clear();
+                id(guesty_base_content_id).clear();
+                id(guesty_render_revision) = 0;
+            - text_sensor.template.publish:
+                id: guesty_self_test_status
+                state: "full_pattern"
+            - display.page.show: guesty_self_test_page
+            - component.update: guesty_epaper
+            - wait_until:
+                condition:
+                  lambda: return !id(guesty_epaper).update_in_progress();
+                timeout: 70s
+            - if:
+                condition:
+                  lambda: |-
+                    return !id(guesty_epaper).update_in_progress()
+                        && id(guesty_epaper).last_update_successful();
+                then:
+                  - lambda: id(guesty_self_test_partial_phase) = true;
+                  - text_sensor.template.publish:
+                      id: guesty_self_test_status
+                      state: "partial_pattern"
+                  - lambda: id(guesty_epaper).request_partial_update();
+                  - component.update: guesty_epaper
+                  - wait_until:
+                      condition:
+                        lambda: return !id(guesty_epaper).update_in_progress();
+                      timeout: 70s
+                  - lambda: |-
+                      const bool partial_passed =
+                          !id(guesty_epaper).update_in_progress()
+                          && id(guesty_epaper).last_update_successful()
+                          && id(guesty_epaper).last_update_was_partial();
+                      id(guesty_self_test_result) = partial_passed
+                          ? "success" : "partial_failed";
+                else:
+                  - lambda: id(guesty_self_test_result) = "full_failed";
+            - lambda: id(guesty_self_test_partial_phase) = false;
+            - script.execute: guesty_restore_payload_page
+            - script.wait: guesty_restore_payload_page
+            - if:
+                condition:
+                  lambda: return !id(guesty_epaper).update_in_progress();
+                then:
+                  - text_sensor.template.publish:
+                      id: guesty_self_test_status
+                      state: "restoring"
+                  - component.update: guesty_epaper
+                  - wait_until:
+                      condition:
+                        lambda: return !id(guesty_epaper).update_in_progress();
+                      timeout: 70s
+                  - if:
+                      condition:
+                        lambda: |-
+                          return !id(guesty_epaper).update_in_progress()
+                              && id(guesty_epaper).last_update_successful();
+                      then:
+                        - lambda: |-
+                            id(guesty_content_id) =
+                                id(guesty_self_test_saved_content_id);
+                            id(guesty_base_content_id) =
+                                id(guesty_self_test_saved_base_content_id);
+                            id(guesty_render_revision) =
+                                id(guesty_self_test_saved_render_revision);
+                      else:
+                        - lambda: |-
+                            id(guesty_self_test_result) = "restore_failed";
+                else:
+                  - lambda: id(guesty_self_test_result) = "hardware_timeout";
+            - lambda: |-
+                id(guesty_self_test_active) = false;
+                id(guesty_self_test_saved_content_id).clear();
+                id(guesty_self_test_saved_base_content_id).clear();
+            - text_sensor.template.publish:
+                id: guesty_self_test_status
+                state: !lambda return id(guesty_self_test_result);
+            - component.update: guesty_panel_phase
+            - component.update: guesty_panel_error
+            - component.update: guesty_waveform_mode
+            - component.update: guesty_border_mode
+          else:
+            - text_sensor.template.publish:
+                id: guesty_self_test_status
+                state: !lambda |-
+                  const bool external_power =
+                      id(guesty_external_power).has_state()
+                      && id(guesty_external_power).state;
+                  return external_power ? "busy" : "requires_external_power";
+
   # Keep every battery sleep entry identical. Publishing the actual awake time
   # before shutdown makes failed delivery, wake loops and exhausted timeout
   # windows visible in Home Assistant without retaining another flash value.
@@ -650,6 +1239,7 @@ script:
       - output.turn_off: guesty_status_led
       - output.turn_off: guesty_buzzer
       - output.turn_off: guesty_microphone_power
+      - output.turn_off: guesty_sd_power
       - component.update: guesty_awake_duration
       - delay: 300ms
       # Leave the USB-UART bridge electrically quiet on every sleep path,
@@ -1006,6 +1596,12 @@ output:
   - platform: gpio
     id: guesty_microphone_power
     pin: GPIO38
+  # The E1001 SD rail is switched by an active-high TPS22916 on GPIO16. Its
+  # internal pulldown normally keeps an unused socket off; driving it low makes
+  # that state explicit during every boot and battery sleep path.
+  - platform: gpio
+    id: guesty_sd_power
+    pin: GPIO16
 
 sensor:
   - platform: adc
@@ -1095,6 +1691,33 @@ text_sensor:
         default:
           return {"other"};
       }
+  # Wake-up cause describes deep-sleep entry; reset reason distinguishes a
+  # normal boot from software restarts, watchdogs, crashes and brownouts.
+  - platform: template
+    id: guesty_reset_reason
+    name: Reset reason
+    icon: mdi:restart-alert
+    entity_category: diagnostic
+    update_interval: never
+    lambda: |-
+      switch (esp_reset_reason()) {
+        case ESP_RST_POWERON:
+          return {"power_on"};
+        case ESP_RST_SW:
+          return {"software"};
+        case ESP_RST_PANIC:
+          return {"panic"};
+        case ESP_RST_INT_WDT:
+        case ESP_RST_TASK_WDT:
+        case ESP_RST_WDT:
+          return {"watchdog"};
+        case ESP_RST_BROWNOUT:
+          return {"brownout"};
+        case ESP_RST_DEEPSLEEP:
+          return {"deep_sleep"};
+        default:
+          return {"other"};
+      }
   # Identifies which revision-safe signal produced External power. The state
   # contains no credentials or user data and changes only when the detector
   # switches between the v1.2 charger, the v1.0 fallback, and no valid signal.
@@ -1104,6 +1727,13 @@ text_sensor:
     icon: mdi:power-plug-battery
     entity_category: diagnostic
     update_interval: never
+  - platform: template
+    id: guesty_flash_layout
+    name: Flash layout
+    icon: mdi:memory
+    entity_category: diagnostic
+    update_interval: never
+    lambda: return {"${flash_layout}"};
   # This diagnostic state is published only after a successful physical panel
   # refresh, or when a matching successful content ID is restored after wake.
   - platform: template
@@ -1112,6 +1742,50 @@ text_sensor:
     icon: mdi:calendar-account
     entity_category: diagnostic
     update_interval: never
+  # These values expose only transport/controller phases. Correlation tokens
+  # and guest-visible payload fields never become separate HA entities.
+  - platform: template
+    id: guesty_delivery_status
+    name: Display delivery status
+    icon: mdi:send-check-outline
+    entity_category: diagnostic
+    update_interval: never
+    lambda: return {"idle"};
+  - platform: template
+    id: guesty_panel_phase
+    name: E-paper phase
+    icon: mdi:progress-wrench
+    entity_category: diagnostic
+    update_interval: never
+    lambda: return {id(guesty_epaper).update_phase_name()};
+  - platform: template
+    id: guesty_panel_error
+    name: E-paper error
+    icon: mdi:alert-circle-outline
+    entity_category: diagnostic
+    update_interval: never
+    lambda: return {id(guesty_epaper).last_error_name()};
+  - platform: template
+    id: guesty_waveform_mode
+    name: E-paper waveform
+    icon: mdi:sine-wave
+    entity_category: diagnostic
+    update_interval: never
+    lambda: return {id(guesty_epaper).active_lut_mode_name()};
+  - platform: template
+    id: guesty_border_mode
+    name: E-paper border mode
+    icon: mdi:border-outside
+    entity_category: diagnostic
+    update_interval: never
+    lambda: return {id(guesty_epaper).border_mode_name()};
+  - platform: template
+    id: guesty_self_test_status
+    name: E-paper self-test
+    icon: mdi:test-tube
+    entity_category: diagnostic
+    update_interval: never
+    lambda: return {id(guesty_self_test_result)};
   # The Home Assistant integration discovers this entity. Its state is the
   # exact ESPHome action name to call while this device is awake.
   - platform: template
@@ -1120,7 +1794,7 @@ text_sensor:
     entity_category: diagnostic
     update_interval: never
     lambda: |-
-      std::string action = "${device_name}_guesty_terminal_update_display_v9";
+      std::string action = "${device_name}_guesty_terminal_update_display_v10";
       for (char &character : action) {
         if (character == '-') character = '_';
       }
@@ -1189,6 +1863,13 @@ button:
     name: Neustart
     icon: mdi:restart
     entity_category: diagnostic
+  - platform: template
+    id: guesty_panel_self_test
+    name: E-paper Hardwaretest
+    icon: mdi:test-tube
+    entity_category: diagnostic
+    on_press:
+      - script.execute: guesty_run_panel_self_test
 
 time:
   - platform: pcf8563
@@ -1711,6 +2392,46 @@ display:
             }
           }
 
+      # Neutral hardware pattern used only by the diagnostic self-test. Keep a
+      # completely white 24-pixel canvas margin so a dark controller border is
+      # distinguishable from renderer pixels. The second phase changes only
+      # the configured 136x64 monochrome header window.
+      - id: guesty_self_test_page
+        lambda: |-
+          it.fill(COLOR_OFF);
+          it.print(32, 24, id(guesty_font_label), "E-PAPER HARDWARETEST");
+          it.print(32, 58, id(guesty_font_detail),
+                   "Vier Graustufen · weißer Außenbereich · Teilrefresh");
+
+          constexpr int band_y = 128;
+          constexpr int band_height = 272;
+          constexpr int band_width = 172;
+          constexpr int band_gap = 16;
+          constexpr int band_x = 32;
+          const Color levels[4] = {
+              COLOR_OFF,
+              Color(85, 85, 85),
+              Color(170, 170, 170),
+              COLOR_ON,
+          };
+          const char *labels[4] = {"WEISS", "HELL", "DUNKEL", "SCHWARZ"};
+          for (int index = 0; index < 4; index++) {
+            const int x = band_x + index * (band_width + band_gap);
+            it.filled_rectangle(x, band_y, band_width, band_height,
+                                levels[index]);
+            it.rectangle(x, band_y, band_width, band_height, COLOR_ON);
+            it.print(x + band_width / 2, 424, id(guesty_font_detail),
+                     TextAlign::TOP_CENTER, labels[index]);
+          }
+
+          if (id(guesty_self_test_partial_phase)) {
+            it.filled_rectangle(640, 8, 136, 64, COLOR_ON);
+            it.filled_rectangle(656, 24, 104, 32, COLOR_OFF);
+          } else {
+            it.filled_rectangle(640, 8, 136, 64, COLOR_OFF);
+            it.rectangle(648, 16, 120, 48, COLOR_ON);
+          }
+
 deep_sleep:
   id: guesty_deep_sleep
   sleep_duration: ${battery_sleep_duration}
@@ -1749,6 +2470,7 @@ interval:
                       && (!id(guesty_external_power).has_state()
                           || !id(guesty_external_power).state));
               return battery_mode
+                  && !id(guesty_self_test_active)
                   && !id(guesty_epaper).update_in_progress()
                   && (id(guesty_update_received_this_boot)
                       || millis()
@@ -1787,9 +2509,12 @@ interval:
                   - wait_until:
                       condition:
                         lambda: return !id(guesty_epaper).update_in_progress();
+                      timeout: 70s
                   - if:
                       condition:
-                        lambda: return id(guesty_epaper).last_update_successful();
+                        lambda: |-
+                          return !id(guesty_epaper).update_in_progress()
+                              && id(guesty_epaper).last_update_successful();
                       then:
                         - lambda: |-
                             id(guesty_screen_sensitive) = false;
@@ -1833,6 +2558,7 @@ interval:
                       && id(guesty_external_power).state);
               const auto now = id(guesty_rtc).now();
               return stay_online
+                  && !id(guesty_self_test_active)
                   && !id(guesty_epaper).update_in_progress()
                   && id(guesty_screen_sensitive)
                   && (id(guesty_privacy_clear_pending)
@@ -1865,9 +2591,12 @@ interval:
             - wait_until:
                 condition:
                   lambda: return !id(guesty_epaper).update_in_progress();
+                timeout: 70s
             - if:
                 condition:
-                  lambda: return id(guesty_epaper).last_update_successful();
+                  lambda: |-
+                    return !id(guesty_epaper).update_in_progress()
+                        && id(guesty_epaper).last_update_successful();
                 then:
                   - lambda: |-
                       id(guesty_screen_sensitive) = false;

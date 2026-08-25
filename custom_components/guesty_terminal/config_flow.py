@@ -52,7 +52,9 @@ from .const import (
     CONF_EMPTY_PAGE_TITLE,
     CONF_ENDPOINT_ENTITY,
     CONF_FIRMWARE_AWAKE_SECONDS,
+    CONF_FIRMWARE_CONFIRM_USB_MIGRATION,
     CONF_FIRMWARE_DEVICE_NAME,
+    CONF_FIRMWARE_FLASH_LAYOUT,
     CONF_FIRMWARE_FRIENDLY_NAME,
     CONF_FIRMWARE_OVERWRITE,
     CONF_FIRMWARE_POWER_MODE,
@@ -83,6 +85,7 @@ from .const import (
     DEFAULT_DATE_TIME_FORMAT,
     DEFAULT_FIRMWARE_AWAKE_SECONDS,
     DEFAULT_FIRMWARE_DEVICE_NAME,
+    DEFAULT_FIRMWARE_FLASH_LAYOUT,
     DEFAULT_FIRMWARE_FRIENDLY_NAME,
     DEFAULT_FIRMWARE_POWER_MODE,
     DEFAULT_FIRMWARE_WAKE_MINUTES,
@@ -94,9 +97,11 @@ from .const import (
     MAX_POLL_MINUTES,
 )
 from .firmware import (
+    FLASH_LAYOUTS,
     POWER_MODES,
     FirmwareConfigError,
     FirmwareFileExistsError,
+    FirmwareFlashLayoutMigrationRequired,
     FirmwareOptions,
     write_firmware_config,
 )
@@ -925,6 +930,7 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                 power_mode=user_input[CONF_FIRMWARE_POWER_MODE],
                 wake_interval_minutes=int(user_input[CONF_FIRMWARE_WAKE_MINUTES]),
                 awake_seconds=int(user_input[CONF_FIRMWARE_AWAKE_SECONDS]),
+                flash_layout=user_input[CONF_FIRMWARE_FLASH_LAYOUT],
             )
             try:
                 firmware_options = firmware_options.validated()
@@ -933,9 +939,12 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                     Path(self.hass.config.path("esphome")),
                     firmware_options,
                     bool(user_input[CONF_FIRMWARE_OVERWRITE]),
+                    bool(user_input[CONF_FIRMWARE_CONFIRM_USB_MIGRATION]),
                 )
             except FirmwareFileExistsError:
                 errors["base"] = "firmware_file_exists"
+            except FirmwareFlashLayoutMigrationRequired:
+                errors["base"] = "firmware_flash_migration_required"
             except FirmwareConfigError:
                 errors["base"] = "invalid_firmware_options"
             except OSError:
@@ -987,6 +996,19 @@ class GuestyTerminalOptionsFlow(OptionsFlowWithReload):
                             min=30, max=300, step=15, mode=NumberSelectorMode.BOX
                         )
                     ),
+                    vol.Required(
+                        CONF_FIRMWARE_FLASH_LAYOUT,
+                        default=DEFAULT_FIRMWARE_FLASH_LAYOUT,
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=list(FLASH_LAYOUTS),
+                            mode=SelectSelectorMode.DROPDOWN,
+                            translation_key="firmware_flash_layout",
+                        )
+                    ),
+                    vol.Required(
+                        CONF_FIRMWARE_CONFIRM_USB_MIGRATION, default=False
+                    ): BooleanSelector(),
                     vol.Required(
                         CONF_FIRMWARE_OVERWRITE, default=False
                     ): BooleanSelector(),

@@ -74,9 +74,11 @@ them as if they were part of the implementation.
    bounded `DisplayPayload` per configured ESPHome endpoint.
 4. `GuestyTerminalRuntime` reads the endpoint sensor's action name and sends
    only fields supported by that action version.
-5. The current ESPHome `...update_display_v9` action updates RAM state, compares
-   opaque fingerprints, redraws only when necessary, and returns to deep sleep
-   on battery.
+5. The current ESPHome `...update_display_v10` action adds a random transport
+   correlation token to the v9 visible schema, publishes received/rendering/
+   physical-result acknowledgements, updates RAM state, compares opaque
+   fingerprints, redraws only when necessary, and returns to deep sleep on
+   battery only after confirmed delivery. v1 through v9 remain legacy inputs.
 
 When changing a field or behavior, follow this flow in both directions. A field
 that exists only on one side of the Home Assistant/ESPHome boundary is an
@@ -379,6 +381,9 @@ incomplete change.
   GPIO-only changes are insufficient. The v1.0 ETA6003 has no equivalent
   software-disable bit, so documentation must not promise that its hardware
   charging LED is off.
+- Keep the unused SD-card load switch explicitly disabled through active-high
+  GPIO16 during boot and every normal battery-sleep path. Its TPS22916 pulldown
+  is a hardware fallback, not a replacement for a defined firmware output.
 - Preserve the E1001 pin assignments and the non-inverted active-low BUSY
   interpretation unless verified against the hardware schematic and device.
 
@@ -421,9 +426,25 @@ incomplete change.
 - The endpoint entity is discovered by original name `GuestyTerminal Endpoint`
   or the `_guesty_terminal_endpoint` suffix. Its state is the exact ESPHome
   action name, not a status value.
-- The runtime accepts legacy action suffixes through v8 and sends fields only
+- The runtime accepts legacy action suffixes through v9 and sends fields only
   when that version supports them. Preserve old action handling unless a
   deliberate compatibility break is documented and released.
+- The v10 transport is acknowledged through privacy-safe endpoint sensor
+  pulses. Generate a fresh high-entropy correlation token per submitted job;
+  validate the fixed lowercase-hex token format before firmware state
+  publication, and never publish an arbitrary caller-supplied token;
+  require received plus success/unchanged before reporting delivery, use
+  bounded receipt/completion/endpoint-restore waits, and keep retries
+  serialized per endpoint. Reconnect replay may complete the current waiter
+  but must never schedule a second renderer job. A failed v10 action must not
+  mark the battery wake as delivered; leave time for retry and preserve the
+  normal privacy-clear-at-awake-deadline behavior. Integration setup must
+  schedule initial delivery without awaiting physical completion. After a
+  confirmed battery result, endpoint unavailability is a valid terminal-ready
+  signal because deep sleep cannot restore the action name.
+- ESPHome service exceptions can contain the complete credential-bearing
+  request. Log only a neutral fixed message: never include the exception text,
+  traceback, chained cause, or serialized service data.
 - For a new payload schema, add a new versioned action rather than silently
   changing the arguments of an existing one. Update, at minimum:
   `const.py`, `DisplayPayload.as_service_data()`, `runtime.py`, the ESPHome
@@ -441,6 +462,13 @@ incomplete change.
 - The central integration button updates every GuestyTerminal-managed YAML to
   `FIRMWARE_VERSION` and queues OTA jobs through ESPHome Device Builder. It must
   ignore user-owned YAML and report only non-sensitive counts/status.
+- Managed files without `flash_size` are legacy 4 MB layouts. New USB installs
+  may use the E1001's complete 32 MB flash, but overwriting an existing managed
+  device with a different layout requires an explicit USB-migration
+  confirmation. Version-only fleet updates must preserve every layout line and
+  must never imply that an OTA application image rewrote the partition table.
+  Keep 4 MB as the safe default until the experimental ESPHome 32 MB path and a
+  complete USB migration have passed the real-device release matrix.
 - `hacs.json` declares Home Assistant 2025.12 as the minimum; CI tests both the
   minimum 2025.12.0 release and the 2026.2.3 baseline. Do not lower
   compatibility accidentally.
@@ -500,6 +528,10 @@ For ESPHome changes, create an untracked `esphome/secrets.yaml` from
 esphome config esphome/guestyterminal-display-1.yaml
 esphome compile esphome/guestyterminal-display-1.yaml
 ```
+
+CI overrides the reference configuration's flash substitutions and compiles
+the safe 4 MB and optional 32 MB profiles as parallel jobs. Keep both matrix
+entries and their distinct 95% app-partition budgets when changing firmware.
 
 The reference YAML loads the component locally. Compilation needs network
 access for ESPHome dependencies, Google fonts, and the pinned Material Design
@@ -588,6 +620,14 @@ Hardware-affecting releases also require checks of:
 - weather-only partial refresh across reset/deep sleep and fallback after five
   partial updates;
 - forced redraw and displayed-booking confirmation;
+- v10 received/rendering/success acknowledgement, reconnect replay during a
+  full refresh, bounded failure reporting, and no duplicate panel job;
+- neutral reset/delivery/panel/waveform/border diagnostics matching the actual
+  hardware path without payload values or correlation tokens in downloads;
+- the externally powered neutral panel self-test completing one four-gray full
+  refresh, one real partial header refresh and restoration of the prior page;
+- GPIO16 remaining low during boot and every shared sleep entry;
+- legacy 4 MB OTA retention plus a separate full-USB 32 MB installation test;
 - battery sleep/wake and the next-wake USB detection behavior;
 - LEDs, charging indicator, buzzer, and microphone remaining off.
 

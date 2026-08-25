@@ -61,6 +61,12 @@ Die maßgebliche CI prüft diese Befehle sowohl mit Home Assistant 2025.12.0 als
 auch mit 2026.2.3. Vor einer Veröffentlichung müssen beide Baselines und die
 Coverage-Schranke aus `pyproject.toml` erfolgreich sein.
 
+Änderungen an der Displayzustellung müssen zusätzlich die aktuelle bestätigte
+v10-Aktion, Statuskorrelation, Zeitüberschreitungen, Reconnect-Wiedergabe,
+Auftragsserialisierung und die unveränderte Kompatibilität von v1 bis v9
+abdecken. Ein angenommener Home-Assistant-Serviceaufruf ist kein Nachweis für
+einen physischen Panel-Refresh.
+
 Firmwareänderungen benötigen zusätzlich eine nicht produktive
 `esphome/secrets.yaml` sowie:
 
@@ -69,10 +75,22 @@ esphome config esphome/guestyterminal-display-1.yaml
 esphome compile esphome/guestyterminal-display-1.yaml
 ```
 
+Die CI kompiliert diese Referenz mit überschriebenen Substitutionen parallel
+für das sichere 4-MB- und das optionale 32-MB-Profil. Beide Profile müssen
+innerhalb ihres eigenen 95-Prozent-Limits bleiben.
+
 Bitte keine echten Secrets, Buildverzeichnisse, Caches oder generierten
 ESPHome-Output committen. Hardwareänderungen müssen im Pull Request als auf
 einem realen E1001 getestet oder ausdrücklich als nicht hardwaregetestet
 gekennzeichnet werden.
+
+Änderungen am Flashlayout sind keine normalen OTA-Änderungen. Eine bisherige
+verwaltete Datei ohne `flash_size` gilt als 4-MB-Layout. Der Wechsel auf das
+32-MB-Layout muss im Firmware-Assistenten ausdrücklich bestätigt und einmal
+vollständig per USB installiert werden; automatische Sammelupdates dürfen
+Layoutzeilen nur erhalten, niemals hinzufügen oder umschreiben. Hardwaretests
+prüfen außerdem GPIO16 als ausgeschaltete SD-Versorgung sowie den neutralen
+Voll-/Teilrefresh-Selbsttest und die Wiederherstellung der vorherigen Seite.
 
 Beim `auto`-OTP-Pfad muss der dedizierte SPI2-Bus vollständig freigegeben und
 nach dem GPIO-Lesevorgang mit derselben E1001-Konfiguration neu initialisiert
@@ -100,13 +118,13 @@ Tag und das GitHub-Release an. Ein vorhandener Tag wird nur dann wiederverwendet
 wenn er exakt auf denselben geprüften Commit zeigt.
 
 Der normale Test-Workflow trennt Vorprüfung, statische Analyse, beide
-Home-Assistant-Baselines und den ESPHome-Bau. Diese Arbeiten laufen nach der
-schnellen Vorprüfung parallel; Abhängigkeiten und nicht produktive
-Firmware-Builddaten werden gecacht. Tag-Pushes lösen keinen zweiten identischen
-Testlauf aus.
+Home-Assistant-Baselines und den ESPHome-Bau. Alle Prüfzweige starten sofort
+parallel; Abhängigkeiten, der stabile ESPHome-Werkzeugsatz und nicht produktive
+inkrementelle Firmware-Builddaten werden getrennt gecacht. Tag-Pushes lösen
+keinen zweiten identischen Testlauf aus.
 
-Version 0.3.38 benötigt wegen der watchdog-sicheren, kooperativen
-Panel-Transaktionen ein
+Version 0.3.40 benötigt wegen des neutralen Panel-Selbsttests, der expliziten
+SD-Stromabschaltung und der Flashlayout-Diagnose ein
 Display-Firmwareupdate. Zusätzlich zum vollständigen Testlauf und zur
 ESPHome-Kompilierung sind während wiederholter Vollrefreshs die dauerhafte
 Native-API-Erreichbarkeit und die serielle Payload-Verarbeitung auf einem
@@ -116,6 +134,12 @@ Hardwaretransaktion ohne schnellen Neustart oder Reconnect-Schleife erscheinen.
 Die mit 0.3.36 eingeführte LUTBD-Randansteuerung und
 Renderrevision 27 bleiben bestehen; Vollrefreshs in `auto`, `otp` und `custom`
 gehören weiterhin zur Hardwarematrix.
+
+Der v10-Zustellpfad benötigt zusätzlich einen Realgerätetest
+mit erfolgreicher `received`-/`rendering`-/`success`-Folge, einem absichtlich
+unterbrochenen Reconnect während des Vollrefreshs, einem erzwungenen Fehlerpfad
+ohne falsche Buchungsbestätigung sowie der Kontrolle von **E-paper waveform**
+und **E-paper border mode** nach einem erzwungenen Vollrefresh.
 
 Zusätzlich sind `LICENSE_STATUS.md` und `THIRD_PARTY_NOTICES.md` vor jeder
 öffentlichen Veröffentlichung zu prüfen. Dokumentieren sie einen anwendbaren,

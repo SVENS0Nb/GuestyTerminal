@@ -11,9 +11,12 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
-FIRMWARE_VERSION = "0.3.38"
+FIRMWARE_VERSION = "0.3.40"
 FIRMWARE_HEADER = "# Managed by the GuestyTerminal firmware assistant."
 POWER_MODES = ("auto", "battery", "mains")
+FLASH_LAYOUT_LEGACY = "legacy_4mb"
+FLASH_LAYOUT_EXPANDED = "expanded_32mb"
+FLASH_LAYOUTS = (FLASH_LAYOUT_LEGACY, FLASH_LAYOUT_EXPANDED)
 _DEVICE_NAME_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,22}[a-z0-9])?$")
 _FIRMWARE_VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 _GUESTY_REPOSITORY_REF_PATTERN = re.compile(
@@ -29,6 +32,10 @@ class FirmwareConfigError(ValueError):
 
 class FirmwareFileExistsError(FirmwareConfigError):
     """A user-managed ESPHome configuration already uses the requested name."""
+
+
+class FirmwareFlashLayoutMigrationRequired(FirmwareConfigError):
+    """A managed device needs an explicitly confirmed USB layout migration."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +56,7 @@ class FirmwareOptions:
     power_mode: str = "auto"
     wake_interval_minutes: int = 30
     awake_seconds: int = 90
+    flash_layout: str = FLASH_LAYOUT_LEGACY
 
     def validated(self) -> FirmwareOptions:
         """Return normalized settings or raise for unsafe values."""
@@ -66,12 +74,15 @@ class FirmwareOptions:
             raise FirmwareConfigError("Wake interval must be between 5 and 180 minutes")
         if not 30 <= int(self.awake_seconds) <= 300:
             raise FirmwareConfigError("Awake time must be between 30 and 300 seconds")
+        if self.flash_layout not in FLASH_LAYOUTS:
+            raise FirmwareConfigError("Unsupported flash layout")
         return FirmwareOptions(
             device_name=device_name,
             friendly_name=friendly_name,
             power_mode=self.power_mode,
             wake_interval_minutes=int(self.wake_interval_minutes),
             awake_seconds=int(self.awake_seconds),
+            flash_layout=self.flash_layout,
         )
 
 
@@ -124,6 +135,16 @@ def _existing_credentials(content: str) -> FirmwareCredentials | None:
     return credentials
 
 
+def _existing_flash_layout(content: str) -> str:
+    """Return the managed file's flash layout without guessing an expansion."""
+    match = re.search(r"(?m)^\s*flash_size:\s*(4MB|32MB)\s*$", content)
+    if match is None or match.group(1) == "4MB":
+        # GuestyTerminal releases through 0.3.39 omitted flash_size. ESPHome
+        # compiled those files with its 4 MB default, so absence is legacy.
+        return FLASH_LAYOUT_LEGACY
+    return FLASH_LAYOUT_EXPANDED
+
+
 def _atomic_write_private(destination: Path, content: str) -> None:
     """Atomically replace one managed file without a publicly readable window."""
     temporary = destination.with_name(
@@ -171,9 +192,17 @@ def render_firmware_config(
     options = options.validated()
     credentials = credentials or _new_credentials()
     friendly_name = json.dumps(options.friendly_name, ensure_ascii=False)
+    flash_size = "32MB" if options.flash_layout == FLASH_LAYOUT_EXPANDED else "4MB"
+    framework_advanced = (
+        "\n    advanced:\n      enable_idf_experimental_features: true"
+        if options.flash_layout == FLASH_LAYOUT_EXPANDED
+        else ""
+    )
     return f"""{FIRMWARE_HEADER}
 # Open this device in ESPHome Device Builder and choose Install.
 # WiFi credentials are read from /config/esphome/secrets.yaml.
+# Flash layout: {options.flash_layout}
+# Changing an existing device to expanded_32mb requires one complete USB install.
 
 substitutions:
   device_name: {options.device_name}
@@ -182,6 +211,7 @@ substitutions:
   battery_sleep_duration: {options.wake_interval_minutes}min
   awake_duration_seconds: "{options.awake_seconds}"
   gray_lut_mode: auto
+  flash_layout: {options.flash_layout}
 
 external_components:
   - source:
@@ -209,8 +239,9 @@ esphome:
 
 esp32:
   board: esp32-s3-devkitc-1
+  flash_size: {flash_size}
   framework:
-    type: arduino
+    type: arduino{framework_advanced}
 
 logger:
   hardware_uart: UART0
@@ -236,7 +267,10 @@ captive_portal:
 
 
 def write_firmware_config(
-    directory: Path, options: FirmwareOptions, overwrite: bool = False
+    directory: Path,
+    options: FirmwareOptions,
+    overwrite: bool = False,
+    confirm_usb_flash_migration: bool = False,
 ) -> Path:
     """Atomically create or replace a GuestyTerminal-managed ESPHome file."""
     options = options.validated()
@@ -250,6 +284,11 @@ def write_firmware_config(
         credentials = _existing_credentials(existing)
         if credentials is None:
             raise FirmwareFileExistsError(str(destination))
+        if (
+            _existing_flash_layout(existing) != options.flash_layout
+            and not confirm_usb_flash_migration
+        ):
+            raise FirmwareFlashLayoutMigrationRequired(str(destination))
 
     content = render_firmware_config(options, credentials)
     _atomic_write_private(destination, content)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -707,6 +708,29 @@ def test_keycode_resolution_uses_definitions_and_tolerates_failures() -> None:
     assert "account-2" not in coordinator._custom_field_definitions
     client.definitions["account-2"] = [{"_id": "unknown", "name": "keycode"}]
     assert asyncio.run(coordinator._async_keycode(failed_raw)) == "0000"
+
+
+def test_optional_enrichment_failures_never_log_private_identifiers(caplog) -> None:
+    client = FakeClient()
+    client.populated["reservation-private-123"] = GuestyError(
+        "private reservation transport detail"
+    )
+    client.guests["guest-private-456"] = GuestyError("private guest transport detail")
+    coordinator = _coordinator(client=client)
+    caplog.set_level(logging.DEBUG)
+
+    assert (
+        asyncio.run(coordinator._async_keycode({"_id": "reservation-private-123"}))
+        == ""
+    )
+    assert asyncio.run(coordinator._async_guest({"guestId": "guest-private-456"})) == {}
+
+    assert "Could not load optional Guesty reservation fields" in caplog.text
+    assert "Could not load optional Guesty guest details" in caplog.text
+    assert "reservation-private-123" not in caplog.text
+    assert "guest-private-456" not in caplog.text
+    assert "private reservation transport detail" not in caplog.text
+    assert "private guest transport detail" not in caplog.text
 
 
 @pytest.mark.parametrize(("current_value", "expected"), [("", ""), ("2468", "2468")])
@@ -1686,6 +1710,37 @@ def test_context_only_reservation_is_never_copied_to_multiple_listings(
     assert data.payloads[first_endpoint].mode == "idle"
     assert data.payloads[second_endpoint].mode == "idle"
     assert "Skipped 1 Guesty reservation(s)" in caplog.text
+
+
+def test_account_discovery_rows_outside_mappings_are_debug_not_ambiguity(
+    caplog,
+) -> None:
+    endpoint = "sensor.first_guesty_terminal_endpoint"
+    client = FakeClient()
+    client.listings = [{"_id": "listing-a", "title": "Loft A"}]
+    client.reservations_by_query[("listing-a",)] = []
+    client.account_current_reservations = [
+        {
+            "reservationId": "outside-reservation",
+            "listingId": "unmapped-listing",
+            "status": "confirmed",
+            "guest": {"firstName": "Private"},
+            "checkIn": "2026-08-14T12:00:00Z",
+            "checkOut": "2099-08-18T10:00:00Z",
+        }
+    ]
+    coordinator = _coordinator(
+        {CONF_MAPPINGS: {endpoint: _mapping("listing-a")}}, client
+    )
+    caplog.set_level(logging.DEBUG)
+
+    data = asyncio.run(coordinator._async_update_data())
+
+    assert data.reservations == ()
+    assert data.payloads[endpoint].mode == "idle"
+    assert "outside configured listings" in caplog.text
+    assert "ambiguous listing associations" not in caplog.text
+    assert "outside-reservation" not in caplog.text
 
 
 def test_completed_booking_remains_cached_until_twelve_hours_after_checkout() -> None:
