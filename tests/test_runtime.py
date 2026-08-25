@@ -89,9 +89,16 @@ class FakeHass:
         self.states = FakeStates(state)
         self.services = FakeServices(available=available, failure=failure)
         self.tasks = []
+        self.task_names = []
+        self.startup_tasks = []
 
     def async_create_task(self, coroutine):
+        self.startup_tasks.append(coroutine)
+        coroutine.close()
+
+    def async_create_background_task(self, coroutine, name):
         self.tasks.append(coroutine)
+        self.task_names.append(name)
         coroutine.close()
 
 
@@ -1009,6 +1016,8 @@ def test_start_stop_and_callbacks(monkeypatch) -> None:
     assert callbacks.get("delay", True)
     startup_tasks = len(hass.tasks)
     assert startup_tasks == 1
+    assert hass.startup_tasks == []
+    assert hass.task_names == ["guesty_terminal_initial_display_delivery"]
 
     callbacks["state"](SimpleNamespace(data={"new_state": None}))
     callbacks["state"](
@@ -1026,6 +1035,7 @@ def test_start_stop_and_callbacks(monkeypatch) -> None:
 
     coordinator.listener()
     assert len(hass.tasks) == startup_tasks + 2
+    assert hass.startup_tasks == []
     asyncio.run(runtime.async_stop())
     assert runtime._unsubscribers == []
     assert "state" in unsubscribed
@@ -1049,7 +1059,9 @@ def test_start_does_not_wait_for_physical_display_acknowledgement(monkeypatch) -
     monkeypatch.setattr(GuestyTerminalRuntime, "async_push_endpoint", stalled_push)
 
     async def exercise() -> None:
-        hass.async_create_task = asyncio.create_task
+        hass.async_create_background_task = lambda coroutine, name: asyncio.create_task(
+            coroutine, name=name
+        )
         await asyncio.wait_for(runtime.async_start(), timeout=0.1)
         await asyncio.wait_for(started.wait(), timeout=0.1)
         assert len(runtime._tasks) == 1
@@ -1221,12 +1233,13 @@ def test_stop_cancels_runtime_owned_tasks() -> None:
     runtime, hass, _coordinator = _runtime()
     created = []
 
-    def create_task(coroutine):
+    def create_task(coroutine, name):
         task = asyncio.create_task(coroutine)
         created.append(task)
+        assert name == "test_guesty_terminal_background_task"
         return task
 
-    hass.async_create_task = create_task
+    hass.async_create_background_task = create_task
 
     async def exercise():
         started = asyncio.Event()
@@ -1235,7 +1248,9 @@ def test_stop_cancels_runtime_owned_tasks() -> None:
             started.set()
             await asyncio.Event().wait()
 
-        runtime._create_task(wait_forever())
+        runtime._create_task(
+            wait_forever(), name="test_guesty_terminal_background_task"
+        )
         await started.wait()
         await runtime.async_stop()
 

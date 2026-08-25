@@ -3,6 +3,39 @@
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt. Einträge
 unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
 
+## 0.3.43 – 2026-08-26
+
+### Willkommensbild und Home-Assistant-Start
+
+- Display-Zustellungen laufen jetzt als von GuestyTerminal verwaltete
+  Hintergrundaufgaben. Home Assistant wartet beim Start dadurch nicht mehr auf
+  die bis zu 135 Sekunden dauernde physische E-Paper-Bestätigung und meldet
+  keinen blockierten Bootstrap, während ein Display zeichnet oder nicht
+  antwortet.
+- Der Willkommens-Payload kann nicht mehr zwischen `received` und `rendering`
+  durch die WiFi-QR-Erzeugung den ESPHome-Hauptthread überlasten: Die
+  QR-Berechnung erfolgt nur noch einmal im Renderer, und der ESP32-Loop erhält
+  16 KiB statt 8 KiB Stackreserve. Der beim Start protokollierte neutrale
+  QR-Platzhalter enthält außerdem keine kennwortähnliche Testbelegung mehr.
+- Die v10-Schnittstelle und ihr datenschutzneutraler Ablauf bleiben
+  unverändert: Home Assistant übergibt weiterhin strukturierte Displaydaten und
+  wartet getrennt auf `received`, `rendering` und den bestätigten physischen
+  Abschluss. Der Fehler trat vor dem Renderer auf; Reservierungsauswahl,
+  Fünf-Buchungen-RAM-Snapshot und Mehrdisplay-Zuordnung werden nicht verändert.
+- Die vollständige Suite mit 289 Tests bestand gegen Home Assistant 2025.12.0
+  und 2026.2.3 mit 90,71 % Branch-Abdeckung. Ruff, Mypy, Compileall und die
+  Release-Vorprüfung waren ebenfalls erfolgreich.
+- Beide Firmwareprofile wurden mit ESPHome 2026.8.1 validiert und vollständig
+  kompiliert. Der sichere 4-MB-OTA-Build belegt 82,0 % Flash; das optionale
+  32-MB-Profil belegt 9,1 % Flash. Beide nutzen 41,7 % RAM. Die Korrektur ist
+  noch nicht auf einem realen E1001 ausgeführt; die vollständige
+  Hardwarematrix bleibt deshalb ausdrücklich offen.
+- Version 0.3.43 benötigt gemeinsam ein HACS-/Integrationsupdate und ein
+  Display-Firmwareupdate. Bestehende 4-MB-Installationen können normal per OTA
+  aktualisiert werden; das Flashlayout bleibt unverändert. Das vom E-Paper
+  festgehaltene Testbild wird erst durch einen erfolgreichen Vollrefresh
+  ersetzt.
+
 ## 0.3.42 – 2026-08-25
 
 ### Wiederherstellung nach einem hängenden E-Paper-Refresh

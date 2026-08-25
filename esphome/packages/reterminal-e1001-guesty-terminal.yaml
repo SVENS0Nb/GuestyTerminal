@@ -14,6 +14,16 @@ psram:
   mode: octal
   speed: 80MHz
 
+# ESPHome's QR encoder uses an approximately 4 KiB temporary stack buffer on
+# ESP32. Payload actions also keep the versioned display arguments alive while
+# the page is rendered. Give the main loop enough headroom so a welcome-screen
+# QR generation cannot overflow the default 8 KiB stack between the received
+# and rendering acknowledgements.
+esp32:
+  framework:
+    advanced:
+      loop_task_stack_size: 16384
+
 esphome:
   on_boot:
     - priority: 750
@@ -349,8 +359,12 @@ api:
                               "WIFI:T:" + security
                               + ";S:" + escape_wifi(wifi_name)
                               + ";P:" + escape_wifi(wifi_password) + ";;";
+                          // Generation is intentionally deferred to the display
+                          // renderer. ESPHome's get_size() generates the code
+                          // once and clears its dirty flag; doing it here would
+                          // allocate the large temporary buffer twice and on a
+                          // deeper API-action stack.
                           id(guesty_wifi_qr).set_value(qr_value);
-                          id(guesty_wifi_qr).generate_qr_code();
                         }
                         const std::string state =
                             "__guesty_delivery_rendering__:"
@@ -647,7 +661,6 @@ api:
                   + ";S:" + escape_wifi(wifi_name)
                   + ";P:" + escape_wifi(wifi_password) + ";;";
               id(guesty_wifi_qr).set_value(qr_value);
-              id(guesty_wifi_qr).generate_qr_code();
             }
         # Page selection is runtime state and does not survive a reboot. Restore
         # it on every payload, even when the retained content fingerprint proves
@@ -1551,7 +1564,9 @@ font:
 
 qr_code:
   - id: guesty_wifi_qr
-    value: "WIFI:T:WPA;S:Guest;P:Guest;;"
+    # dump_config() prints this boot-time value. Keep it neutral; the actual
+    # guest WiFi payload is assigned only in volatile RAM after setup.
+    value: "GuestyTerminal"
     ecc: MEDIUM
 
 spi:

@@ -430,12 +430,16 @@ class GuestyTerminalRuntime:
             self._record_delivery(endpoint, status)
         return True
 
-    def _create_task(self, coroutine: Coroutine[Any, Any, Any]) -> None:
-        """Create a Home Assistant task that can be cancelled during unload."""
+    def _create_task(self, coroutine: Coroutine[Any, Any, Any], *, name: str) -> None:
+        """Create a cancellable task that never delays Home Assistant startup."""
         if self._stopped:
             coroutine.close()
             return
-        task = self.hass.async_create_task(coroutine)
+        # Physical E-paper delivery can legitimately take longer than Home
+        # Assistant's bootstrap timeout. These jobs are tracked locally for a
+        # clean unload, but they must not be registered as setup tasks or Home
+        # Assistant will report a blocked startup while waiting for the panel.
+        task = self.hass.async_create_background_task(coroutine, name)
         if isinstance(task, asyncio.Future):
             self._tasks.add(task)
             task.add_done_callback(self._tasks.discard)
@@ -479,7 +483,10 @@ class GuestyTerminalRuntime:
         data = getattr(self.coordinator, "data", None)
         if data is not None:
             for endpoint in data.payloads:
-                self._create_task(self.async_push_endpoint(endpoint))
+                self._create_task(
+                    self.async_push_endpoint(endpoint),
+                    name="guesty_terminal_initial_display_delivery",
+                )
 
     @callback
     def _handle_entity_registry_update(self, event: Event) -> None:
@@ -603,7 +610,10 @@ class GuestyTerminalRuntime:
             if endpoint in self._sync_requests:
                 return
             self._sync_requests.add(endpoint)
-            self._create_task(self._async_sync_and_force_redraw_endpoint(endpoint))
+            self._create_task(
+                self._async_sync_and_force_redraw_endpoint(endpoint),
+                name="guesty_terminal_requested_display_refresh",
+            )
             return
         if endpoint in self._sync_requests:
             # The firmware restores the real action state immediately after
@@ -625,7 +635,10 @@ class GuestyTerminalRuntime:
         def _delayed_push(_now: datetime) -> None:
             if cancel in self._unsubscribers:
                 self._unsubscribers.remove(cancel)
-            self._create_task(self._async_push_endpoint_with_retry(endpoint))
+            self._create_task(
+                self._async_push_endpoint_with_retry(endpoint),
+                name="guesty_terminal_reconnect_display_delivery",
+            )
 
         # The service is normally registered before the subscribed reconnect
         # pulse arrives. Keep retries for legacy firmware, slow connections and
@@ -673,7 +686,10 @@ class GuestyTerminalRuntime:
     def _handle_coordinator_update(self) -> None:
         if self._manual_refresh_requests:
             return
-        self._create_task(self.async_push_all(exclude=frozenset(self._sync_requests)))
+        self._create_task(
+            self.async_push_all(exclude=frozenset(self._sync_requests)),
+            name="guesty_terminal_coordinator_display_delivery",
+        )
 
     @callback
     def _handle_weather_state(self, event: Event[EventStateChangedData]) -> None:
@@ -702,7 +718,10 @@ class GuestyTerminalRuntime:
                 # for every weather-entity state change.
                 continue
             if endpoint not in self._sync_requests:
-                self._create_task(self._async_push_endpoint_with_retry(endpoint))
+                self._create_task(
+                    self._async_push_endpoint_with_retry(endpoint),
+                    name="guesty_terminal_weather_display_delivery",
+                )
 
     async def async_push_all(
         self, *, exclude: frozenset[str] = frozenset()

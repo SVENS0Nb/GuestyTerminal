@@ -534,18 +534,20 @@ Die kompakte, fortlaufende Änderungshistorie steht in
 [`CHANGELOG.md`](CHANGELOG.md). Die folgenden Hinweise erklären zusätzlich die
 Firmwareanforderungen älterer Installationen.
 
-Version **0.3.41** korrigiert die Übergabe an die
-mit Home Assistant 2026.8 eingeführten antwortenden ESPHome-Aktionen. v10 ist
-jetzt wieder eine schnelle Fire-and-forget-Aktion; Empfang, Renderbeginn und
-physischer Abschluss werden weiterhin separat über den Display-Endpunkt
-bestätigt. Dadurch kann die E-Paper-Transaktion
-nicht mehr in die kürzere Aktionsantwortfrist laufen. Übergabefehler werden
-blockierend innerhalb der datenschutzneutralen Integration behandelt, damit
-Home Assistant nicht den vollständigen Service-Payload protokolliert. Für die
-Korrektur sind sowohl das HACS-/Integrationsupdate als auch die
-Display-Firmware 0.3.41 erforderlich. Der erste zugestellte
-Willkommens-Payload erzwingt einen Vollrefresh; Rand und Randelektrodendiagnose
-sind danach am realen E1001 erneut zu prüfen.
+Version **0.3.43** behebt den im Gerätelog sichtbaren Stillstand zwischen der
+v10-Bestätigung `received` und dem noch ausbleibenden `rendering`: Der
+WLAN-QR-Code wird nur noch einmal im eigentlichen Renderer erzeugt, und der
+ESPHome-Hauptprozess besitzt dafür 16 KiB Stackreserve. Physische
+Displayzustellungen laufen in Home Assistant als verwaltete
+Hintergrundaufgaben und können dessen Start nicht mehr bis zur langen
+E-Paper-Abschlussfrist blockieren. Die Reservierungsauswahl, der lokale
+Fünf-Buchungen-RAM-Snapshot und die Zuordnung mehrerer Displays bleiben
+unverändert. Für die Korrektur sind ein HACS-/Integrationsupdate und die
+Display-Firmware 0.3.43 erforderlich. Bestehende 4-MB-Geräte können normal per
+OTA aktualisiert werden; das Flashlayout ändert sich nicht. Die Firmware wurde
+mit ESPHome 2026.8.1 für beide Profile kompiliert, aber noch nicht vollständig
+auf einem realen E1001 geprüft. Das physisch festgehaltene Testbild verschwindet
+erst beim ersten erfolgreichen Vollrefresh.
 
 Version **0.3.42** korrigiert zusätzlich den auf dem realen E1001 beobachteten
 `BUSY_N`-Fehler nach einem tatsächlich sichtbaren Hardwaretestbild. Sie
@@ -559,6 +561,19 @@ sind das HACS-/Integrationsupdate und die Display-Firmware 0.3.42 erforderlich.
 Bestehende 4-MB-Geräte können sie normal per OTA installieren; das Flashlayout
 bleibt unverändert. Die vollständige Wirkung ist noch auf dem realen E1001 zu
 bestätigen.
+
+Version **0.3.41** korrigiert die Übergabe an die
+mit Home Assistant 2026.8 eingeführten antwortenden ESPHome-Aktionen. v10 ist
+jetzt wieder eine schnelle Fire-and-forget-Aktion; Empfang, Renderbeginn und
+physischer Abschluss werden weiterhin separat über den Display-Endpunkt
+bestätigt. Dadurch kann die E-Paper-Transaktion
+nicht mehr in die kürzere Aktionsantwortfrist laufen. Übergabefehler werden
+blockierend innerhalb der datenschutzneutralen Integration behandelt, damit
+Home Assistant nicht den vollständigen Service-Payload protokolliert. Für die
+Korrektur sind sowohl das HACS-/Integrationsupdate als auch die
+Display-Firmware 0.3.41 erforderlich. Der erste zugestellte
+Willkommens-Payload erzwingt einen Vollrefresh; Rand und Randelektrodendiagnose
+sind danach am realen E1001 erneut zu prüfen.
 
 Version **0.3.40** ergänzt die ausdrückliche Abschaltung der ungenutzten
 SD-Karten-Stromversorgung, einen neutralen Voll-/Teilrefresh-Hardwaretest und

@@ -123,6 +123,15 @@ parallel; Abhängigkeiten, der stabile ESPHome-Werkzeugsatz und nicht produktive
 inkrementelle Firmware-Builddaten werden getrennt gecacht. Tag-Pushes lösen
 keinen zweiten identischen Testlauf aus.
 
+Version 0.3.43 benötigt wegen der korrigierten QR-Erzeugung, der vergrößerten
+ESPHome-Loop-Stackreserve und der vom Home-Assistant-Bootstrap getrennten
+Displayzustellung gemeinsam ein Integrations- und Display-Firmwareupdate. Die
+Releaseprüfung muss insbesondere bestätigen, dass ein Willkommens-Payload mit
+WLAN-Daten die vollständige Folge `received`, `rendering` und `success`
+erreicht, ohne den ESPHome-Hauptprozess zu blockieren. Bis dieser Ablauf auf
+einem realen E1001 geprüft ist, muss die Veröffentlichung den Hardwarestatus
+ausdrücklich als nicht getestet ausweisen.
+
 Version 0.3.42 benötigt wegen der vervollständigten OTP-Initialisierung, der
 phasenbezogenen BUSY-Grenzen und des kontrollierten Register-LUT-Rückfalls
 gemeinsam ein Integrations- und Display-Firmwareupdate. Zusätzlich zum
