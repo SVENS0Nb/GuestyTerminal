@@ -32,6 +32,9 @@ unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
   Abschlussbestätigung 135 Sekunden. Der Selbsttest kann damit nach einem
   beendeten Fehlerpfad das normale Bild wieder zeichnen. Die 15-minütige
   Datenschutz-Lease bleibt unverändert.
+- Die vollständige Suite mit 288 Tests bestand gegen Home Assistant 2025.12.0
+  und 2026.2.3 mit 90,7 % Testabdeckung. Statische Analyse, Format- und
+  Typprüfung waren ebenfalls erfolgreich.
 - Renderrevision 28 erzwingt nach dem nächsten Firmwareupdate einen
   vollständigen Neuaufbau. Beide Firmwareprofile wurden mit ESPHome 2026.8.1
   erfolgreich geprüft und vollständig kompiliert; das sichere 4-MB-Profil
