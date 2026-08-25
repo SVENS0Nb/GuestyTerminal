@@ -5,6 +5,13 @@ und Datenschutzabschnitte in `README.md` lesen. Änderungen an sichtbaren Felder
 müssen immer auf beiden Seiten der Home-Assistant-/ESPHome-Grenze umgesetzt und
 getestet werden.
 
+Bestätigte Fehlerursachen und ihre Diagnosegrenzen stehen in
+`TROUBLESHOOTING.md`. Bei Displayzustellungsfehlern ist die letzte v10-
+Bestätigung als Grenze zu verwenden: `received` ohne `rendering` verweist auf
+den synchronen ESPHome-Aktionspfad vor dem Renderer. Ein funktionierendes
+Hardwaretestbild umgeht unter anderem den WLAN-QR-Pfad und ersetzt deshalb
+keinen Test des normalen Buchungspayloads.
+
 Bei Guesty-Mehrfacheinheiten müssen konkrete `unitId`, direkte `listingId`,
 übergeordnete `unitTypeId` und `parentListingId` kontextbezogen auf genau ein
 konfiguriertes Listing aufgelöst bleiben. Auswahl, Snapshot-Abgleich und

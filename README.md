@@ -547,7 +547,11 @@ Display-Firmware 0.3.43 erforderlich. Bestehende 4-MB-Geräte können normal per
 OTA aktualisiert werden; das Flashlayout ändert sich nicht. Die Firmware wurde
 mit ESPHome 2026.8.1 für beide Profile kompiliert, aber noch nicht vollständig
 auf einem realen E1001 geprüft. Das physisch festgehaltene Testbild verschwindet
-erst beim ersten erfolgreichen Vollrefresh.
+erst beim ersten erfolgreichen Vollrefresh. Nach der Veröffentlichung wurde
+die korrekte Synchronisierung des Willkommensbilds auf dem betroffenen realen
+Gerät bestätigt; Ursache und Gegenmaßnahmen sind in
+[`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) festgehalten. Die vollständige
+Hardwarematrix bleibt weiterhin offen.
 
 Version **0.3.42** korrigiert zusätzlich den auf dem realen E1001 beobachteten
 `BUSY_N`-Fehler nach einem tatsächlich sichtbaren Hardwaretestbild. Sie
@@ -911,6 +915,9 @@ Die gepflegte Wissensbasis besteht aus wenigen, klar abgegrenzten Dokumenten:
   kompakt zusammen.
 - [`CHANGELOG.md`](CHANGELOG.md) dokumentiert veröffentlichte und noch nicht
   veröffentlichte Änderungen.
+- [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) hält bestätigte Fehlerursachen,
+  eindeutige Log-Signaturen und verbindliche Schutzregeln gegen Regressionen
+  fest.
 - [`SECURITY.md`](SECURITY.md) beschreibt die private Meldung von
   Sicherheitsproblemen und den sicheren Umgang mit Diagnosedaten.
 - [`LICENSE_STATUS.md`](LICENSE_STATUS.md) und

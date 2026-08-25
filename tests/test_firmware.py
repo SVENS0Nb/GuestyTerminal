@@ -403,12 +403,12 @@ def test_wifi_qr_generation_has_stack_headroom_and_neutral_boot_value() -> None:
     """Avoid loop-task overflow and credential-like QR config logging."""
     package = PACKAGE_FILE.read_text(encoding="utf-8")
 
-    assert "loop_task_stack_size: 16384" in package
+    assert package.count("loop_task_stack_size: 16384") == 1
     assert package.count("id(guesty_wifi_qr).set_value(qr_value);") == 2
     assert "id(guesty_wifi_qr).generate_qr_code();" not in package
     assert 'value: "GuestyTerminal"' in package
     assert "WIFI:T:WPA;S:Guest;P:Guest" not in package
-    assert "const int qr_modules = id(guesty_wifi_qr).get_size()" in package
+    assert package.count("id(guesty_wifi_qr).get_size()") == 1
 
 
 def test_unused_sd_rail_is_explicitly_disabled_on_boot_and_sleep() -> None:

@@ -51,6 +51,9 @@ spelling in UI copy, device project metadata, documentation, and releases.
 - `.github/workflows/tests.yml`: authoritative CI commands.
 - `README.md` / `CHANGELOG.md`: user-facing setup, architecture, compatibility,
   release notes, and the chronological product history.
+- `TROUBLESHOOTING.md`: confirmed incident causes, acknowledgement-based fault
+  isolation, and regression-prevention rules. Keep conclusions precise about
+  what logs and real-device checks actually prove.
 - `CONTRIBUTING.md` / `SECURITY.md`: contributor workflow and private security
   reporting rules.
 - `LICENSE_STATUS.md` / `THIRD_PARTY_NOTICES.md`: current distribution status,
@@ -447,6 +450,22 @@ incomplete change.
   schedule initial delivery without awaiting physical completion. After a
   confirmed battery result, endpoint unavailability is a valid terminal-ready
   signal because deep sleep cannot restore the action name.
+- Treat the last v10 acknowledgement as a strict fault boundary: no
+  `received` means discovery or transport; `received` without `rendering`
+  means the synchronous ESPHome action path before the renderer; `rendering`
+  without a physical result means renderer, serialization, or panel work. Do
+  not blame Guesty selection or the panel driver across those boundaries
+  without contradictory evidence.
+- Never call `generate_qr_code()` from a payload action. Set the volatile value
+  only and let the renderer's single `get_size()` call generate it after the
+  action arguments have unwound. Preserve the 16 KiB ESP32 loop-task stack;
+  the QR encoder needs roughly 4 KiB of temporary stack and the 8 KiB default
+  overflowed in the argument-heavy welcome action before `rendering`. A panel
+  hardware test bypasses this QR path and therefore cannot validate normal
+  booking delivery.
+- Schedule physical display jobs with Home Assistant background tasks, not
+  setup-tracked tasks. Retain local cancellation ownership so integration
+  unload still stops every outstanding delivery.
 - ESPHome service exceptions can contain the complete credential-bearing
   request. Log only a neutral fixed message: never include the exception text,
   traceback, chained cause, or serialized service data.

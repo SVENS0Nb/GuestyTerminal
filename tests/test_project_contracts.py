@@ -73,6 +73,9 @@ def test_maintenance_guidance_covers_current_critical_contracts() -> None:
         "`REG0A.BUS_GD`",
         "16 averaged ADC samples",
         "`Wake-up reason`, and `Awake duration`",
+        "`received` without `rendering`",
+        "Never call `generate_qr_code()` from a payload action",
+        "Schedule physical display jobs with Home Assistant background tasks",
         "mypy custom_components/guesty_terminal",
         "version-specific tests, `CHANGELOG.md`",
         "Before any public release or redistribution",
@@ -85,6 +88,7 @@ def test_maintenance_guidance_covers_current_critical_contracts() -> None:
         "AGENTS.md",
         "CONTRIBUTING.md",
         "CHANGELOG.md",
+        "TROUBLESHOOTING.md",
         "SECURITY.md",
         "LICENSE_STATUS.md",
         "THIRD_PARTY_NOTICES.md",
@@ -98,6 +102,18 @@ def test_maintenance_guidance_covers_current_critical_contracts() -> None:
     assert "python3 -m compileall -q custom_components/guesty_terminal" in contributing
     assert "LICENSE_STATUS.md" in contributing
     assert "THIRD_PARTY_NOTICES.md" in contributing
+    assert "TROUBLESHOOTING.md" in contributing
+
+    troubleshooting = (ROOT / "TROUBLESHOOTING.md").read_text(encoding="utf-8")
+    for phrase in (
+        "`received`, aber kein `rendering`",
+        "`generate_qr_code()`",
+        "`get_size()`",
+        "`loop_task_stack_size: 16384`",
+        "Ein erfolgreiches Testbild beweist in diesem Fall nur den separaten",
+        "Ein dunkler Panelrand ist getrennt zu untersuchen",
+    ):
+        assert phrase in troubleshooting
 
 
 def test_epaper_driver_has_only_documented_redistributable_sources() -> None:
