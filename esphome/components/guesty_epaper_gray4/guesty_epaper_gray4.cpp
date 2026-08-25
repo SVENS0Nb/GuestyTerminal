@@ -503,8 +503,11 @@ bool GuestyEPaperGray4::init_custom_gray_mode_() {
   this->data_(0x10);
   this->data_(0x07);
 
-  this->command_(0x52);
-  this->data_(0x00);
+  // Keep the border at VCOM_DC after its LUT has completed. The older 0x00
+  // value selected 0 V for BDEND, which can leave a visible dark border during
+  // the controller's final VCOM frames. 0x02 is the documented UC8179 default.
+  this->command_(0x52);  // END VOLTAGE SETTING
+  this->data_(0x02);     // VCEND=VCOM_DC, BDEND=VCOM_DC
 
   this->command_(0x61);  // 800x480 resolution
   this->data_(WIDTH >> 8);
@@ -851,11 +854,12 @@ void GuestyEPaperGray4::deep_sleep_panel_() {
   if (this->panel_asleep_)
     return;
   // The UC8179 border is a separate electrode outside the 800x480 pixel RAM.
-  // Release it before power-off; leaving it driven can retain a narrow dark
-  // frame even when every framebuffer edge pixel is white. R50h.BDZ=1 makes
-  // the border high-impedance, as required by the controller documentation.
+  // Its visible pigment state is established by the LUT during DISPLAY
+  // REFRESH; this step only releases the electrode before power-off. Restore
+  // the full-refresh BDV/DDX selection and keep every reserved bit at zero.
   this->command_(0x50);  // VCOM AND DATA INTERVAL SETTING
-  this->data_(0xF7);     // Border Hi-Z before POWER OFF
+  this->data_(0x90);     // BDZ=1, BDV=01, N2OCP=0, DDX=00
+  this->data_(0x07);     // Documented VCOM/data interval
   this->command_(0x02);  // POWER OFF
   const bool powered_off = this->wait_until_idle_("after power off");
   if (!powered_off)

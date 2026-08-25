@@ -35,6 +35,8 @@ part of the pixel data:
 - Datasheet: <https://files.seeedstudio.com/wiki/Other_Display/750-epaper/IC%20Driver%20UC8179.pdf>
 - Relevant field: `R50h.BDZ`, which releases the separate border electrode to
   high impedance before panel power-off
+- Relevant field: `R52h.BDEND`, whose documented default `10b` holds the border
+  at `VCOM_DC` after its refresh LUT completes
 
 No datasheet content is bundled in this repository.
 

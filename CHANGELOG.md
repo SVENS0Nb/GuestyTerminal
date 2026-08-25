@@ -3,16 +3,45 @@
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt. Einträge
 unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
 
+## 0.3.35 – 2026-08-25
+
+### Displayrand – zweite Korrektur
+
+- Die 0.3.34-Abschaltkorrektur konnte einen bereits dunklen Rand nicht optisch
+  löschen: `R50h.BDZ` gibt die separate Elektrode erst nach dem Bildaufbau
+  elektrisch frei, E-Paper behält seinen zuvor aufgebauten Pigmentzustand aber
+  ohne eine weitere Refresh-Wellenform bei.
+- Der Custom-LUT-Pfad beendet die Rand-Wellenform nun mit dem dokumentierten
+  UC8179-Standard `R52h.BDEND=VCOM_DC` statt mit 0 V. Dadurch bleibt nach der
+  Weißfahrt kein Differenzfeld am Rand bestehen. Der OTP-Pfad verwendete diesen
+  Standard bereits und bleibt unverändert.
+- Vor `POWER OFF` setzt die Firmware `R50h` jetzt vollständig und mit auf null
+  gehaltenen reservierten Bits auf `0x90, 0x07`. Dies gibt den Rand frei, ohne
+  den sichtbaren Zustand nachträglich verändern zu wollen.
+- Automatisches Löschen des vollständigen 800×480-Framebuffers wird in der
+  ESPHome-Konfiguration nun ausdrücklich aktiviert. Die Renderrevision steigt
+  auf 26 und alle Versionsmarkierungen auf 0.3.35, damit nach dem
+  Firmwareupdate ein vollständiger Neuaufbau erfolgt.
+
+### Prüfstatus
+
+- Der vollständige lokale Python-Prüflauf war mit 254 Tests gegen Home Assistant
+  2026.2.3 erfolgreich; die Branch-Abdeckung beträgt 90,79 %. Ruff,
+  Formatprüfung, Mypy und Bytecode-Kompilierung sind ebenfalls fehlerfrei.
+- ESPHome 2026.7.4 hat die Referenzkonfiguration validiert und die Firmware
+  vollständig gebaut; im App-Partition-Report bleiben 21 % frei. Die
+  Mindestversion Home Assistant 2025.12.0 wird vor einer Veröffentlichung in CI
+  geprüft. Die Wirkung auf einem realen E1001 steht noch aus.
+
 ## 0.3.34 – 2026-08-25
 
 ### Displayrand
 
-- Der UC8179-Rand wird jetzt unmittelbar vor `POWER OFF` über `R50h.BDZ`
-  hochohmig geschaltet. Die Randelektrode liegt außerhalb des 800×480-Pixel-RAMs
-  und konnte deshalb trotz vollständig weißer Randpixel als schmaler dunkler
-  Rahmen sichtbar bleiben. Der nächste vollständige Neuaufbau hellt den Rand
-  auf; die anschließende Hochohmigschaltung verhindert, dass er beim Ausschalten
-  erneut dunkel angesteuert bleibt.
+- Der UC8179-Rand wird unmittelbar vor `POWER OFF` über `R50h.BDZ` hochohmig
+  geschaltet. Die reale Hardwareprüfung nach der Veröffentlichung zeigte, dass
+  diese Maßnahme allein den bereits während des Refreshs dunkel aufgebauten
+  Pigmentzustand nicht entfernt; die Folgeberichtigung wurde mit Version 0.3.35
+  veröffentlicht.
 - Die Renderrevision steigt auf 25, damit ein bereits mit 0.3.33 gezeichnetes
   und ansonsten unverändertes Bild nach dem Firmwareupdate einmal vollständig
   neu aufgebaut wird. Alle Versionsmarkierungen stehen auf 0.3.34; ein

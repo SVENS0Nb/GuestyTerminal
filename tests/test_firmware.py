@@ -73,7 +73,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.34") == 2
+    assert rendered.count("ref: v0.3.35") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
@@ -88,9 +88,10 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     stored_revision = re.search(r"id\(guesty_render_revision\) = (\d+);", package)
     assert expected_revision is not None
     assert stored_revision is not None
-    assert expected_revision.group(1) == "25"
+    assert expected_revision.group(1) == "26"
     assert expected_revision.group(1) == stored_revision.group(1)
     assert "guesty_terminal_update_display_v9" in package
+    assert "    auto_clear_enabled: true\n" in package
     assert '"Bei Fragen sind wir für dich da."' not in package
     assert "id(guesty_logo_data).size() == logo_hex_length" in package
     assert "it.line(32, 402, 768, 402)" in package
@@ -324,11 +325,20 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "Power-off timeout; attempting panel deep sleep anyway" in driver
     assert "this->panel_asleep_ = powered_off" in driver
     sleep = driver[driver.index("void GuestyEPaperGray4::deep_sleep_panel_()") :]
-    border_hiz = sleep.index("this->data_(0xF7)")
+    border_hiz = sleep.index("this->data_(0x90)")
+    border_interval = sleep.index("this->data_(0x07)", border_hiz)
     power_off = sleep.index("this->command_(0x02)")
     wait_for_power_off = sleep.index('this->wait_until_idle_("after power off")')
     deep_sleep = sleep.index("this->command_(0x07)")
-    assert border_hiz < power_off < wait_for_power_off < deep_sleep
+    assert border_hiz < border_interval < power_off < wait_for_power_off < deep_sleep
+    custom_init = driver[
+        driver.index("bool GuestyEPaperGray4::init_custom_gray_mode_()") : driver.index(
+            "bool GuestyEPaperGray4::init_otp_gray_mode_()"
+        )
+    ]
+    end_voltage = custom_init.index("this->command_(0x52)")
+    assert custom_init.index("this->data_(0x02)", end_voltage) > end_voltage
+    assert "this->data_(0x00)" not in custom_init[end_voltage:]
     header = driver_path.with_suffix(".h").read_text(encoding="utf-8")
     assert "bool last_update_successful() const" in header
     component_dir = driver_path.parent
@@ -355,6 +365,23 @@ def test_grayscale_framebuffer_polarity_matches_uc8179_wire_format() -> None:
         "light_gray": 0b01,
         "white": 0b00,
     }
+
+    # Auto-clear fills every packed pixel with logical white (0b11). The
+    # transfer inversion must therefore emit zeroes for both complete planes,
+    # including the first and last byte of the first and last rows.
+    white_framebuffer = bytes([0xFF]) * (800 * 480 // 4)
+    edge_bytes = (
+        white_framebuffer[:2],
+        white_framebuffer[198:200],
+        white_framebuffer[-200:-198],
+        white_framebuffer[-2:],
+    )
+    for packed_edge in edge_bytes:
+        for packed in packed_edge:
+            controller_grays = [
+                3 - ((packed >> shift) & 0x03) for shift in (6, 4, 2, 0)
+            ]
+            assert controller_grays == [0, 0, 0, 0]
 
 
 def test_otp_probe_releases_and_reinitializes_the_esp32_spi_bus() -> None:
@@ -815,7 +842,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.34", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.35", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -827,8 +854,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.34") == 2
-    assert 'version: "0.3.34"' in updated
+    assert updated.count("ref: v0.3.35") == 2
+    assert 'version: "0.3.35"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -859,7 +886,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
 def test_update_managed_firmware_configs_rejects_invalid_credentials(
     tmp_path, broken_line
 ) -> None:
-    valid = render_firmware_config(_options()).replace("0.3.34", "0.3.10")
+    valid = render_firmware_config(_options()).replace("0.3.35", "0.3.10")
     if "key:" in broken_line:
         invalid = valid.replace(
             next(line for line in valid.splitlines() if "key:" in line), broken_line
@@ -896,14 +923,14 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.34", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.35", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     future.chmod(0o600)
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.34", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.35", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")

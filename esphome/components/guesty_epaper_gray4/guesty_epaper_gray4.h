@@ -24,9 +24,9 @@ enum LutMode : uint8_t {
  * most-significant controller bits as separate DTM1 and DTM2 planes. The
  * waveform and register sequence use Seeed's permissively licensed E1001
  * reference implementations: panel OTP waveforms where available and
- * controller-register LUTs as the compatible fallback. Before power-off the
- * controller's separate border electrode is released to high impedance so it
- * cannot retain a dark frame outside the framebuffer.
+ * controller-register LUTs as the compatible fallback. The separate border
+ * electrode is driven to white during a full refresh, held at its neutral
+ * VCOM end voltage, and released to high impedance before power-off.
  */
 class GuestyEPaperGray4
     : public display::DisplayBuffer,
