@@ -89,11 +89,14 @@ Firmwaregenerator, Referenz-YAML und versionsabhängigen Tests übereinstimmen.
 `README.md` und `CHANGELOG.md` müssen die Änderung sowie die Notwendigkeit eines
 Display-Firmwareupdates eindeutig nennen.
 
-Version 0.3.36 benötigt wegen der dedizierten UC8179-LUTBD-Randansteuerung und
-Renderrevision 27 zwingend ein Display-Firmwareupdate. Zusätzlich zum
-vollständigen Testlauf und zur ESPHome-Kompilierung sind wiederholte
-Vollrefreshs in `auto`, `otp` und `custom` auf einem realen E1001 zu prüfen oder
-ausdrücklich als nicht hardwaregetestet offenzulegen.
+Version 0.3.37 benötigt wegen der entkoppelten Panel-Transaktionen ein
+Display-Firmwareupdate. Zusätzlich zum vollständigen Testlauf und zur
+ESPHome-Kompilierung sind während wiederholter Vollrefreshs die dauerhafte
+Native-API-Erreichbarkeit und die serielle Payload-Verarbeitung auf einem
+realen E1001 zu prüfen oder ausdrücklich als nicht hardwaregetestet
+offenzulegen. Die mit 0.3.36 eingeführte LUTBD-Randansteuerung und
+Renderrevision 27 bleiben bestehen; Vollrefreshs in `auto`, `otp` und `custom`
+gehören weiterhin zur Hardwarematrix.
 
 Zusätzlich sind `LICENSE_STATUS.md` und `THIRD_PARTY_NOTICES.md` vor jeder
 öffentlichen Veröffentlichung zu prüfen. Dokumentieren sie einen anwendbaren,

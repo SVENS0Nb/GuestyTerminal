@@ -3,6 +3,40 @@
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt. Einträge
 unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
 
+## 0.3.37 – 2026-08-25
+
+### Erreichbarkeit während der Display-Aktualisierung
+
+- Die reale Geräteanalyse zeigte einen TCP-erreichbaren ESP32, dessen
+  ESPHome-Handshake während eines vollständigen E-Paper-Refreshs länger als
+  60 Sekunden blockiert war. Home Assistant markierte dadurch alle Entitäten
+  als nicht verfügbar. Nach der Wiederverbindung löste der Endpunkt denselben
+  Willkommens-Payload erneut aus und konnte so in eine Refresh-/Reconnect-
+  Schleife geraten. Die Stromerkennung blieb dabei korrekt auf
+  `SY6974B BUS_GD`; Deep Sleep war nicht die Ursache.
+- Framebuffer-Aufbau und Payload-Übergabe bleiben im ESPHome-Hauptablauf,
+  während ausschließlich die langsamen, hardwarenahen OTP-, SPI- und
+  Panel-Transaktionen in einer eigenen ESP32-Aufgabe laufen. Damit bleiben
+  Native API, Home Assistant und Diagnose-Entitäten auch während eines langen
+  Vollrefreshs ansprechbar.
+- Vollständige Payload-Handler und lokale Datenschutz-Löschvorgänge warten
+  jetzt auf den Abschluss einer laufenden Panel-Transaktion. Dadurch kann kein
+  zweiter Auftrag gemeinsame Renderer-Daten verändern oder einen fremden
+  Refresh als seinen eigenen Erfolg verbuchen.
+- Die Wartezeit für reine UC8179-OTP-Lesephasen ist auf die dreisekündige
+  Grenze der festgehaltenen Seeed-Referenz begrenzt. Die längere
+  45-Sekunden-Grenze für echte Panel-Power- und Refreshphasen bleibt erhalten.
+
+### Prüfstatus
+
+- Der vollständige lokale Python-Prüflauf war mit 258 Tests gegen Home
+  Assistant 2026.2.3 erfolgreich; die Branch-Abdeckung beträgt 90,79 %. Ruff,
+  Formatprüfung, Mypy und Bytecode-Kompilierung sind ebenfalls fehlerfrei.
+- ESPHome 2026.8.1 hat die Referenzkonfiguration validiert und die Firmware
+  vollständig gebaut. Das OTA-Abbild ist 1.465.024 Bytes groß und bleibt unter
+  dem festgelegten 95-Prozent-Flashbudget. Die korrigierte Nebenläufigkeit muss
+  nach der Installation noch auf dem realen E1001 bestätigt werden.
+
 ## 0.3.36 – 2026-08-25
 
 ### Displayrand – dedizierte Panel-Wellenform

@@ -149,6 +149,12 @@ api:
         weather_condition: string
         weather_temperature: string
       then:
+        # Hardware refreshes run outside ESPHome's main loop so the native API
+        # stays responsive. Serialize complete payload handlers before they
+        # mutate the shared renderer state or framebuffer.
+        - wait_until:
+            condition:
+              lambda: return !id(guesty_epaper).update_in_progress();
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
             const bool renderer_current = id(guesty_render_revision) == 27;
@@ -266,7 +272,9 @@ api:
                     id(guesty_epaper).request_partial_update();
                   }
               - component.update: guesty_epaper
-              - delay: 7s
+              - wait_until:
+                  condition:
+                    lambda: return !id(guesty_epaper).update_in_progress();
               - if:
                   condition:
                     lambda: return id(guesty_epaper).last_update_successful();
@@ -1741,6 +1749,7 @@ interval:
                       && (!id(guesty_external_power).has_state()
                           || !id(guesty_external_power).state));
               return battery_mode
+                  && !id(guesty_epaper).update_in_progress()
                   && (id(guesty_update_received_this_boot)
                       || millis()
                           >= static_cast<uint32_t>(${awake_duration_seconds})
@@ -1775,7 +1784,9 @@ interval:
                       id(guesty_privacy_clear_pending) = true;
                   - display.page.show: guesty_idle_page
                   - component.update: guesty_epaper
-                  - delay: 7s
+                  - wait_until:
+                      condition:
+                        lambda: return !id(guesty_epaper).update_in_progress();
                   - if:
                       condition:
                         lambda: return id(guesty_epaper).last_update_successful();
@@ -1822,6 +1833,7 @@ interval:
                       && id(guesty_external_power).state);
               const auto now = id(guesty_rtc).now();
               return stay_online
+                  && !id(guesty_epaper).update_in_progress()
                   && id(guesty_screen_sensitive)
                   && (id(guesty_privacy_clear_pending)
                       || id(guesty_valid_until_epoch) == 0
@@ -1850,7 +1862,9 @@ interval:
                 id(guesty_privacy_clear_pending) = true;
             - display.page.show: guesty_idle_page
             - component.update: guesty_epaper
-            - delay: 7s
+            - wait_until:
+                condition:
+                  lambda: return !id(guesty_epaper).update_in_progress();
             - if:
                 condition:
                   lambda: return id(guesty_epaper).last_update_successful();

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 
 #include "esphome/components/display/display_buffer.h"
 #include "esphome/components/spi/spi.h"
@@ -37,6 +38,7 @@ class GuestyEPaperGray4
   static constexpr uint16_t WIDTH = 800;
   static constexpr uint16_t HEIGHT = 480;
   static constexpr uint32_t IDLE_TIMEOUT_MS = 45000;
+  static constexpr uint32_t OTP_IDLE_TIMEOUT_MS = 3000;
   static constexpr size_t PARTIAL_BUFFER_CAPACITY = 2048;
   static constexpr size_t MONOCHROME_FRAME_LENGTH = WIDTH * HEIGHT / 8U;
   static constexpr size_t BORDER_LUT_LENGTH = 42;
@@ -60,8 +62,13 @@ class GuestyEPaperGray4
     this->max_partial_updates_ = updates;
   }
   void request_partial_update() { this->partial_update_requested_ = true; }
-  bool last_update_successful() const { return this->last_update_successful_; }
-  bool last_update_was_partial() const { return this->last_update_was_partial_; }
+  bool update_in_progress() const { return this->update_in_progress_.load(); }
+  bool last_update_successful() const {
+    return this->last_update_successful_.load();
+  }
+  bool last_update_was_partial() const {
+    return this->last_update_was_partial_.load();
+  }
 
   float get_setup_priority() const override;
   void setup() override;
@@ -86,7 +93,8 @@ class GuestyEPaperGray4
   void data_(uint8_t value);
   void start_data_();
   void end_data_();
-  bool wait_until_idle_(const char *phase);
+  bool wait_until_idle_(const char *phase,
+                        uint32_t timeout_ms = IDLE_TIMEOUT_MS);
   bool wait_after_controller_command_(const char *phase);
   bool reset_panel_();
   bool release_spi_bus_for_gpio_read_();
@@ -116,6 +124,10 @@ class GuestyEPaperGray4
   void store_retained_partial_frame_(uint8_t partial_count);
   void invalidate_retained_partial_frame_();
   void log_frame_levels_();
+  void perform_prepared_update_();
+#ifdef USE_ESP32
+  static void update_task_(void *parameter);
+#endif
   bool refresh_();
   bool display_();
   void deep_sleep_panel_();
@@ -128,8 +140,11 @@ class GuestyEPaperGray4
   uint32_t reset_duration_{10};
   bool panel_asleep_{true};
   bool lut_mode_selected_{false};
-  bool last_update_successful_{false};
-  bool last_update_was_partial_{false};
+  std::atomic<bool> update_in_progress_{false};
+  std::atomic<bool> last_update_successful_{false};
+  std::atomic<bool> last_update_was_partial_{false};
+  bool prepared_partial_available_{false};
+  bool prepared_partial_requested_{false};
   bool partial_refresh_configured_{false};
   bool partial_update_requested_{false};
   uint16_t partial_x_{0};

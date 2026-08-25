@@ -10,6 +10,8 @@
 #ifdef USE_ESP32
 #include "driver/spi_master.h"
 #include "esp_attr.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #endif
 
 namespace esphome::guesty_epaper_gray4 {
@@ -97,8 +99,12 @@ void GuestyEPaperGray4::setup() {
 }
 
 void GuestyEPaperGray4::update() {
-  this->last_update_successful_ = false;
-  this->last_update_was_partial_ = false;
+  if (this->update_in_progress_.exchange(true)) {
+    ESP_LOGW(TAG, "Ignoring overlapping E-paper update request");
+    return;
+  }
+  this->last_update_successful_.store(false);
+  this->last_update_was_partial_.store(false);
 
   const bool partial_requested = this->partial_update_requested_;
   const bool partial_available =
@@ -111,21 +117,50 @@ void GuestyEPaperGray4::update() {
   this->partial_update_requested_ = false;
 
   this->do_update_();
-  if (this->is_failed())
+  if (this->is_failed()) {
+    this->update_in_progress_.store(false);
     return;
+  }
+
+  this->prepared_partial_available_ = partial_available;
+  this->prepared_partial_requested_ = partial_requested;
+
+#ifdef USE_ESP32
+  // OTP inspection, plane transfer and a physical E-paper refresh can take
+  // longer than the native API's handshake timeout. Keep those hardware-only
+  // operations off ESPHome's main loop so Home Assistant remains connected
+  // and can observe the final success state instead of creating a reconnect
+  // and redraw loop.
+  const BaseType_t task_created = xTaskCreate(
+      GuestyEPaperGray4::update_task_, "guesty_epaper", 8192, this, 1, nullptr);
+  if (task_created != pdPASS) {
+    ESP_LOGE(TAG, "Could not start the E-paper refresh task");
+    this->status_set_warning();
+    this->update_in_progress_.store(false);
+  }
+#else
+  this->perform_prepared_update_();
+#endif
+}
+
+void GuestyEPaperGray4::perform_prepared_update_() {
+  const bool partial_available = this->prepared_partial_available_;
+  const bool partial_requested = this->prepared_partial_requested_;
 
   if (partial_available) {
     this->extract_partial_bitmap_(this->partial_current_.data());
     if (std::memcmp(this->partial_previous_.data(), this->partial_current_.data(),
                     this->partial_buffer_length_()) == 0) {
-      this->last_update_successful_ = true;
+      this->last_update_successful_.store(true);
+      this->update_in_progress_.store(false);
       return;
     }
     if (this->display_partial_(this->partial_previous_.data(),
                                this->partial_current_.data())) {
-      this->last_update_successful_ = true;
-      this->last_update_was_partial_ = true;
+      this->last_update_successful_.store(true);
+      this->last_update_was_partial_.store(true);
       this->store_retained_partial_frame_(retained_partial_frame.partial_count + 1);
+      this->update_in_progress_.store(false);
       return;
     }
     ESP_LOGW(TAG, "Partial refresh failed; falling back to full grayscale refresh");
@@ -135,14 +170,33 @@ void GuestyEPaperGray4::update() {
              "performing full refresh");
   }
 
-  this->last_update_successful_ = this->display_();
-  if (this->last_update_successful_)
+  const bool successful = this->display_();
+  this->last_update_successful_.store(successful);
+  if (successful)
     this->store_retained_partial_frame_(0);
   else
     this->invalidate_retained_partial_frame_();
+  this->update_in_progress_.store(false);
 }
 
-void GuestyEPaperGray4::on_safe_shutdown() { this->deep_sleep_panel_(); }
+#ifdef USE_ESP32
+void GuestyEPaperGray4::update_task_(void *parameter) {
+  auto *display = static_cast<GuestyEPaperGray4 *>(parameter);
+  display->perform_prepared_update_();
+  vTaskDelete(nullptr);
+}
+#endif
+
+void GuestyEPaperGray4::on_safe_shutdown() {
+  // A normal battery sleep is requested only after the YAML action has waited
+  // for this flag. Keep manual restarts and OTA shutdowns safe as well: never
+  // drive shutdown commands concurrently with an active panel transaction.
+  while (this->update_in_progress_.load()) {
+    App.feed_wdt();
+    delay(10);
+  }
+  this->deep_sleep_panel_();
+}
 
 uint8_t GuestyEPaperGray4::color_to_panel_gray_(Color color) {
   // ESPHome treats COLOR_ON as ink and COLOR_OFF as paper. Preserve those
@@ -201,13 +255,14 @@ void GuestyEPaperGray4::start_data_() {
 
 void GuestyEPaperGray4::end_data_() { this->disable(); }
 
-bool GuestyEPaperGray4::wait_until_idle_(const char *phase) {
+bool GuestyEPaperGray4::wait_until_idle_(const char *phase,
+                                         uint32_t timeout_ms) {
   // The E1001 exposes UC8179 BUSY_N: LOW means busy, HIGH means idle. The YAML
   // must therefore use a non-inverted GPIO input for this driver.
   delay(10);
   const uint32_t started = millis();
   while (!this->busy_pin_->digital_read()) {
-    if (millis() - started > IDLE_TIMEOUT_MS) {
+    if (millis() - started > timeout_ms) {
       ESP_LOGE(TAG, "Display BUSY timeout (%s)", phase);
       this->status_set_warning();
       return false;
@@ -361,7 +416,7 @@ bool GuestyEPaperGray4::read_otp_bank_(uint16_t read_length,
   delay(20);
   this->reset_pin_->digital_write(true);
   delay(20);
-  if (!this->wait_until_idle_("during OTP bank read"))
+  if (!this->wait_until_idle_("during OTP bank read", OTP_IDLE_TIMEOUT_MS))
     return false;
 
   *check_code = 0;
@@ -416,10 +471,12 @@ bool GuestyEPaperGray4::read_otp_profile_(bool *grayscale_supported) {
   delay(20);
   this->reset_pin_->digital_write(true);
   delay(20);
-  bool probe_ok = this->wait_until_idle_("during OTP probe");
+  bool probe_ok =
+      this->wait_until_idle_("during OTP probe", OTP_IDLE_TIMEOUT_MS);
   if (probe_ok) {
     this->gpio_write_command_(0x40);  // READ INTERNAL TEMPERATURE
-    probe_ok = this->wait_until_idle_("before OTP temperature read");
+    probe_ok = this->wait_until_idle_("before OTP temperature read",
+                                      OTP_IDLE_TIMEOUT_MS);
     if (probe_ok) {
       (void) this->gpio_read_byte_();
       (void) this->gpio_read_byte_();

@@ -569,7 +569,19 @@ Reconnect-Impuls als auch auf den wiederhergestellten Aktionsnamen und versucht
 die Zustellung innerhalb eines begrenzten Zeitfensters erneut. Nach dem
 HACS-Update muss die Display-Firmware einmalig auf 0.3.26 aktualisiert werden.
 
-Version **0.3.36** korrigiert die eigentliche
+Version **0.3.37** verhindert, dass ein langer E-Paper-Vollrefresh die
+ESPHome-Verbindung zu Home Assistant blockiert. Die hardwarenahen OTP-, SPI-
+und Panel-Transaktionen laufen nun getrennt vom ESPHome-Hauptablauf; Payloads
+und lokale Datenschutz-Löschvorgänge bleiben vollständig serialisiert. Dadurch
+entsteht nach einem mehr als 60 Sekunden dauernden Refresh keine
+Reconnect-/Redraw-Schleife mehr, und Diagnose-Entitäten bleiben erreichbar.
+Die OTP-Wartezeit ist zusätzlich auf die dreisekündige Seeed-Referenzgrenze
+beschränkt. Ein Display-Firmwareupdate auf 0.3.37 ist erforderlich. 258 Tests,
+90,79 % Branch-Abdeckung sowie Konfigurationsprüfung und vollständiger Build
+mit ESPHome 2026.8.1 waren erfolgreich; die Wirkung auf dem realen E1001 wird
+nach der Installation bestätigt.
+
+Version **0.3.36** korrigierte die eigentliche
 Ursache des dunklen Außenrandes. Die separate UC8179-Randelektrode verwendete
 bislang die Pixel-Wellenform `LUTKW`; deren letzte Phase konnte den Rand erst am
 Ende des sichtbaren Bildaufbaus dunkel färben. Der neue Vollrefresh wählt mit
@@ -577,7 +589,7 @@ Ende des sichtbaren Bildaufbaus dunkel färben. Der neue Vollrefresh wählt mit
 im Registermodus werden ihre 42 Bytes aus der gültigen OTP-Bank zweimal gelesen
 und nur bei vollständiger Übereinstimmung nach `R25h` geladen. Renderrevision 27
 erzwingt nach dem Firmwareupdate einmalig einen Vollrefresh. Ein
-Display-Firmwareupdate auf 0.3.36 ist erforderlich. 257 Tests, 90,79 %
+Display-Firmwareupdate auf 0.3.36 war erforderlich. 257 Tests, 90,79 %
 Branch-Abdeckung und der vollständige Build mit ESPHome 2026.7.4 sind
 erfolgreich; die optische Wirkung muss anschließend noch auf einem realen E1001
 bestätigt werden.
