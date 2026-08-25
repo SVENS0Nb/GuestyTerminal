@@ -3,6 +3,56 @@
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt. Einträge
 unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
 
+## 0.3.38 – 2026-08-25
+
+### Verbindlicher Veröffentlichungsprozess
+
+- Ein eigener, manuell gestarteter GitHub-Workflow veröffentlicht nur noch den
+  unveränderten `main`-Commit, für den der normale Test-Workflow bereits
+  erfolgreich abgeschlossen wurde. Er prüft Versionsangaben, Changelog,
+  Distributionsentscheidung und Drittanbieterhinweise erneut, verlangt einen
+  ausdrücklichen Hardwarestatus und erzeugt Release-Notizen, annotierten Tag
+  und GitHub-Release automatisch.
+- Die CI führt die schnelle Release-Vorprüfung zuerst aus und startet danach
+  statische Analyse, beide Home-Assistant-Baselines und den ESPHome-Bau
+  parallel. Getrennte, exakt gepinnte Abhängigkeiten und sichere Buildcaches
+  reduzieren Wiederholungsarbeit; Tag-Pushes starten keinen doppelten Testlauf.
+- GitHub-Actions sind auf feste Commitstände gepinnt. Ein abgebrochener Lauf
+  darf einen bereits korrekt auf denselben Commit zeigenden Tag sicher
+  weiterverwenden, verschiebt oder überschreibt aber niemals einen
+  widersprüchlichen Tag.
+
+### Watchdog-sichere Panel-Aufgabe
+
+- Die Geräteprotokolle von 0.3.37 belegen wiederholte Native-API-Abbrüche im
+  Abstand von ungefähr 40 Sekunden sowie mehrere zu schnelle Neustarts, obwohl
+  die Firmware korrekt installiert und das Gerät am Strom war.
+- Die ausgelagerte Panel-Aufgabe rief ESPHomes `App.feed_wdt()` auf. ESPHome
+  2026.8.1 registriert jedoch ausschließlich seine Hauptschleife beim
+  Task-Watchdog. Der fremde Aufruf konnte den Watchdog nicht für die
+  Hauptschleife zurücksetzen, aktualisierte aber deren gemeinsamen
+  Zeitstempel. Dadurch unterblieb der echte Watchdog-Reset der Hauptschleife.
+- OTP-Lesen und zeilenweise Panel-Übertragungen geben die CPU nun kooperativ
+  für Netzwerk-, Haupt- und Idle-Aufgaben frei, ohne aus der Panel-Aufgabe den
+  ESPHome-Watchdog anzufassen. Synchrone sichere Abschaltvorgänge versorgen den
+  Watchdog weiterhin aus der registrierten Hauptschleife.
+- Datenschutz- und Buchungsbestätigung bleiben unverändert an einen
+  nachweislich erfolgreichen physischen Refresh gebunden. Neue neutrale
+  Diagnosemeldungen markieren Beginn, Ende, Dauer und Erfolg der
+  Hardwaretransaktion.
+
+### Prüfstatus
+
+- Der vollständige lokale Python-Prüflauf war mit jeweils 268 Tests gegen Home
+  Assistant 2025.12.0 und 2026.2.3 erfolgreich; die Branch-Abdeckung beträgt
+  90,79 %. Ruff, Formatprüfung, Mypy und Bytecode-Kompilierung sind ebenfalls
+  fehlerfrei.
+- ESPHome 2026.8.1 hat die Referenzkonfiguration validiert und die Firmware
+  vollständig gebaut. Das Abbild ist 1.465.115 Bytes groß; 20 % der
+  App-Partition bleiben frei. Die Korrektur muss nach der Installation noch
+  auf dem realen E1001 anhand einer abgeschlossenen Hardwaretransaktion ohne
+  Neustart- oder Reconnect-Schleife bestätigt werden.
+
 ## 0.3.37 – 2026-08-25
 
 ### Erreichbarkeit während der Display-Aktualisierung

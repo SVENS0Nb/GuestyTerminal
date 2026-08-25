@@ -89,12 +89,31 @@ Firmwaregenerator, Referenz-YAML und versionsabhängigen Tests übereinstimmen.
 `README.md` und `CHANGELOG.md` müssen die Änderung sowie die Notwendigkeit eines
 Display-Firmwareupdates eindeutig nennen.
 
-Version 0.3.37 benötigt wegen der entkoppelten Panel-Transaktionen ein
+Jede Veröffentlichung läuft ausschließlich über den manuell gestarteten
+GitHub-Workflow **Release** auf `main`. Direkte lokale Tags und manuell
+angelegte GitHub-Releases sind nicht Teil des unterstützten Ablaufs. Der
+Workflow akzeptiert nur den unveränderten `main`-Commit, für den **Tests** bereits
+vollständig erfolgreich war, prüft Versions- und Lizenzmarker erneut, verlangt
+eine wahrheitsgemäße Angabe zur realen Hardwareprüfung und erzeugt die
+Release-Notizen aus dem aktuellen Changelog. Erst danach legt er den annotierten
+Tag und das GitHub-Release an. Ein vorhandener Tag wird nur dann wiederverwendet,
+wenn er exakt auf denselben geprüften Commit zeigt.
+
+Der normale Test-Workflow trennt Vorprüfung, statische Analyse, beide
+Home-Assistant-Baselines und den ESPHome-Bau. Diese Arbeiten laufen nach der
+schnellen Vorprüfung parallel; Abhängigkeiten und nicht produktive
+Firmware-Builddaten werden gecacht. Tag-Pushes lösen keinen zweiten identischen
+Testlauf aus.
+
+Version 0.3.38 benötigt wegen der watchdog-sicheren, kooperativen
+Panel-Transaktionen ein
 Display-Firmwareupdate. Zusätzlich zum vollständigen Testlauf und zur
 ESPHome-Kompilierung sind während wiederholter Vollrefreshs die dauerhafte
 Native-API-Erreichbarkeit und die serielle Payload-Verarbeitung auf einem
 realen E1001 zu prüfen oder ausdrücklich als nicht hardwaregetestet
-offenzulegen. Die mit 0.3.36 eingeführte LUTBD-Randansteuerung und
+offenzulegen. Im Protokoll müssen Start und erfolgreicher Abschluss der
+Hardwaretransaktion ohne schnellen Neustart oder Reconnect-Schleife erscheinen.
+Die mit 0.3.36 eingeführte LUTBD-Randansteuerung und
 Renderrevision 27 bleiben bestehen; Vollrefreshs in `auto`, `otp` und `custom`
 gehören weiterhin zur Hardwarematrix.
 

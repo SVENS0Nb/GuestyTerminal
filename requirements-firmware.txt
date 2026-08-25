@@ -1,0 +1,2 @@
+# Keep this exact pin aligned with the documented and release-tested toolchain.
+esphome==2026.8.1

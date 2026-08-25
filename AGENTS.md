@@ -525,6 +525,28 @@ After editing:
 Do not commit, push, tag, publish a release, or queue real OTA jobs unless the
 user explicitly requests that external action.
 
+Every public release must use `.github/workflows/release.yml`; do not create or
+push a release tag with local Git commands and do not call `gh release create`
+directly. After an explicit publication request, first put the intended commit
+on `main` and wait for the `Tests` workflow for that exact commit to succeed.
+Then dispatch `Release` from `main` with the truthful real-device hardware
+status and the explicit distribution-review confirmation, and wait for that
+workflow to finish. The workflow derives the version from the repository,
+revalidates the metadata and notices, confirms that `main` has not advanced,
+requires the exact successful CI revision, generates the release notes, and
+only then creates the tag and GitHub release. A tag push is deliberately
+excluded from `Tests`, so publishing does not repeat the already-green build.
+
+When subagents are available, every release preparation includes one read-only
+mechanical audit by the fastest suitable lower-cost model (currently
+`gpt-5.6-luna`): version agreement, changed-file inventory, CI result for the
+exact SHA, generated-note completeness, and tag/release collision checks. That
+subagent must not edit files, decide rights or hardware safety, handle secrets,
+push, tag, or publish. The primary agent retains all privacy-, driver-,
+distribution-, hardware-, and final-publication decisions and independently
+checks the audit result. If no suitable subagent is available, the primary
+agent performs the same audit; no release gate may be skipped.
+
 For a release, use one semantic version consistently in:
 
 - `custom_components/guesty_terminal/manifest.json`
@@ -537,8 +559,10 @@ Before any public release or redistribution, read `LICENSE_STATUS.md` and
 `THIRD_PARTY_NOTICES.md`. If they document an unresolved right or redistribution
 blocker that applies to the release, stop and request an explicit project-owner
 decision; a generic request to publish does not resolve third-party rights or
-select a project-wide license. This check is required even when no asset or
-driver file changed.
+select a project-wide license. The machine-readable marker in
+`LICENSE_STATUS.md` records the owner's existing proprietary-source decision,
+but every workflow run still requires a fresh distribution-review confirmation.
+This check is required even when no asset or driver file changed.
 
 Generated managed YAML contains two GitHub refs and one ESPHome project version.
 The updater intentionally requires exactly those three versions to match and

@@ -124,6 +124,7 @@ class GuestyEPaperGray4
   void store_retained_partial_frame_(uint8_t partial_count);
   void invalidate_retained_partial_frame_();
   void log_frame_levels_();
+  void service_long_operation_();
   void perform_prepared_update_();
 #ifdef USE_ESP32
   static void update_task_(void *parameter);

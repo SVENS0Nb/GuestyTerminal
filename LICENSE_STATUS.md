@@ -31,4 +31,12 @@ früheren Treiberbefund nicht mehr blockiert. Ohne projektweite Lizenz erhalten
 Dritte jedoch weiterhin keine ausdrückliche Erlaubnis zur Nutzung, Änderung
 oder Weiterverteilung der übrigen GuestyTerminal-Dateien.
 
+Der Projektinhaber hat sich für öffentliche Releases als proprietär
+bereitgestellter Quellcode entschieden. Der folgende maschinenlesbare Marker
+dokumentiert diese bestehende Entscheidung für den automatischen
+Veröffentlichungsprozess; er ersetzt weder die Prüfung der Drittanbieterrechte
+noch eine Rechtsberatung:
+
+`PUBLIC_PROPRIETARY_SOURCE_RELEASES_PERMITTED`
+
 Diese Datei dokumentiert nur den aktuellen Zustand und ist keine Rechtsberatung.

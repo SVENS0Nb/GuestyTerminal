@@ -569,6 +569,17 @@ Reconnect-Impuls als auch auf den wiederhergestellten Aktionsnamen und versucht
 die Zustellung innerhalb eines begrenzten Zeitfensters erneut. Nach dem
 HACS-Update muss die Display-Firmware einmalig auf 0.3.26 aktualisiert werden.
 
+Version **0.3.38** korrigiert die Watchdog-Anbindung der mit 0.3.37
+eingeführten Panel-Aufgabe. Diese Aufgabe darf ESPHomes Watchdog nicht selbst
+zurücksetzen, weil ESPHome 2026.8.1 ausschließlich seine Hauptschleife dafür
+registriert. OTP-Lesevorgänge und zeilenweise Panel-Übertragungen geben die CPU
+jetzt stattdessen kooperativ frei. Damit bleiben Netzwerk und Hauptschleife
+arbeitsfähig, ohne dass ein fremder Watchdog-Aufruf wiederholte Neustarts und
+Reconnects auslöst. Beginn, Ende, Dauer und Erfolg jeder Hardwaretransaktion
+werden neutral protokolliert. Ein Display-Firmwareupdate auf 0.3.38 ist
+erforderlich; die Wirkung auf dem realen E1001 wird nach der Installation
+bestätigt.
+
 Version **0.3.37** verhindert, dass ein langer E-Paper-Vollrefresh die
 ESPHome-Verbindung zu Home Assistant blockiert. Die hardwarenahen OTP-, SPI-
 und Panel-Transaktionen laufen nun getrennt vom ESPHome-Hauptablauf; Payloads
@@ -775,6 +786,22 @@ Die gepflegte Wissensbasis besteht aus wenigen, klar abgegrenzten Dokumenten:
 Bei widersprüchlichen technischen Angaben gilt der getestete Quellcode
 zusammen mit `AGENTS.md` als Wartungsgrundlage; Benutzerverhalten und
 Installationsschritte müssen anschließend in diesem README nachgezogen werden.
+
+## Automatische Veröffentlichungen
+
+Neue Versionen werden ausschließlich über den GitHub-Workflow **Release** vom
+aktuellen `main`-Stand veröffentlicht. Er lässt eine Freigabe nur zu, wenn genau
+dieser Stand bereits alle automatischen Prüfungen bestanden hat. Versionsnummer,
+Changelog, Lizenzstatus und Drittanbieterhinweise werden erneut kontrolliert;
+außerdem muss angegeben werden, ob die vollständige Hardwareprüfung auf einem
+realen E1001 erfolgreich war oder noch aussteht. Die Release-Notizen, der
+annotierte Versions-Tag und das GitHub-Release entstehen danach automatisch.
+
+Der Testablauf führt die beiden unterstützten Home-Assistant-Versionen, die
+statische Prüfung und den ESPHome-Firmwarebau parallel aus. Sichere
+Abhängigkeits- und Firmware-Buildcaches verkürzen Folgeläufe. Ein Versions-Tag
+startet keinen überflüssigen zweiten Firmwarebau, weil das Release nur einen
+bereits erfolgreich geprüften Commit verwenden darf.
 
 ## Tests
 

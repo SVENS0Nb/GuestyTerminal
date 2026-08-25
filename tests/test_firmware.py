@@ -73,7 +73,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.37") == 2
+    assert rendered.count("ref: v0.3.38") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
@@ -484,6 +484,24 @@ def test_panel_io_does_not_block_the_esphome_api_loop() -> None:
     assert "std::atomic<bool> update_in_progress_" in header
     assert "OTP_IDLE_TIMEOUT_MS = 3000" in header
     assert driver.count("OTP_IDLE_TIMEOUT_MS") >= 3
+    service_start = driver.index("void GuestyEPaperGray4::service_long_operation_()")
+    service_end = driver.index("void GuestyEPaperGray4::on_safe_shutdown()")
+    service = driver[service_start:service_end]
+    assert "if (this->update_in_progress_.load())" in service
+    assert "vTaskDelay(1)" in service
+    assert service.index("    vTaskDelay(1);") < service.index("  App.feed_wdt();")
+    assert driver.count("App.feed_wdt();") == 2
+    for function_name in (
+        "wait_until_idle_",
+        "read_otp_bank_",
+        "write_plane_",
+        "write_monochrome_frame_",
+    ):
+        function_start = driver.index(f"GuestyEPaperGray4::{function_name}")
+        function_end = driver.index("\n}", function_start)
+        function = driver[function_start:function_end]
+        assert "service_long_operation_()" in function
+        assert "App.feed_wdt()" not in function
 
     action_start = package.index("    - action: guesty_terminal_update_display_v9")
     action_end = package.index("\nglobals:\n", action_start)
@@ -1020,7 +1038,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.37", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.38", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -1032,8 +1050,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.37") == 2
-    assert 'version: "0.3.37"' in updated
+    assert updated.count("ref: v0.3.38") == 2
+    assert 'version: "0.3.38"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -1064,7 +1082,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
 def test_update_managed_firmware_configs_rejects_invalid_credentials(
     tmp_path, broken_line
 ) -> None:
-    valid = render_firmware_config(_options()).replace("0.3.37", "0.3.10")
+    valid = render_firmware_config(_options()).replace("0.3.38", "0.3.10")
     if "key:" in broken_line:
         invalid = valid.replace(
             next(line for line in valid.splitlines() if "key:" in line), broken_line
@@ -1101,14 +1119,14 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.37", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.38", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     future.chmod(0o600)
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.37", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.38", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")

@@ -182,16 +182,41 @@ void GuestyEPaperGray4::perform_prepared_update_() {
 #ifdef USE_ESP32
 void GuestyEPaperGray4::update_task_(void *parameter) {
   auto *display = static_cast<GuestyEPaperGray4 *>(parameter);
+  const uint32_t started = millis();
+  ESP_LOGI(TAG, "E-paper hardware transaction started");
   display->perform_prepared_update_();
+  ESP_LOGI(TAG, "E-paper hardware transaction finished in %lu ms (%s)",
+           static_cast<unsigned long>(millis() - started),
+           display->last_update_successful() ? "successful" : "failed");
   vTaskDelete(nullptr);
 }
 #endif
+
+void GuestyEPaperGray4::service_long_operation_() {
+#ifdef USE_ESP32
+  if (this->update_in_progress_.load()) {
+    // ESPHome 2026.8 registers only its loop task with the task watchdog.
+    // App.feed_wdt() from this worker would try to feed an unregistered task
+    // while advancing Application's shared feed timestamp. That prevents the
+    // real loop task from feeding itself and eventually reboots the device.
+    // Block this low-priority worker for one tick instead, allowing the loop,
+    // network stack and idle tasks to run on either CPU core.
+    vTaskDelay(1);
+    return;
+  }
+#endif
+  // Safe-shutdown panel operations run synchronously on ESPHome's loop task.
+  // Keep that registered task alive while a controller phase is still busy.
+  App.feed_wdt();
+  delay(1);
+}
 
 void GuestyEPaperGray4::on_safe_shutdown() {
   // A normal battery sleep is requested only after the YAML action has waited
   // for this flag. Keep manual restarts and OTA shutdowns safe as well: never
   // drive shutdown commands concurrently with an active panel transaction.
   while (this->update_in_progress_.load()) {
+    // This wait runs on ESPHome's registered loop task, not the panel worker.
     App.feed_wdt();
     delay(10);
   }
@@ -267,7 +292,7 @@ bool GuestyEPaperGray4::wait_until_idle_(const char *phase,
       this->status_set_warning();
       return false;
     }
-    App.feed_wdt();
+    this->service_long_operation_();
     delay(10);
   }
   return true;
@@ -433,7 +458,7 @@ bool GuestyEPaperGray4::read_otp_bank_(uint16_t read_length,
     if (index == marker_offset)
       *marker = value;
     if ((index & 0x3FU) == 0)
-      App.feed_wdt();
+      this->service_long_operation_();
   }
   delay(20);
   return true;
@@ -794,7 +819,7 @@ void GuestyEPaperGray4::write_plane_(uint8_t command, uint8_t bit_index) {
       row_buffer[column] = output;
     }
     this->write_array(row_buffer, BYTES_PER_ROW);
-    App.feed_wdt();
+    this->service_long_operation_();
   }
   this->end_data_();
 }
@@ -845,7 +870,7 @@ void GuestyEPaperGray4::write_monochrome_frame_(
       }
     }
     this->write_array(row_buffer, BYTES_PER_ROW);
-    App.feed_wdt();
+    this->service_long_operation_();
   }
   this->end_data_();
 }
