@@ -413,7 +413,7 @@ def test_v10_waits_for_physical_success_acknowledgement() -> None:
         sent = hass.services.calls[0][2]
         delivery_id = sent["delivery_id"]
         assert len(delivery_id) == 24
-        assert hass.services.calls[0][3] is False
+        assert hass.services.calls[0][3] is True
         assert not delivery.done()
 
         runtime._handle_endpoint_state(
@@ -888,6 +888,7 @@ def test_service_errors_are_isolated_without_logging_payload_data(caplog) -> Non
         asyncio.run(runtime.async_push_endpoint(ENDPOINT))
 
     assert len(hass.services.calls) == 1
+    assert hass.services.calls[0][3] is True
     assert "Could not submit a GuestyTerminal display update" in caplog.text
     assert private_marker not in caplog.text
 

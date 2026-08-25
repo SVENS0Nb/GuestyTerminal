@@ -238,12 +238,13 @@ async def async_send_display_payload(
                 "esphome",
                 action,
                 service_data,
-                # v10 has an explicit endpoint acknowledgement. Do not hold
-                # Home Assistant's service task open because the minimum
-                # supported 2025.12 ESPHome integration does not yet expose
-                # native action responses, while newer versions impose a
-                # shorter response timeout than the panel's safe BUSY limit.
-                blocking=not v10_action,
+                # Wait only until Home Assistant has handed the fire-and-forget
+                # action to ESPHome. This keeps service failures inside this
+                # privacy-safe exception boundary; a detached service task can
+                # otherwise make Home Assistant core log the complete request,
+                # including guest-visible access data. Physical completion is
+                # acknowledged separately through the v10 endpoint pulses.
+                blocking=True,
             )
         except Exception:  # Home Assistant service errors vary by ESPHome version.
             # ESPHome exceptions can embed the complete service request. Never

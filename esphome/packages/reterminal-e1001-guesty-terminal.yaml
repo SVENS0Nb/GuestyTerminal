@@ -96,6 +96,10 @@ esphome:
 
 api:
   reboot_timeout: 0s
+  # Delivery acknowledgements are low-frequency but latency-sensitive. Send
+  # endpoint pulses immediately so Home Assistant observes "received" before
+  # the asynchronous panel transaction starts.
+  batch_delay: 0ms
   # Authentication finishes before Home Assistant has subscribed to entity
   # states. Wait for that subscription before pulsing the endpoint; otherwise
   # both this pulse and the restored action state can be lost during a short
@@ -139,8 +143,11 @@ api:
     # v10 is the acknowledged transport. It keeps the v9 visible payload
     # schema and adds only a random correlation token. Home Assistant can
     # therefore distinguish submission, rendering and physical completion.
+    # The action itself is deliberately fire-and-forget: ESPHome action
+    # responses have a shorter client timeout than a safe E-paper refresh.
+    # The endpoint pulses below are the sole delivery acknowledgement.
     - action: guesty_terminal_update_display_v10
-      supports_response: status
+      supports_response: none
       variables:
         mode: string
         property_name: string
@@ -203,9 +210,6 @@ api:
                   id(guesty_delivery_status).publish_state("busy");
               - delay: 250ms
               - component.update: guesty_terminal_endpoint
-              - api.respond:
-                  success: false
-                  error_message: "busy"
             else:
               - lambda: |-
                   bool valid_delivery_id = delivery_id.size() == 24;
@@ -226,6 +230,10 @@ api:
                   id(guesty_last_delivery_state) = state;
                   id(guesty_terminal_endpoint).publish_state(state);
                   id(guesty_delivery_status).publish_state("received");
+              # Yield after the immediate endpoint publication. This keeps a
+              # later rendering state or panel failure from coalescing away
+              # the transport receipt on slower Home Assistant connections.
+              - delay: 150ms
               # A local privacy clear or legacy v9 refresh may already own the
               # panel. Return a bounded preparation error quickly so the Home
               # Assistant retry path can take over without exceeding its
@@ -473,16 +481,6 @@ api:
                       id(guesty_last_delivery_state));
                   id(guesty_delivery_status).publish_state(status);
               - delay: 300ms
-              - if:
-                  condition:
-                    lambda: return id(guesty_delivery_result);
-                  then:
-                    - api.respond:
-                        success: true
-                  else:
-                    - api.respond:
-                        success: false
-                        error_message: !lambda return id(guesty_delivery_error);
               # Failed payloads stay awake for a retry. A successful battery
               # delivery may use the established shared sleep path. Keep the
               # endpoint unavailable until this final power decision is done;

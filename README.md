@@ -528,11 +528,19 @@ Die kompakte, fortlaufende Änderungshistorie steht in
 [`CHANGELOG.md`](CHANGELOG.md). Die folgenden Hinweise erklären zusätzlich die
 Firmwareanforderungen älterer Installationen.
 
-Der derzeit unveröffentlichte Stand ergänzt die bestätigte v10-Zustellung und
-die neutralen Panel-/Rahmendiagnosen. Nach einer späteren Veröffentlichung ist
-dafür neben dem HACS-Update auch ein Display-Firmwareupdate erforderlich. Die
-vollständige Softwareprüfung ist erfolgt; die abschließende Sicht- und
-Reconnect-Prüfung auf einem realen E1001 steht noch aus.
+Der derzeit unveröffentlichte Stand, Version **0.3.41**, korrigiert die
+Übergabe an die
+mit Home Assistant 2026.8 eingeführten antwortenden ESPHome-Aktionen. v10 ist
+jetzt wieder eine schnelle Fire-and-forget-Aktion; Empfang, Renderbeginn und
+physischer Abschluss werden weiterhin separat über den Display-Endpunkt
+bestätigt. Dadurch kann die bis zu 70 Sekunden dauernde E-Paper-Transaktion
+nicht mehr in die kürzere Aktionsantwortfrist laufen. Übergabefehler werden
+blockierend innerhalb der datenschutzneutralen Integration behandelt, damit
+Home Assistant nicht den vollständigen Service-Payload protokolliert. Für die
+Korrektur sind nach einer Veröffentlichung sowohl das HACS-/Integrationsupdate
+als auch die Display-Firmware 0.3.41 erforderlich. Der erste zugestellte
+Willkommens-Payload erzwingt einen Vollrefresh; Rand und Randelektrodendiagnose
+sind danach am realen E1001 erneut zu prüfen.
 
 Version **0.3.40** ergänzt die ausdrückliche Abschaltung der ungenutzten
 SD-Karten-Stromversorgung, einen neutralen Voll-/Teilrefresh-Hardwaretest und

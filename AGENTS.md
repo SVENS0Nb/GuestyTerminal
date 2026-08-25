@@ -430,7 +430,12 @@ incomplete change.
   when that version supports them. Preserve old action handling unless a
   deliberate compatibility break is documented and released.
 - The v10 transport is acknowledged through privacy-safe endpoint sensor
-  pulses. Generate a fresh high-entropy correlation token per submitted job;
+  pulses. Keep the ESPHome action in `supports_response: none` mode: native
+  action-response timeouts are shorter than the safe panel completion window.
+  Submit the Home Assistant service with `blocking=True` so connection errors
+  remain inside GuestyTerminal's neutral exception boundary, then wait for the
+  endpoint pulses independently. Generate a fresh high-entropy correlation
+  token per submitted job;
   validate the fixed lowercase-hex token format before firmware state
   publication, and never publish an arbitrary caller-supplied token;
   require received plus success/unchanged before reporting delivery, use

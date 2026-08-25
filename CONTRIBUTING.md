@@ -123,14 +123,14 @@ parallel; Abhängigkeiten, der stabile ESPHome-Werkzeugsatz und nicht produktive
 inkrementelle Firmware-Builddaten werden getrennt gecacht. Tag-Pushes lösen
 keinen zweiten identischen Testlauf aus.
 
-Version 0.3.40 benötigt wegen des neutralen Panel-Selbsttests, der expliziten
-SD-Stromabschaltung und der Flashlayout-Diagnose ein
-Display-Firmwareupdate. Zusätzlich zum vollständigen Testlauf und zur
-ESPHome-Kompilierung sind während wiederholter Vollrefreshs die dauerhafte
-Native-API-Erreichbarkeit und die serielle Payload-Verarbeitung auf einem
-realen E1001 zu prüfen oder ausdrücklich als nicht hardwaregetestet
-offenzulegen. Im Protokoll müssen Start und erfolgreicher Abschluss der
-Hardwaretransaktion ohne schnellen Neustart oder Reconnect-Schleife erscheinen.
+Version 0.3.41 benötigt wegen der antwortfreien v10-Übergabe und der sofortigen
+Endpoint-Bestätigung gemeinsam ein Integrations- und Display-Firmwareupdate.
+Zusätzlich zum vollständigen Testlauf und zur ESPHome-Kompilierung sind während
+wiederholter Vollrefreshs die dauerhafte Native-API-Erreichbarkeit und die
+serielle Payload-Verarbeitung auf einem realen E1001 zu prüfen oder ausdrücklich
+als nicht hardwaregetestet offenzulegen. Im Protokoll müssen `received`,
+`rendering` und `success` ohne Aktions-Timeout, schnellen Neustart oder
+Reconnect-Schleife erscheinen.
 Die mit 0.3.36 eingeführte LUTBD-Randansteuerung und
 Renderrevision 27 bleiben bestehen; Vollrefreshs in `auto`, `otp` und `custom`
 gehören weiterhin zur Hardwarematrix.

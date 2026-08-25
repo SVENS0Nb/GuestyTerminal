@@ -5,6 +5,43 @@ unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
 
 ## Unveröffentlicht
 
+## 0.3.41 – 2026-08-25
+
+### Zuverlässige v10-Zustellung
+
+- Die ESPHome-v10-Aktion ist jetzt ausdrücklich eine schnelle
+  Fire-and-forget-Übergabe. Empfang, Renderbeginn und physischer Panelabschluss
+  werden weiterhin ausschließlich über die korrelierten, datenschutzneutralen
+  Endpoint-Signale bestätigt. Damit wartet Home Assistant nicht mehr auf eine
+  Aktionsantwort, die erst nach dem bis zu 70 Sekunden langen E-Paper-Refresh
+  eintreffen könnte.
+- Endpoint-Zustände werden ohne API-Batching gesendet und die
+  `received`-Bestätigung erhält vor dem Renderer ein eigenes 150-ms-Zeitfenster.
+  Langsamere oder VLAN-übergreifende Verbindungen können den Empfang dadurch
+  nicht mehr mit dem unmittelbar folgenden Renderzustand zusammenfassen.
+- Home Assistant wartet bei der Serviceübergabe wieder bis zur tatsächlichen
+  Annahme durch die ESPHome-Integration. Übergabefehler bleiben dadurch in der
+  neutralen GuestyTerminal-Ausnahmebehandlung, statt als abgelöste
+  Home-Assistant-Core-Aufgabe den vollständigen Zugangsdaten-Payload zu
+  protokollieren.
+
+### Diagnose und Installation
+
+- Ein realer Diagnoseexport mit Home Assistant 2026.8.3 und ESPHome 2026.8.1
+  bestätigte bereits die richtige Buchungsauswahl im Modus `welcome`, während
+  jede v10-Aktion nach 30 Sekunden ohne Antwort auslief und das Gerät weder
+  `received` noch einen Panelabschluss meldete. Der Guesty-Filter und die
+  Zuordnung waren nicht die Ursache.
+- Version 0.3.41 benötigt gemeinsam ein HACS-/Integrationsupdate und ein
+  Display-Firmwareupdate. Der erste erfolgreich empfangene Willkommens-Payload
+  unterscheidet sich vom festgehaltenen Leerseitenbild und erzwingt deshalb
+  einen vollständigen Refresh; erst danach ist eine noch sichtbare
+  Randelektrodenabweichung getrennt vom Transportfehler bewertbar.
+- Die Runtime-/Firmware-Vertragstests und ESPHome-Konfigurationsvalidierung
+  decken den antwortfreien v10-Kanal, die sofortige Empfangsbestätigung und die
+  blockierende, datenschutzsichere Home-Assistant-Übergabe ab. Die abschließende
+  Zustellungs- und Randprüfung auf dem realen E1001 steht noch aus.
+
 ## 0.3.40 – 2026-08-25
 
 ### Offizielle E1001-Hardwarekompatibilität

@@ -77,7 +77,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.40") == 2
+    assert rendered.count("ref: v0.3.41") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
@@ -474,7 +474,8 @@ def test_v10_action_acknowledges_only_confirmed_panel_delivery() -> None:
     end = package.index("    - action: guesty_terminal_update_display_v9\n", start)
     action = package[start:end]
 
-    assert "supports_response: status" in action
+    assert "supports_response: none" in action
+    assert "batch_delay: 0ms" in package
     assert "delivery_id: string" in action
     assert "delivery_id.size() == 24" in action
     assert "character >= 'a' && character <= 'f'" in action
@@ -494,7 +495,11 @@ def test_v10_action_acknowledges_only_confirmed_panel_delivery() -> None:
     assert 'id(guesty_delivery_error) = "preparation_timeout"' in action
     assert 'id(guesty_delivery_error) = "panel_timeout"' in action
     assert 'id(guesty_delivery_error) = "panel_error"' in action
-    assert action.count("api.respond:") == 3
+    assert "api.respond:" not in action
+    assert action.index('publish_state("received")') < action.index("delay: 150ms")
+    assert action.index("delay: 150ms") < action.index(
+        "component.update: guesty_epaper"
+    )
     assert action.index("__guesty_delivery_received__:") < action.index(
         "component.update: guesty_epaper"
     )
@@ -515,8 +520,8 @@ def test_v10_action_acknowledges_only_confirmed_panel_delivery() -> None:
     ]
     assert len(update_received_positions) == 2
     assert all(position > success_check for position in update_received_positions)
-    assert action.index("id(guesty_delivery_handler_busy) = false") > action.rindex(
-        "api.respond:"
+    assert action.index("id(guesty_delivery_handler_busy) = false") > action.index(
+        "if (id(guesty_delivery_result))"
     )
     assert action.index("id(guesty_delivery_handler_busy) = false") < action.rindex(
         "component.update: guesty_terminal_endpoint"
@@ -1229,7 +1234,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.40", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.41", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -1241,8 +1246,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.40") == 2
-    assert 'version: "0.3.40"' in updated
+    assert updated.count("ref: v0.3.41") == 2
+    assert 'version: "0.3.41"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -1273,7 +1278,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
 def test_update_managed_firmware_configs_rejects_invalid_credentials(
     tmp_path, broken_line
 ) -> None:
-    valid = render_firmware_config(_options()).replace("0.3.40", "0.3.10")
+    valid = render_firmware_config(_options()).replace("0.3.41", "0.3.10")
     if "key:" in broken_line:
         invalid = valid.replace(
             next(line for line in valid.splitlines() if "key:" in line), broken_line
@@ -1310,14 +1315,14 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.40", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.41", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     future.chmod(0o600)
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.40", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.41", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")
