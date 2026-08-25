@@ -188,7 +188,17 @@ von Seeed dokumentierten UC8179-OTP-Markierungen. Unterstützt die jeweilige
 Panelrevision eine interne Vier-Grau-Wellenform, wird diese verwendet;
 andernfalls greift der Treiber auf Seeeds MIT-lizenzierte Register-LUTs zurück.
 Die erkannte Auswahl bleibt über den Tiefschlaf erhalten, damit der
-30-Minuten-Akkuzyklus nicht durch wiederholte OTP-Lesevorgänge belastet wird.
+30-Minuten-Akkuzyklus nicht durch eine erneute Modusprüfung bei jedem Aufwachen
+belastet wird. Der sichtbare schmale Panelrand liegt außerhalb des
+800×480-Bildspeichers und besitzt eine eigene Elektrode. Im OTP-Modus verwendet
+sie deshalb direkt die panelinterne gemeinsame `LUTBD`. Beim Rückfall auf
+Register-LUTs liest der Treiber vor einem tatsächlich erforderlichen
+Vollrefresh die 42 Bytes derselben, durch den Checkcode ausgewählten OTP-Bank
+zweimal identisch ein und überträgt sie erst dann zur Laufzeit nach `R25h`.
+Unvollständige oder widersprüchliche Daten werden niemals
+als Hochspannungs-Wellenform verwendet; der Rand bleibt in diesem Fall während
+des Refreshs hochohmig. Die Paneldaten werden weder protokolliert noch in der
+Firmware gebündelt.
 Für den bidirektionalen OTP-Lesevorgang gibt der Treiber den dedizierten
 SPI2-Bus vollständig frei und initialisiert Bus und SPI-Gerät danach mit der
 E1001-Konfiguration neu. Nach `POWER ON` und `DISPLAY REFRESH` wartet er gemäß
@@ -559,14 +569,28 @@ Reconnect-Impuls als auch auf den wiederhergestellten Aktionsnamen und versucht
 die Zustellung innerhalb eines begrenzten Zeitfensters erneut. Nach dem
 HACS-Update muss die Display-Firmware einmalig auf 0.3.26 aktualisiert werden.
 
-Version **0.3.35** korrigiert zusätzlich die
+Version **0.3.36** korrigiert die eigentliche
+Ursache des dunklen Außenrandes. Die separate UC8179-Randelektrode verwendete
+bislang die Pixel-Wellenform `LUTKW`; deren letzte Phase konnte den Rand erst am
+Ende des sichtbaren Bildaufbaus dunkel färben. Der neue Vollrefresh wählt mit
+`BDV=00` die dedizierte `LUTBD`. Im OTP-Modus kommt sie direkt aus dem Panel;
+im Registermodus werden ihre 42 Bytes aus der gültigen OTP-Bank zweimal gelesen
+und nur bei vollständiger Übereinstimmung nach `R25h` geladen. Renderrevision 27
+erzwingt nach dem Firmwareupdate einmalig einen Vollrefresh. Ein
+Display-Firmwareupdate auf 0.3.36 ist erforderlich. 257 Tests, 90,79 %
+Branch-Abdeckung und der vollständige Build mit ESPHome 2026.7.4 sind
+erfolgreich; die optische Wirkung muss anschließend noch auf einem realen E1001
+bestätigt werden.
+
+Version **0.3.35** korrigierte zuvor die
 Rand-Endspannung während des vollständigen Bildaufbaus. Im Custom-LUT-Pfad
 endet die Randelektrode nun wie vom UC8179 vorgesehen auf `VCOM_DC` statt auf
 0 V; erst danach wird sie mit datenblattkonformen Registerbits elektrisch
 freigegeben. Renderrevision 26 erzwingt einmalig den dafür notwendigen
 Vollrefresh. Die Randpixel des 800×480-Framebuffers werden weiterhin vollständig
 weiß übertragen. Für diese Version ist ein Display-Firmwareupdate erforderlich;
-die Wirkung auf einem realen E1001 ist noch nicht bestätigt.
+der anschließende reale Hardwaretest zeigte jedoch, dass diese Maßnahme allein
+den Rahmen nicht beseitigte, weil `R52h` erst nach der eigentlichen LUT wirkt.
 
 Version **0.3.34** gab die separate UC8179-Randelektrode unmittelbar vor dem
 Ausschalten hochohmig. Der anschließende Hardwaretest zeigte, dass dies allein

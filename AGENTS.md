@@ -284,23 +284,34 @@ incomplete change.
   guard and then wait until active-low `BUSY_N` is inactive/high. Do not require
   witnessing a low assertion edge that may already have completed during the
   guard period.
-- Establish the UC8179 border's visible white state during a full refresh, not
-  during shutdown. In register-LUT mode keep `R50h=0x10,0x07` for the documented
-  `LUTKW` white transition and `R52h=0x02` so `BDEND=VCOM_DC`; `R52h=0x00` can
-  leave a dark border. Immediately before `POWER OFF`, set
-  `R50h=0x90,0x07`: `BDZ=1` releases the separate border electrode while every
-  reserved bit remains zero. This shutdown step cannot erase an existing
-  bistable pigment state. Keep it on full, partial, failure, and safe-shutdown
-  paths through the shared panel-sleep method.
-- The current LUTs, OTP probe, initialization, plane order, and partial-window
-  sequence come only from the fixed permissively licensed Seeed revisions in
-  `THIRD_PARTY_NOTICES.md`. Preserve the component's two local license files
-  and provenance when changing this path. Do not introduce driver sequences or
-  waveform tables without clear redistribution terms.
+- Establish the UC8179 border's visible white state through its dedicated
+  `LUTBD` during a full refresh, never through a pixel LUT or during shutdown.
+  With `PSR.REG=0`, set `R50h=0x00,0x07` after OTP waveform selection so the
+  panel's internal common LUTBD remains active. With `PSR.REG=1`, read the
+  active panel OTP bank twice, require check code `0xA5` plus identical marker
+  and all 42 bytes from `0x001F..0x0048` or `0x0C1F..0x0C48`, write those bytes
+  to `R25h`, and then use the same `R50h=0x00,0x07`. Bank 0 has priority; inspect
+  bank 1 only after two matching invalid bank-0 check codes. Never substitute a
+  pixel `LUTWW`/`LUTKW`: level `00` means VCOM in LUTBD but GND in those pixel
+  LUTs. If the OTP read is incomplete, inconsistent, or has no valid bank, do
+  not activate undefined R25 data; keep the border high-Z for that refresh.
+  Keep custom-mode `R52h=0x02` as the post-LUT VCOM end voltage, not as a
+  replacement for LUTBD. Immediately before `POWER OFF`, set
+  `R50h=0x90,0x07`; `BDZ=1` makes the retained BDV selection inert. Retain the
+  shared full, partial, failure, and safe-shutdown path. Keep real panel OTP
+  bytes volatile, and never log or commit them.
+- The static LUTs, bidirectional OTP read pattern, base initialization, plane
+  order, and partial-window sequence come from the fixed permissively licensed
+  Seeed revisions in `THIRD_PARTY_NOTICES.md`. Bank priority, check codes,
+  register fields, and OTP address mapping are independently implemented from
+  the official UC8179 datasheet documented there. Preserve the component's two
+  local license files and distinguish source-derived sequences from datasheet
+  facts when changing this path. Do not introduce driver sequences or waveform
+  tables without clear redistribution terms.
 - `guesty_render_revision` invalidates otherwise-identical images after a
   rendering or driver change. When a visible rendering change requires one
   repaint, increment the expected value and the stored-success value together,
-  and update their tests. The current source revision is 26.
+  and update their tests. The current source revision is 27.
 - Publish the displayed-booking confirmation only after a successful physical
   refresh, or when a restored matching fingerprint proves the same content was
   previously drawn.
@@ -547,6 +558,8 @@ coverage result, firmware build status, and any missing real-device test.
 Hardware-affecting releases also require checks of:
 
 - full four-gray refresh and legible fonts;
+- no dark outer border after repeated `auto`, `otp`, and `custom` full refreshes,
+  including cold boot, deep sleep, and a partial-to-full fallback;
 - unchanged-content suppression;
 - weather-only partial refresh across reset/deep sleep and fallback after five
   partial updates;

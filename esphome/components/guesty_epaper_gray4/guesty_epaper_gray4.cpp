@@ -16,7 +16,10 @@ namespace esphome::guesty_epaper_gray4 {
 
 static const char *const TAG = "guesty_epaper_gray4";
 static constexpr uint32_t RETAINED_PARTIAL_MAGIC = 0x47545031UL;
-static constexpr uint32_t RETAINED_LUT_SELECTION_MAGIC = 0x47544C31UL;
+// Version 2 invalidates the older marker1 || marker2 decision. UC8179 always
+// prefers a valid bank 0, so only that bank's grayscale marker may decide the
+// retained mode when both banks contain data.
+static constexpr uint32_t RETAINED_LUT_SELECTION_MAGIC = 0x47544C32UL;
 
 struct RetainedPartialFrame {
   uint32_t magic;
@@ -343,15 +346,35 @@ uint8_t GuestyEPaperGray4::gpio_read_byte_() {
   return value;
 }
 
-bool GuestyEPaperGray4::read_otp_marker_(uint16_t read_length,
-                                         uint16_t marker_offset,
-                                         uint8_t *marker) {
-  if (marker == nullptr || marker_offset >= read_length)
+bool GuestyEPaperGray4::read_otp_bank_(uint16_t read_length,
+                                       uint16_t bank_base,
+                                       uint16_t marker_offset,
+                                       uint8_t *check_code, uint8_t *marker,
+                                       uint8_t *border_lut) {
+  static constexpr uint16_t BORDER_OFFSET = 0x001F;
+  if (check_code == nullptr || marker == nullptr || border_lut == nullptr ||
+      bank_base >= read_length || marker_offset >= read_length ||
+      bank_base + BORDER_OFFSET + BORDER_LUT_LENGTH > read_length)
     return false;
 
+  this->reset_pin_->digital_write(false);
+  delay(20);
+  this->reset_pin_->digital_write(true);
+  delay(20);
+  if (!this->wait_until_idle_("during OTP bank read"))
+    return false;
+
+  *check_code = 0;
+  *marker = 0;
+  std::memset(border_lut, 0, BORDER_LUT_LENGTH);
   this->gpio_write_command_(0xA2);  // READ OTP
   for (uint16_t index = 0; index < read_length; index++) {
     const uint8_t value = this->gpio_read_byte_();
+    if (index == bank_base)
+      *check_code = value;
+    const uint16_t border_start = bank_base + BORDER_OFFSET;
+    if (index >= border_start && index < border_start + BORDER_LUT_LENGTH)
+      border_lut[index - border_start] = value;
     if (index == marker_offset)
       *marker = value;
     if ((index & 0x3FU) == 0)
@@ -361,13 +384,26 @@ bool GuestyEPaperGray4::read_otp_marker_(uint16_t read_length,
   return true;
 }
 
-bool GuestyEPaperGray4::probe_otp_support_(bool *supported) {
-  if (supported == nullptr)
-    return false;
-  *supported = false;
+bool GuestyEPaperGray4::read_otp_profile_(bool *grayscale_supported) {
+  static constexpr uint16_t BANK0_READ_LENGTH = 0x0BED;
+  static constexpr uint16_t BANK1_READ_LENGTH = 0x17ED;
+  static constexpr uint16_t BANK0_BASE = 0x0000;
+  static constexpr uint16_t BANK1_BASE = 0x0C00;
+  static constexpr uint16_t BANK0_MARKER = 0x0BE3;
+  static constexpr uint16_t BANK1_MARKER = 0x17E3;
+  static constexpr uint8_t VALID_BANK_CHECK_CODE = 0xA5;
 
-  // Seeed_GFX probes two UC8179 user-data banks over the bidirectional
-  // SDA/MOSI line. Hardware SPI must be fully released while GPIO9 is an input.
+  if (grayscale_supported == nullptr)
+    return false;
+  this->otp_profile_attempted_this_refresh_ = true;
+  *grayscale_supported = false;
+  this->border_lut_available_ = false;
+  this->border_lut_unavailable_ = false;
+
+  // Read the panel's factory OTP through Seeed_GFX's bidirectional SDA/MOSI
+  // sequence. Besides the grayscale marker, retain the selected bank's common
+  // 42-byte border LUT. The same bytes can then be written to R25 when the
+  // pixel waveforms come from registers; no waveform bytes are bundled here.
   if (!this->release_spi_bus_for_gpio_read_())
     return false;
   this->clock_pin_->setup();
@@ -376,15 +412,11 @@ bool GuestyEPaperGray4::probe_otp_support_(bool *supported) {
   this->data_pin_->pin_mode(gpio::FLAG_OUTPUT);
   this->cs_->digital_write(true);
 
-  const auto reset_for_read = [&]() {
-    this->reset_pin_->digital_write(false);
-    delay(20);
-    this->reset_pin_->digital_write(true);
-    delay(20);
-    return this->wait_until_idle_("during OTP probe");
-  };
-
-  bool probe_ok = reset_for_read();
+  this->reset_pin_->digital_write(false);
+  delay(20);
+  this->reset_pin_->digital_write(true);
+  delay(20);
+  bool probe_ok = this->wait_until_idle_("during OTP probe");
   if (probe_ok) {
     this->gpio_write_command_(0x40);  // READ INTERNAL TEMPERATURE
     probe_ok = this->wait_until_idle_("before OTP temperature read");
@@ -394,16 +426,52 @@ bool GuestyEPaperGray4::probe_otp_support_(bool *supported) {
     }
   }
 
-  uint8_t marker_1 = 0;
-  uint8_t marker_2 = 0;
-  if (probe_ok && reset_for_read())
-    probe_ok = this->read_otp_marker_(0x0BED, 0x0BE3, &marker_1);
-  else
-    probe_ok = false;
-  if (probe_ok && reset_for_read())
-    probe_ok = this->read_otp_marker_(0x17ED, 0x17E3, &marker_2);
-  else
-    probe_ok = false;
+  uint8_t bank0_check_a = 0;
+  uint8_t bank0_check_b = 0;
+  uint8_t bank0_marker_a = 0;
+  uint8_t bank0_marker_b = 0;
+  std::array<uint8_t, BORDER_LUT_LENGTH> bank0_border_a{};
+  std::array<uint8_t, BORDER_LUT_LENGTH> bank0_border_b{};
+  if (probe_ok)
+    probe_ok = this->read_otp_bank_(
+        BANK0_READ_LENGTH, BANK0_BASE, BANK0_MARKER, &bank0_check_a,
+        &bank0_marker_a, bank0_border_a.data());
+  if (probe_ok)
+    probe_ok = this->read_otp_bank_(
+        BANK0_READ_LENGTH, BANK0_BASE, BANK0_MARKER, &bank0_check_b,
+        &bank0_marker_b, bank0_border_b.data());
+
+  const bool bank0_checks_match = bank0_check_a == bank0_check_b;
+  const bool bank0_valid = bank0_checks_match &&
+                           bank0_check_a == VALID_BANK_CHECK_CODE;
+  const bool bank0_payload_matches =
+      bank0_marker_a == bank0_marker_b &&
+      std::memcmp(bank0_border_a.data(), bank0_border_b.data(),
+                  BORDER_LUT_LENGTH) == 0;
+
+  uint8_t bank1_check_a = 0;
+  uint8_t bank1_check_b = 0;
+  uint8_t bank1_marker_a = 0;
+  uint8_t bank1_marker_b = 0;
+  std::array<uint8_t, BORDER_LUT_LENGTH> bank1_border_a{};
+  std::array<uint8_t, BORDER_LUT_LENGTH> bank1_border_b{};
+  if (probe_ok && bank0_checks_match && !bank0_valid) {
+    probe_ok = this->read_otp_bank_(
+        BANK1_READ_LENGTH, BANK1_BASE, BANK1_MARKER, &bank1_check_a,
+        &bank1_marker_a, bank1_border_a.data());
+    if (probe_ok)
+      probe_ok = this->read_otp_bank_(
+          BANK1_READ_LENGTH, BANK1_BASE, BANK1_MARKER, &bank1_check_b,
+          &bank1_marker_b, bank1_border_b.data());
+  }
+
+  const bool bank1_checks_match = bank1_check_a == bank1_check_b;
+  const bool bank1_valid = bank1_checks_match &&
+                           bank1_check_a == VALID_BANK_CHECK_CODE;
+  const bool bank1_payload_matches =
+      bank1_marker_a == bank1_marker_b &&
+      std::memcmp(bank1_border_a.data(), bank1_border_b.data(),
+                  BORDER_LUT_LENGTH) == 0;
 
   this->clock_pin_->pin_mode(gpio::FLAG_OUTPUT);
   this->clock_pin_->digital_write(false);
@@ -414,14 +482,48 @@ bool GuestyEPaperGray4::probe_otp_support_(bool *supported) {
     return false;
 
   if (!probe_ok) {
-    ESP_LOGW(TAG, "Could not read OTP markers; using Seeed register LUTs");
+    ESP_LOGW(TAG, "Could not read the UC8179 OTP profile safely");
     return false;
   }
 
-  *supported = marker_1 == 0x01 || marker_2 == 0x01;
+  if (!bank0_checks_match || (bank0_valid && !bank0_payload_matches) ||
+      (!bank0_valid && (!bank1_checks_match ||
+                        (bank1_valid && !bank1_payload_matches)))) {
+    ESP_LOGW(TAG, "Repeated UC8179 OTP reads did not match; keeping border high-Z");
+    return false;
+  }
+
+  if (bank0_valid) {
+    this->border_lut_ = bank0_border_a;
+    *grayscale_supported = bank0_marker_a == 0x01;
+    ESP_LOGI(TAG, "Using validated UC8179 OTP bank 0 profile");
+  } else if (bank1_valid) {
+    this->border_lut_ = bank1_border_a;
+    *grayscale_supported = bank1_marker_a == 0x01;
+    ESP_LOGI(TAG, "Using validated UC8179 OTP bank 1 profile");
+  } else {
+    this->border_lut_unavailable_ = true;
+    ESP_LOGW(TAG, "No valid UC8179 OTP bank; keeping border high-Z");
+    return true;
+  }
+
+  this->border_lut_available_ = true;
   ESP_LOGI(TAG, "UC8179 OTP grayscale support: %s",
-           *supported ? "available" : "not available");
+           *grayscale_supported ? "available" : "not available");
   return true;
+}
+
+bool GuestyEPaperGray4::ensure_custom_border_lut_() {
+  if (this->border_lut_available_ || this->border_lut_unavailable_ ||
+      this->otp_profile_attempted_this_refresh_)
+    return true;
+  bool unused_grayscale_support = false;
+  if (this->read_otp_profile_(&unused_grayscale_support))
+    return true;
+  // A failed SPI restore marks the whole component failed. Other read errors
+  // fall back to a high-impedance border and may be retried on a later full
+  // refresh without risking partially read bytes in the high-voltage LUT.
+  return !this->is_failed();
 }
 
 bool GuestyEPaperGray4::select_lut_mode_() {
@@ -439,7 +541,7 @@ bool GuestyEPaperGray4::select_lut_mode_() {
       ESP_LOGI(TAG, "Restored grayscale waveform selection from RTC memory");
     } else {
       bool otp_supported = false;
-      if (this->probe_otp_support_(&otp_supported)) {
+      if (this->read_otp_profile_(&otp_supported)) {
         this->active_lut_mode_ =
             otp_supported ? LUT_MODE_OTP : LUT_MODE_CUSTOM;
         retained_lut_selection.magic = 0;
@@ -499,10 +601,6 @@ bool GuestyEPaperGray4::init_custom_gray_mode_() {
   this->command_(0xE3);  // POWER SAVING
   this->data_(0x88);
 
-  this->command_(0x50);  // VCOM AND DATA INTERVAL
-  this->data_(0x10);
-  this->data_(0x07);
-
   // Keep the border at VCOM_DC after its LUT has completed. The older 0x00
   // value selected 0 V for BDEND, which can leave a visible dark border during
   // the controller's final VCOM frames. 0x02 is the documented UC8179 default.
@@ -520,6 +618,17 @@ bool GuestyEPaperGray4::init_custom_gray_mode_() {
   this->write_lut_(0x22, LUT_KW_GRAY, sizeof(LUT_KW_GRAY));
   this->write_lut_(0x23, LUT_WK_GRAY, sizeof(LUT_WK_GRAY));
   this->write_lut_(0x24, LUT_KK_GRAY, sizeof(LUT_KK_GRAY));
+  if (this->border_lut_available_) {
+    // R25 has different voltage-level semantics from the pixel LUTs. Mirror
+    // only the panel's own twice-read, check-code-selected common LUTBD.
+    this->write_lut_(0x25, this->border_lut_.data(), BORDER_LUT_LENGTH);
+    this->command_(0x50);  // VCOM AND DATA INTERVAL
+    this->data_(0x00);     // BDZ=0, BDV=00 selects LUTBD, DDX=00
+  } else {
+    this->command_(0x50);  // VCOM AND DATA INTERVAL
+    this->data_(0x80);     // No validated LUTBD: keep border high-Z
+  }
+  this->data_(0x07);
   return true;
 }
 
@@ -549,14 +658,13 @@ bool GuestyEPaperGray4::init_otp_gray_mode_() {
   this->data_(HEIGHT >> 8);
   this->data_(HEIGHT & 0xFF);
 
-  this->command_(0x50);  // VCOM AND DATA INTERVAL
-  this->data_(0x10);
-  this->data_(0x07);
-
   this->command_(0xE0);  // CASCADE SETTING
   this->data_(0x02);
   this->command_(0xE5);  // Select OTP four-gray waveform
   this->data_(0x5F);
+  this->command_(0x50);  // Use the panel's common OTP border LUT directly
+  this->data_(0x00);     // BDZ=0, BDV=00 selects LUTBD, DDX=00
+  this->data_(0x07);
   return true;
 }
 
@@ -829,7 +937,15 @@ bool GuestyEPaperGray4::refresh_() {
 }
 
 bool GuestyEPaperGray4::display_() {
+  // AUTO selection and custom-border preparation share the same OTP reader.
+  // Allow one complete attempt per physical full refresh so a transient error
+  // cannot immediately consume a second 45-second BUSY timeout. A later full
+  // refresh may retry; partial and unchanged-content paths never read OTP.
+  this->otp_profile_attempted_this_refresh_ = false;
   if (!this->select_lut_mode_())
+    return false;
+  if (this->active_lut_mode_ == LUT_MODE_CUSTOM &&
+      !this->ensure_custom_border_lut_())
     return false;
   if (!this->reset_panel_()) {
     this->deep_sleep_panel_();
@@ -854,9 +970,9 @@ void GuestyEPaperGray4::deep_sleep_panel_() {
   if (this->panel_asleep_)
     return;
   // The UC8179 border is a separate electrode outside the 800x480 pixel RAM.
-  // Its visible pigment state is established by the LUT during DISPLAY
-  // REFRESH; this step only releases the electrode before power-off. Restore
-  // the full-refresh BDV/DDX selection and keep every reserved bit at zero.
+  // Its visible pigment state is established by LUTBD during DISPLAY REFRESH;
+  // this step only releases the electrode before power-off. Keep the already
+  // hardware-tested shutdown register while BDZ makes its BDV selection inert.
   this->command_(0x50);  // VCOM AND DATA INTERVAL SETTING
   this->data_(0x90);     // BDZ=1, BDV=01, N2OCP=0, DDX=00
   this->data_(0x07);     // Documented VCOM/data interval

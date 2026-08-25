@@ -33,17 +33,30 @@ and hosted by Seeed Studio to interpret hardware control fields that are not
 part of the pixel data:
 
 - Datasheet: <https://files.seeedstudio.com/wiki/Other_Display/750-epaper/IC%20Driver%20UC8179.pdf>
-- Relevant field: `R50h.BDZ`, which releases the separate border electrode to
-  high impedance before panel power-off
+- Relevant command: `R25h/LUTBD`, the dedicated 42-byte, seven-group border
+  waveform table
+- Relevant fields: `R50h.BDV=00`, which selects LUTBD, and `R50h.BDZ`, which
+  releases the separate border electrode to high impedance before panel
+  power-off
+- Relevant field: `R00h.PSR.REG`, which selects panel OTP or register LUTs
 - Relevant field: `R52h.BDEND`, whose documented default `10b` holds the border
   at `VCOM_DC` after its refresh LUT completes
+- Relevant OTP mapping: bank check codes at `0x0000`/`0x0C00` and the common
+  LUTBD ranges `0x001F..0x0048`/`0x0C1F..0x0C48`
 
-No datasheet content is bundled in this repository.
+In register-LUT mode, the panel-resident 42-byte LUTBD is read twice at runtime
+and written back to R25 on the same controller only after both reads match. OTP
+mode uses that table internally without a host-side copy. The bytes are not
+logged, bundled, committed, or redistributed. No datasheet content is bundled
+in this repository.
 
 ## Seeed_GFX UC8179 support
 
-The panel-OTP detection, OTP grayscale setup, and differential partial-refresh
-sequence are adapted from Seeed_GFX's UC8179 implementation:
+The bidirectional OTP read pattern, bus-teardown concept, panel-OTP detection,
+OTP grayscale setup, and differential partial-refresh sequence are adapted
+from Seeed_GFX's UC8179 implementation. GuestyTerminal's explicit ESP32-S3 SPI2
+host reinitialization restores the E1001 bus with its original ESPHome pins,
+MISO, DMA, flags, and transfer size after that read:
 
 - Source revision: <https://github.com/Seeed-Studio/Seeed_GFX/tree/a2de1abca0597c202193f22d01e9fa35d1ff613b>
 - UC8179 definitions: <https://github.com/Seeed-Studio/Seeed_GFX/blob/a2de1abca0597c202193f22d01e9fa35d1ff613b/TFT_Drivers/UC8179_Defines.h>

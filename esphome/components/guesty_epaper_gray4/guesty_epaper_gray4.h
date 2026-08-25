@@ -25,8 +25,9 @@ enum LutMode : uint8_t {
  * waveform and register sequence use Seeed's permissively licensed E1001
  * reference implementations: panel OTP waveforms where available and
  * controller-register LUTs as the compatible fallback. The separate border
- * electrode is driven to white during a full refresh, held at its neutral
- * VCOM end voltage, and released to high impedance before power-off.
+ * electrode uses the panel's own common LUTBD: directly in OTP mode and as a
+ * twice-validated runtime copy in register mode. It is released to high
+ * impedance before power-off; no panel-specific waveform bytes are bundled.
  */
 class GuestyEPaperGray4
     : public display::DisplayBuffer,
@@ -38,6 +39,7 @@ class GuestyEPaperGray4
   static constexpr uint32_t IDLE_TIMEOUT_MS = 45000;
   static constexpr size_t PARTIAL_BUFFER_CAPACITY = 2048;
   static constexpr size_t MONOCHROME_FRAME_LENGTH = WIDTH * HEIGHT / 8U;
+  static constexpr size_t BORDER_LUT_LENGTH = 42;
 
   void set_dc_pin(GPIOPin *dc_pin) { this->dc_pin_ = dc_pin; }
   void set_reset_pin(GPIOPin *reset_pin) { this->reset_pin_ = reset_pin; }
@@ -91,9 +93,11 @@ class GuestyEPaperGray4
   bool restore_spi_bus_after_gpio_read_();
   void gpio_write_command_(uint8_t command);
   uint8_t gpio_read_byte_();
-  bool read_otp_marker_(uint16_t read_length, uint16_t marker_offset,
-                        uint8_t *marker);
-  bool probe_otp_support_(bool *supported);
+  bool read_otp_bank_(uint16_t read_length, uint16_t bank_base,
+                      uint16_t marker_offset, uint8_t *check_code,
+                      uint8_t *marker, uint8_t *border_lut);
+  bool read_otp_profile_(bool *grayscale_supported);
+  bool ensure_custom_border_lut_();
   bool select_lut_mode_();
   bool init_custom_gray_mode_();
   bool init_otp_gray_mode_();
@@ -135,6 +139,10 @@ class GuestyEPaperGray4
   uint8_t max_partial_updates_{5};
   std::array<uint8_t, PARTIAL_BUFFER_CAPACITY> partial_previous_{};
   std::array<uint8_t, PARTIAL_BUFFER_CAPACITY> partial_current_{};
+  std::array<uint8_t, BORDER_LUT_LENGTH> border_lut_{};
+  bool border_lut_available_{false};
+  bool border_lut_unavailable_{false};
+  bool otp_profile_attempted_this_refresh_{false};
   LutMode configured_lut_mode_{LUT_MODE_AUTO};
   LutMode active_lut_mode_{LUT_MODE_CUSTOM};
 };

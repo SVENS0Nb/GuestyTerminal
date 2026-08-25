@@ -73,7 +73,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.35") == 2
+    assert rendered.count("ref: v0.3.36") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
@@ -88,7 +88,7 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     stored_revision = re.search(r"id\(guesty_render_revision\) = (\d+);", package)
     assert expected_revision is not None
     assert stored_revision is not None
-    assert expected_revision.group(1) == "26"
+    assert expected_revision.group(1) == "27"
     assert expected_revision.group(1) == stored_revision.group(1)
     assert "guesty_terminal_update_display_v9" in package
     assert "    auto_clear_enabled: true\n" in package
@@ -299,15 +299,19 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "const uint8_t controller_gray = 3U - framebuffer_gray" in driver
     assert "0=black, 3=white" in driver
     assert "1U - ((first >>" not in driver
-    assert "probe_otp_support_" in driver
-    assert "read_otp_marker_(0x0BED, 0x0BE3" in driver
-    assert "read_otp_marker_(0x17ED, 0x17E3" in driver
+    assert "read_otp_profile_" in driver
+    assert "BANK0_READ_LENGTH = 0x0BED" in driver
+    assert "BANK1_READ_LENGTH = 0x17ED" in driver
+    assert "BANK0_BASE = 0x0000" in driver
+    assert "BANK1_BASE = 0x0C00" in driver
     assert "RETAINED_LUT_SELECTION_MAGIC" in driver
+    assert "RETAINED_LUT_SELECTION_MAGIC = 0x47544C32UL" in driver
+    assert "0x47544C31UL" not in driver
     assert "init_custom_gray_mode_" in driver
     assert "init_otp_gray_mode_" in driver
     assert "write_lut_(0x24, LUT_KK_GRAY" in driver
-    assert "write_lut_(0x25" not in driver
-    assert "LUT_BORDER_GRAY" not in driver
+    assert "write_lut_(0x25, this->border_lut_.data(), BORDER_LUT_LENGTH)" in driver
+    assert "LUT_BORDER_GRAY" not in driver  # never bundle a panel OTP dump
     assert "write_plane_(0x10, 0)" in driver
     assert "write_plane_(0x13, 1)" in driver
     assert "inverted least-significant gray bit" in driver
@@ -338,7 +342,10 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     ]
     end_voltage = custom_init.index("this->command_(0x52)")
     assert custom_init.index("this->data_(0x02)", end_voltage) > end_voltage
-    assert "this->data_(0x00)" not in custom_init[end_voltage:]
+    border_lut = custom_init.index("this->write_lut_(0x25")
+    border_select = custom_init.index("this->data_(0x00)", border_lut)
+    border_fallback = custom_init.index("this->data_(0x80)", border_select)
+    assert end_voltage < border_lut < border_select < border_fallback
     header = driver_path.with_suffix(".h").read_text(encoding="utf-8")
     assert "bool last_update_successful() const" in header
     component_dir = driver_path.parent
@@ -348,6 +355,139 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     )
     assert "Copyright (c) 2023 Bodmer" in seeed_gfx_license
     assert "Copyright (c) 2012 Adafruit Industries" in seeed_gfx_license
+
+
+def test_uc8179_border_uses_the_validated_panel_lut_in_both_full_modes() -> None:
+    """Keep the physical border off pixel LUTKW during a full refresh."""
+    driver = DRIVER_FILE.read_text(encoding="utf-8")
+    custom_start = driver.index("bool GuestyEPaperGray4::init_custom_gray_mode_()")
+    otp_start = driver.index("bool GuestyEPaperGray4::init_otp_gray_mode_()")
+    partial_start = driver.index("bool GuestyEPaperGray4::init_partial_mode_()")
+    custom = driver[custom_start:otp_start]
+    otp = driver[otp_start:partial_start]
+
+    pixel_lut_end = custom.index("this->write_lut_(0x24, LUT_KK_GRAY")
+    border_lut = custom.index("this->write_lut_(0x25", pixel_lut_end)
+    border_register = custom.index("this->command_(0x50)", border_lut)
+    border_select = custom.index("this->data_(0x00)", border_register)
+    assert pixel_lut_end < border_lut < border_register < border_select
+    assert (
+        "this->command_(0x50);  // VCOM AND DATA INTERVAL\n"
+        "    this->data_(0x00);     // BDZ=0, BDV=00 selects LUTBD, DDX=00\n"
+        "  } else {\n"
+        "    this->command_(0x50);  // VCOM AND DATA INTERVAL\n"
+        "    this->data_(0x80);     // No validated LUTBD: keep border high-Z\n"
+        "  }\n"
+        "  this->data_(0x07);"
+    ) in custom
+    assert "this->border_lut_available_" in custom
+    assert "this->data_(0x80)" in custom  # unvalidated reads stay high-Z
+
+    otp_waveform = otp.index("this->data_(0x5F)")
+    otp_border_register = otp.index("this->command_(0x50)", otp_waveform)
+    otp_border_select = otp.index("this->data_(0x00)", otp_border_register)
+    assert otp_waveform < otp_border_register < otp_border_select
+    assert (
+        "this->command_(0x50);  // Use the panel's common OTP border LUT directly\n"
+        "  this->data_(0x00);     // BDZ=0, BDV=00 selects LUTBD, DDX=00\n"
+        "  this->data_(0x07);"
+    ) in otp
+    assert "this->write_lut_(0x25" not in otp
+
+    display = driver[
+        driver.index("bool GuestyEPaperGray4::display_()") : driver.index(
+            "void GuestyEPaperGray4::deep_sleep_panel_()"
+        )
+    ]
+    attempt_reset = display.index("this->otp_profile_attempted_this_refresh_ = false")
+    mode_selection = display.index("this->select_lut_mode_()")
+    ensure_border = display.index("this->ensure_custom_border_lut_()")
+    reset = display.index("this->reset_panel_()")
+    first_plane = display.index("this->write_plane_(0x10, 0)")
+    second_plane = display.index("this->write_plane_(0x13, 1)")
+    refresh = display.index("this->refresh_()")
+    shutdown = display.index("this->deep_sleep_panel_()", refresh)
+    assert (
+        attempt_reset
+        < mode_selection
+        < ensure_border
+        < reset
+        < first_plane
+        < second_plane
+        < refresh
+        < shutdown
+    )
+
+
+def test_uc8179_otp_border_profile_is_bank_ordered_and_read_twice() -> None:
+    """Never load R25 from an unselected, partial, or inconsistent OTP read."""
+    driver = DRIVER_FILE.read_text(encoding="utf-8")
+    profile = driver[
+        driver.index("bool GuestyEPaperGray4::read_otp_profile_(") : driver.index(
+            "bool GuestyEPaperGray4::ensure_custom_border_lut_()"
+        )
+    ]
+
+    bank0_reads = re.findall(
+        r"read_otp_bank_\(\s*BANK0_READ_LENGTH, BANK0_BASE", profile
+    )
+    bank1_reads = re.findall(
+        r"read_otp_bank_\(\s*BANK1_READ_LENGTH, BANK1_BASE", profile
+    )
+    assert len(bank0_reads) == 2
+    assert len(bank1_reads) == 2
+    assert profile.index("bank0_check_a == bank0_check_b") < profile.index(
+        "if (probe_ok && bank0_checks_match && !bank0_valid)"
+    )
+    assert "VALID_BANK_CHECK_CODE = 0xA5" in profile
+    assert "BORDER_OFFSET = 0x001F" in driver
+    assert "BORDER_LUT_LENGTH = 42" in DRIVER_FILE.with_suffix(".h").read_text(
+        encoding="utf-8"
+    )
+    assert profile.count("std::memcmp(") == 2
+    assert "bank0_marker_a == 0x01" in profile
+    assert "bank1_marker_a == 0x01" in profile
+    assert "marker_1 == 0x01 || marker_2 == 0x01" not in driver
+    assert "this->gpio_write_command_(0xA2)" in driver
+    assert "this->gpio_write_command_(0xA0)" not in driver
+    assert "this->gpio_write_command_(0xA1)" not in driver
+    validation = profile.index("if (!bank0_checks_match")
+    bank0_copy = profile.index("this->border_lut_ = bank0_border_a")
+    bank1_fallback = profile.index("else if (bank1_valid)")
+    available = profile.index("this->border_lut_available_ = true")
+    assert validation < bank0_copy < bank1_fallback < available
+    assert "No valid UC8179 OTP bank; keeping border high-Z" in profile
+    ensure_start = driver.index("bool GuestyEPaperGray4::ensure_custom_border_lut_()")
+    ensure_end = driver.index("bool GuestyEPaperGray4::select_lut_mode_()")
+    ensure = driver[ensure_start:ensure_end]
+    assert "this->otp_profile_attempted_this_refresh_" in ensure
+
+
+def test_uc8179_partial_refresh_and_shutdown_keep_border_high_impedance() -> None:
+    """Do not re-drive a corrected full-refresh border during partial or power-off."""
+    driver = DRIVER_FILE.read_text(encoding="utf-8")
+    partial_area = driver[
+        driver.index("void GuestyEPaperGray4::set_partial_ram_area_()") : driver.index(
+            "bool GuestyEPaperGray4::refresh_partial_()"
+        )
+    ]
+    partial_refresh = driver[
+        driver.index("bool GuestyEPaperGray4::refresh_partial_()") : driver.index(
+            "bool GuestyEPaperGray4::display_partial_("
+        )
+    ]
+    assert "this->data_(0xA9);\n  this->data_(0x07);" in partial_area
+    partial_setup = partial_refresh.index("this->set_partial_ram_area_()")
+    partial_command = partial_refresh.index("this->command_(0x12)")
+    assert partial_setup < partial_command
+
+    shutdown = driver[driver.index("void GuestyEPaperGray4::deep_sleep_panel_()") :]
+    high_impedance = shutdown.index("this->data_(0x90)")
+    interval = shutdown.index("this->data_(0x07)", high_impedance)
+    power_off = shutdown.index("this->command_(0x02)", interval)
+    deep_sleep = shutdown.index("this->command_(0x07)", power_off)
+    assert high_impedance < interval < power_off < deep_sleep
+    assert driver.count("this->command_(0x02)") == 1
 
 
 def test_grayscale_framebuffer_polarity_matches_uc8179_wire_format() -> None:
@@ -842,7 +982,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.35", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.36", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -854,8 +994,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.35") == 2
-    assert 'version: "0.3.35"' in updated
+    assert updated.count("ref: v0.3.36") == 2
+    assert 'version: "0.3.36"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -886,7 +1026,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
 def test_update_managed_firmware_configs_rejects_invalid_credentials(
     tmp_path, broken_line
 ) -> None:
-    valid = render_firmware_config(_options()).replace("0.3.35", "0.3.10")
+    valid = render_firmware_config(_options()).replace("0.3.36", "0.3.10")
     if "key:" in broken_line:
         invalid = valid.replace(
             next(line for line in valid.splitlines() if "key:" in line), broken_line
@@ -923,14 +1063,14 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.35", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.36", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     future.chmod(0o600)
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.35", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.36", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")

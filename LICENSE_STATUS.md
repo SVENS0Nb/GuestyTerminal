@@ -6,11 +6,15 @@ Ohne eine solche ausdrückliche Lizenz bleiben die gesetzlichen Rechte bei den
 jeweiligen Rechteinhabern.
 
 Der Unterordner `esphome/components/guesty_epaper_gray4` enthält eine eigene
-MIT-Lizenzdatei. Seine UC8179-Waveformtabellen, OTP-Erkennung und
-Initialisierungssequenzen stammen jetzt ausschließlich aus den in
-`THIRD_PARTY_NOTICES.md` festgehaltenen, permissiv lizenzierten Seeed-Quellen.
-Die dazugehörigen Lizenztexte liegen direkt beim Treiber. Der zuvor
-dokumentierte, unklare Drittanbieter-Codepfad wurde entfernt.
+MIT-Lizenzdatei. Seine statischen UC8179-Waveformtabellen, die bidirektionale
+OTP-Lesemechanik und die zugrunde liegenden Initialisierungssequenzen stammen
+aus den in `THIRD_PARTY_NOTICES.md` festgehaltenen, permissiv lizenzierten
+Seeed-Quellen. Bankpriorität, Checkcodes, Registerfelder und OTP-Adressbereiche
+sind anhand des dort ebenfalls genannten offiziellen UltraChip-Datenblatts
+eigenständig umgesetzt. Weder Datenblattinhalt noch panelinterne OTP-Bytes
+werden im Repository oder Firmware-Artefakt gebündelt. Die dazugehörigen
+Seeed-Lizenztexte liegen direkt beim Treiber. Der zuvor dokumentierte, unklare
+Drittanbieter-Codepfad wurde entfernt.
 
 Vor einem öffentlichen Release oder einer Weiterverteilung sollte der
 Projektinhaber:

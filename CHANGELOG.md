@@ -3,6 +3,40 @@
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt. Einträge
 unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
 
+## 0.3.36 – 2026-08-25
+
+### Displayrand – dedizierte Panel-Wellenform
+
+- Die Ursache des erst in der letzten Refreshphase erscheinenden dunklen
+  Rahmens liegt nicht im 800×480-Framebuffer: `R50h.BDV=01` ließ die separate
+  UC8179-Randelektrode die Pixel-Wellenform `LUTKW` verwenden. `R52h=0x02`
+  bestimmt lediglich die Spannung nach deren Abschluss und konnte den zuvor
+  aufgebauten bistabilen Pigmentzustand deshalb nicht korrigieren.
+- Der OTP-Vier-Grau-Pfad setzt nun nach seiner Wellenformauswahl
+  `R50h=0x00,0x07` und verwendet damit direkt die gemeinsame, im Panel-OTP
+  gespeicherte `LUTBD`.
+- Im Register-LUT-Pfad prüft der Treiber entsprechend der Controllerpriorität
+  zuerst Bank 0 und nur bei zwei übereinstimmend ungültigen Checkcodes Bank 1.
+  Checkcode, Vier-Grau-Marker und die 42 Bytes aus `0x001F…0x0048`
+  beziehungsweise `0x0C1F…0x0C48` müssen in zwei getrennten Lesevorgängen
+  identisch sein. Erst dann werden die Laufzeitdaten nach `R25h` geschrieben und
+  mit `BDV=00` ausgewählt. Bei unsicheren Daten bleibt der Rand hochohmig; echte
+  OTP-Werte werden weder protokolliert noch mit der Firmware verteilt.
+- Die alte Modusentscheidung aus beiden OTP-Markern wird einmalig verworfen:
+  Wie der UC8179 berücksichtigt die Firmware jetzt ausschließlich den Marker
+  der durch `0xA5` ausgewählten Bank. Vor `POWER OFF` wird der Rand mit
+  dem bewährten `R50h=0x90,0x07` freigegeben. Renderrevision 27 erzwingt für die
+  sichtbare Treiberänderung einmalig einen vollständigen Neuaufbau.
+
+### Prüfstatus
+
+- Der vollständige lokale Python-Prüflauf war mit 257 Tests gegen Home Assistant
+  2026.2.3 erfolgreich; die Branch-Abdeckung beträgt 90,79 %. Ruff,
+  Formatprüfung, Mypy und Bytecode-Kompilierung sind ebenfalls fehlerfrei.
+- ESPHome 2026.7.4 hat die Referenzkonfiguration validiert und die Firmware
+  vollständig gebaut; im App-Partition-Report bleiben 21 % frei. Die optische
+  Randkorrektur ist noch nicht auf einem realen E1001 bestätigt.
+
 ## 0.3.35 – 2026-08-25
 
 ### Displayrand – zweite Korrektur
