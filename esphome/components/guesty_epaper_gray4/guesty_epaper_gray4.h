@@ -37,7 +37,10 @@ class GuestyEPaperGray4
  public:
   static constexpr uint16_t WIDTH = 800;
   static constexpr uint16_t HEIGHT = 480;
-  static constexpr uint32_t IDLE_TIMEOUT_MS = 45000;
+  static constexpr uint32_t RESET_IDLE_TIMEOUT_MS = 5000;
+  static constexpr uint32_t POWER_ON_IDLE_TIMEOUT_MS = 10000;
+  static constexpr uint32_t REFRESH_IDLE_TIMEOUT_MS = 45000;
+  static constexpr uint32_t POWER_OFF_IDLE_TIMEOUT_MS = 10000;
   static constexpr uint32_t OTP_IDLE_TIMEOUT_MS = 3000;
   static constexpr size_t PARTIAL_BUFFER_CAPACITY = 2048;
   static constexpr size_t MONOCHROME_FRAME_LENGTH = WIDTH * HEIGHT / 8U;
@@ -123,9 +126,8 @@ class GuestyEPaperGray4
   void data_(uint8_t value);
   void start_data_();
   void end_data_();
-  bool wait_until_idle_(const char *phase,
-                        uint32_t timeout_ms = IDLE_TIMEOUT_MS);
-  bool wait_after_controller_command_(const char *phase);
+  bool wait_until_idle_(const char *phase, uint32_t timeout_ms);
+  bool wait_after_controller_command_(const char *phase, uint32_t timeout_ms);
   bool reset_panel_();
   bool release_spi_bus_for_gpio_read_();
   bool restore_spi_bus_after_gpio_read_();
@@ -160,6 +162,8 @@ class GuestyEPaperGray4
   static void update_task_(void *parameter);
 #endif
   bool refresh_();
+  bool perform_full_refresh_(bool reset_panel = true);
+  bool recover_for_custom_fallback_();
   bool display_();
   void deep_sleep_panel_();
 

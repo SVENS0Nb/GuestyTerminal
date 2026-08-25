@@ -98,7 +98,7 @@ werden; das erneute Anlegen nur des SPI-Geräts genügt nicht. `POWER ON` und
 `DISPLAY REFRESH` behalten Seeeds feste 100-ms-Wartezeit und warten danach auf
 den inaktiven `BUSY_N`-Pegel. Jede sichtbare Treiberänderung erhöht erwartete
 und gespeicherte Renderrevision gemeinsam; der aktuelle Stand verwendet
-Revision 27.
+Revision 28.
 
 ## Veröffentlichungen und Distribution
 
@@ -123,16 +123,18 @@ parallel; Abhängigkeiten, der stabile ESPHome-Werkzeugsatz und nicht produktive
 inkrementelle Firmware-Builddaten werden getrennt gecacht. Tag-Pushes lösen
 keinen zweiten identischen Testlauf aus.
 
-Version 0.3.41 benötigt wegen der antwortfreien v10-Übergabe und der sofortigen
-Endpoint-Bestätigung gemeinsam ein Integrations- und Display-Firmwareupdate.
-Zusätzlich zum vollständigen Testlauf und zur ESPHome-Kompilierung sind während
-wiederholter Vollrefreshs die dauerhafte Native-API-Erreichbarkeit und die
-serielle Payload-Verarbeitung auf einem realen E1001 zu prüfen oder ausdrücklich
-als nicht hardwaregetestet offenzulegen. Im Protokoll müssen `received`,
-`rendering` und `success` ohne Aktions-Timeout, schnellen Neustart oder
-Reconnect-Schleife erscheinen.
-Die mit 0.3.36 eingeführte LUTBD-Randansteuerung und
-Renderrevision 27 bleiben bestehen; Vollrefreshs in `auto`, `otp` und `custom`
+Version 0.3.42 benötigt wegen der vervollständigten OTP-Initialisierung, der
+phasenbezogenen BUSY-Grenzen und des kontrollierten Register-LUT-Rückfalls
+gemeinsam ein Integrations- und Display-Firmwareupdate. Zusätzlich zum
+vollständigen Testlauf und zur ESPHome-Kompilierung sind während wiederholter
+Vollrefreshs die Wiederherstellung nach einem Selbsttest, die dauerhafte
+Native-API-Erreichbarkeit und die serielle Payload-Verarbeitung auf einem realen
+E1001 zu prüfen oder ausdrücklich als nicht hardwaregetestet offenzulegen. Im
+Protokoll müssen `received`, `rendering` und `success` ohne Aktions-Timeout,
+schnellen Neustart oder Reconnect-Schleife erscheinen.
+Die mit 0.3.36 eingeführte LUTBD-Randansteuerung bleibt bestehen;
+Renderrevision 28 erzwingt nach der aktuellen Treiberkorrektur einen neuen
+Vollrefresh. Die Modi `auto`, `otp` und `custom`
 gehören weiterhin zur Hardwarematrix.
 
 Der v10-Zustellpfad benötigt zusätzlich einen Realgerätetest

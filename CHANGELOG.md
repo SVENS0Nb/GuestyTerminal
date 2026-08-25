@@ -3,7 +3,44 @@
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt. Einträge
 unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
 
-## Unveröffentlicht
+## 0.3.42 – 2026-08-25
+
+### Wiederherstellung nach einem hängenden E-Paper-Refresh
+
+- Ein realer E1001-Hardwaretest bestätigte, dass Framebuffer, SPI-Übertragung
+  und Vier-Grau-Darstellung funktionieren, der Controller im automatischen
+  OTP-Pfad nach dem sichtbaren Bildaufbau jedoch nicht mehr aus `BUSY_N`
+  zurückkehrte. Der bisher 70 Sekunden wartende Selbsttest endete deshalb noch
+  während der insgesamt 91,8 Sekunden dauernden fehlgeschlagenen Transaktion
+  und konnte das vorherige Buchungsbild nicht wiederherstellen.
+- Der OTP-Pfad übernimmt nun Seeed_GFXs vollständige Vorbereitung von `R50h`
+  vor der Aktivierung der internen Vier-Grau-Wellenform. Die nachgelagerte
+  Auswahl der separaten panelinternen `LUTBD` bleibt erhalten, damit die
+  Randelektrode nicht wieder eine Pixel-LUT verwendet.
+- Falls eine als unterstützt erkannte OTP-Wellenform trotzdem an `BUSY_N`
+  hängen bleibt, führt `auto` genau einen kontrollierten Rückfall aus und
+  wiederholt dasselbe Vollbild nach einer Controller-Rücksetzung mit Seeeds
+  lizenzierten Register-LUTs. Nur ein physisch erfolgreich abgeschlossener
+  Rückfall wird für weitere Tiefschlafzyklen behalten; der explizite Modus
+  `otp` bleibt unverändert.
+- Reset, Einschalten, Bildaufbau und Ausschalten besitzen jetzt getrennte
+  Zeitgrenzen und protokollieren ausschließlich Phase, BUSY-Pegel und Dauer.
+  Ein Ausschaltfehler kann dadurch nicht mehr weitere 45 Sekunden an eine
+  bereits fehlgeschlagene Aktualisierung anhängen.
+- Payload-, Datenschutz- und Selbsttestpfade warten bis zu 120 Sekunden auf
+  den serialisierten Hardwareauftrag; Home Assistant lässt der korrelierten
+  Abschlussbestätigung 135 Sekunden. Der Selbsttest kann damit nach einem
+  beendeten Fehlerpfad das normale Bild wieder zeichnen. Die 15-minütige
+  Datenschutz-Lease bleibt unverändert.
+- Renderrevision 28 erzwingt nach dem nächsten Firmwareupdate einen
+  vollständigen Neuaufbau. Beide Firmwareprofile wurden mit ESPHome 2026.8.1
+  erfolgreich geprüft und vollständig kompiliert; das sichere 4-MB-Profil
+  belegt 82,0 % seiner App-Partition, das optionale 32-MB-Profil 9,1 %. Nur der
+  abschließende Test auf dem realen E1001 steht noch aus.
+- Version 0.3.42 benötigt gemeinsam ein HACS-/Integrationsupdate und ein
+  Display-Firmwareupdate. Bestehende 4-MB-Installationen können dieses Update
+  normal per OTA einspielen; das Flashlayout wird dabei nicht geändert. Das
+  festgehaltene Testbild wird beim ersten erfolgreichen Vollrefresh ersetzt.
 
 ## 0.3.41 – 2026-08-25
 

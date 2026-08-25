@@ -16,10 +16,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_current_repository_release_metadata_is_consistent() -> None:
-    metadata = validate_release(ROOT, expected_version="0.3.41")
+    metadata = validate_release(ROOT, expected_version="0.3.42")
 
-    assert metadata.version == "0.3.41"
-    assert "Zuverlässige v10-Zustellung" in metadata.changelog_body
+    assert metadata.version == "0.3.42"
+    assert "Wiederherstellung nach einem hängenden E-Paper-Refresh" in (
+        metadata.changelog_body
+    )
 
 
 @pytest.mark.parametrize("hardware_status", ["passed", "not_tested"])

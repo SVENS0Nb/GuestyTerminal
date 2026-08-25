@@ -251,7 +251,7 @@ api:
                   else:
                     - lambda: |-
                         const bool renderer_current =
-                            id(guesty_render_revision) == 27;
+                            id(guesty_render_revision) == 28;
                         int battery_percent = -1;
                         if (id(guesty_battery_level).has_state()
                             && std::isfinite(id(guesty_battery_level).state)) {
@@ -387,7 +387,7 @@ api:
                               condition:
                                 lambda: |-
                                   return !id(guesty_epaper).update_in_progress();
-                              timeout: 70s
+                              timeout: 120s
                           - if:
                               condition:
                                 lambda: |-
@@ -405,7 +405,7 @@ api:
                                           id(guesty_content_id) = content_id;
                                           id(guesty_base_content_id) =
                                               base_content_id;
-                                          id(guesty_render_revision) = 27;
+                                          id(guesty_render_revision) = 28;
                                           id(guesty_screen_sensitive) =
                                               mode != "idle";
                                           id(guesty_valid_until_epoch) =
@@ -560,7 +560,7 @@ api:
                     && !id(guesty_epaper).update_in_progress();
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            const bool renderer_current = id(guesty_render_revision) == 27;
+            const bool renderer_current = id(guesty_render_revision) == 28;
             int battery_percent = -1;
             if (id(guesty_battery_level).has_state()
                 && std::isfinite(id(guesty_battery_level).state)) {
@@ -678,7 +678,7 @@ api:
               - wait_until:
                   condition:
                     lambda: return !id(guesty_epaper).update_in_progress();
-                  timeout: 70s
+                  timeout: 120s
               - if:
                   condition:
                     lambda: |-
@@ -688,7 +688,7 @@ api:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
-                        id(guesty_render_revision) = 27;
+                        id(guesty_render_revision) = 28;
                         id(guesty_screen_sensitive) = mode != "idle";
                         id(guesty_valid_until_epoch) =
                             mode == "idle" ? 0 : valid_until_epoch;
@@ -1148,7 +1148,7 @@ script:
             - wait_until:
                 condition:
                   lambda: return !id(guesty_epaper).update_in_progress();
-                timeout: 70s
+                timeout: 120s
             - if:
                 condition:
                   lambda: |-
@@ -1164,7 +1164,7 @@ script:
                   - wait_until:
                       condition:
                         lambda: return !id(guesty_epaper).update_in_progress();
-                      timeout: 70s
+                      timeout: 120s
                   - lambda: |-
                       const bool partial_passed =
                           !id(guesty_epaper).update_in_progress()
@@ -1188,7 +1188,7 @@ script:
                   - wait_until:
                       condition:
                         lambda: return !id(guesty_epaper).update_in_progress();
-                      timeout: 70s
+                      timeout: 120s
                   - if:
                       condition:
                         lambda: |-
@@ -2507,7 +2507,7 @@ interval:
                   - wait_until:
                       condition:
                         lambda: return !id(guesty_epaper).update_in_progress();
-                      timeout: 70s
+                      timeout: 120s
                   - if:
                       condition:
                         lambda: |-
@@ -2589,7 +2589,7 @@ interval:
             - wait_until:
                 condition:
                   lambda: return !id(guesty_epaper).update_in_progress();
-                timeout: 70s
+                timeout: 120s
             - if:
                 condition:
                   lambda: |-

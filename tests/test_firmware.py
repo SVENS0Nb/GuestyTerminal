@@ -77,7 +77,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.41") == 2
+    assert rendered.count("ref: v0.3.42") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
@@ -104,7 +104,7 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     stored_revision = re.search(r"id\(guesty_render_revision\) = (\d+);", package)
     assert expected_revision is not None
     assert stored_revision is not None
-    assert expected_revision.group(1) == "27"
+    assert expected_revision.group(1) == "28"
     assert expected_revision.group(1) == stored_revision.group(1)
     assert "guesty_terminal_update_display_v10" in package
     assert (
@@ -339,7 +339,8 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "BANK0_BASE = 0x0000" in driver
     assert "BANK1_BASE = 0x0C00" in driver
     assert "RETAINED_LUT_SELECTION_MAGIC" in driver
-    assert "RETAINED_LUT_SELECTION_MAGIC = 0x47544C32UL" in driver
+    assert "RETAINED_LUT_SELECTION_MAGIC = 0x47544C33UL" in driver
+    assert "0x47544C32UL" not in driver
     assert "0x47544C31UL" not in driver
     assert "init_custom_gray_mode_" in driver
     assert "init_otp_gray_mode_" in driver
@@ -355,9 +356,10 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "wait_after_controller_command_" in driver
     assert "const bool successful = this->display_()" in driver
     assert "this->last_update_successful_.store(successful)" in driver
-    assert "if (!this->reset_panel_()) {\n    this->deep_sleep_panel_();" in driver
+    assert "bool GuestyEPaperGray4::perform_full_refresh_(bool reset_panel)" in driver
+    assert "bool GuestyEPaperGray4::recover_for_custom_fallback_()" in driver
     assert "const bool initialized = this->active_lut_mode_" in driver
-    assert "if (!initialized) {\n    this->deep_sleep_panel_();" in driver
+    assert "return this->refresh_();" in driver
     assert (
         "if (!this->init_partial_mode_()) {\n    this->deep_sleep_panel_();" in driver
     )
@@ -367,7 +369,7 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     border_hiz = sleep.index("this->data_(0x90)")
     border_interval = sleep.index("this->data_(0x07)", border_hiz)
     power_off = sleep.index("this->command_(0x02)")
-    wait_for_power_off = sleep.index('this->wait_until_idle_("after power off")')
+    wait_for_power_off = sleep.index('this->wait_until_idle_("after power off"')
     deep_sleep = sleep.index("this->command_(0x07)")
     assert border_hiz < border_interval < power_off < wait_for_power_off < deep_sleep
     custom_init = driver[
@@ -422,6 +424,7 @@ def test_panel_self_test_is_neutral_serialized_and_restores_payload() -> None:
     assert "id(guesty_content_id).clear()" in self_test
     assert "id(guesty_self_test_saved_content_id)" in self_test
     assert "script.execute: guesty_restore_payload_page" in self_test
+    assert self_test.count("timeout: 120s") == 3
     assert '"requires_external_power"' in self_test
     assert 'const std::string profile = "${power_mode}";' not in self_test
     assert self_test.count("id(guesty_external_power).state") >= 2
@@ -491,7 +494,7 @@ def test_v10_action_acknowledges_only_confirmed_panel_delivery() -> None:
     assert "__guesty_delivery_unchanged__:" in action
     assert "__guesty_delivery_error__:" in action
     assert "timeout: 5s" in action
-    assert "timeout: 70s" in action
+    assert "timeout: 120s" in action
     assert 'id(guesty_delivery_error) = "preparation_timeout"' in action
     assert 'id(guesty_delivery_error) = "panel_timeout"' in action
     assert 'id(guesty_delivery_error) = "panel_error"' in action
@@ -577,15 +580,34 @@ def test_uc8179_border_uses_the_validated_panel_lut_in_both_full_modes() -> None
     assert "this->data_(0x80)" in custom  # unvalidated reads stay high-Z
 
     otp_waveform = otp.index("this->data_(0x5F)")
+    otp_prepare_register = otp.index("this->command_(0x50)")
+    otp_prepare_value = otp.index("this->data_(0x10)", otp_prepare_register)
     otp_border_register = otp.index("this->command_(0x50)", otp_waveform)
     otp_border_select = otp.index("this->data_(0x00)", otp_border_register)
-    assert otp_waveform < otp_border_register < otp_border_select
+    assert (
+        otp_prepare_register
+        < otp_prepare_value
+        < otp_waveform
+        < otp_border_register
+        < otp_border_select
+    )
     assert (
         "this->command_(0x50);  // Use the panel's common OTP border LUT directly\n"
         "  this->data_(0x00);     // BDZ=0, BDV=00 selects LUTBD, DDX=00\n"
         "  this->data_(0x07);"
     ) in otp
     assert "this->write_lut_(0x25" not in otp
+
+    full_refresh = driver[
+        driver.index(
+            "bool GuestyEPaperGray4::perform_full_refresh_(bool reset_panel)"
+        ) : driver.index("bool GuestyEPaperGray4::recover_for_custom_fallback_()")
+    ]
+    reset = full_refresh.index("this->reset_panel_()")
+    first_plane = full_refresh.index("this->write_plane_(0x10, 0)")
+    second_plane = full_refresh.index("this->write_plane_(0x13, 1)")
+    refresh = full_refresh.index("this->refresh_()")
+    assert reset < first_plane < second_plane < refresh
 
     display = driver[
         driver.index("bool GuestyEPaperGray4::display_()") : driver.index(
@@ -595,21 +617,18 @@ def test_uc8179_border_uses_the_validated_panel_lut_in_both_full_modes() -> None
     attempt_reset = display.index("this->otp_profile_attempted_this_refresh_ = false")
     mode_selection = display.index("this->select_lut_mode_()")
     ensure_border = display.index("this->ensure_custom_border_lut_()")
-    reset = display.index("this->reset_panel_()")
-    first_plane = display.index("this->write_plane_(0x10, 0)")
-    second_plane = display.index("this->write_plane_(0x13, 1)")
-    refresh = display.index("this->refresh_()")
-    shutdown = display.index("this->deep_sleep_panel_()", refresh)
-    assert (
-        attempt_reset
-        < mode_selection
-        < ensure_border
-        < reset
-        < first_plane
-        < second_plane
-        < refresh
-        < shutdown
+    full_attempt = display.index("this->perform_full_refresh_()")
+    fallback = display.index("this->recover_for_custom_fallback_()", full_attempt)
+    retry = display.index("this->perform_full_refresh_(false)", fallback)
+    retained_fallback = display.index(
+        "retained_lut_selection.mode = LUT_MODE_CUSTOM", retry
     )
+    shutdown = display.index("this->deep_sleep_panel_()", retained_fallback)
+    assert attempt_reset < mode_selection < ensure_border < full_attempt
+    assert full_attempt < fallback < retry < retained_fallback < shutdown
+    assert "this->configured_lut_mode_ == LUT_MODE_AUTO" in display
+    assert "this->active_lut_mode_ == LUT_MODE_OTP" in display
+    assert "this->last_error_.load() == UPDATE_ERROR_BUSY_TIMEOUT" in display
 
 
 def test_uc8179_otp_border_profile_is_bank_ordered_and_read_twice() -> None:
@@ -674,6 +693,10 @@ def test_panel_io_does_not_block_the_esphome_api_loop() -> None:
     assert "update_in_progress_.store(false)" in worker
     assert "std::atomic<bool> update_in_progress_" in header
     assert "OTP_IDLE_TIMEOUT_MS = 3000" in header
+    assert "RESET_IDLE_TIMEOUT_MS = 5000" in header
+    assert "POWER_ON_IDLE_TIMEOUT_MS = 10000" in header
+    assert "REFRESH_IDLE_TIMEOUT_MS = 45000" in header
+    assert "POWER_OFF_IDLE_TIMEOUT_MS = 10000" in header
     assert driver.count("OTP_IDLE_TIMEOUT_MS") >= 3
     service_start = driver.index("void GuestyEPaperGray4::service_long_operation_()")
     service_end = driver.index("void GuestyEPaperGray4::on_safe_shutdown()")
@@ -814,13 +837,13 @@ def test_uc8179_power_on_and_refresh_use_the_seeed_busy_guard() -> None:
     driver = DRIVER_FILE.read_text(encoding="utf-8")
     helper = re.search(
         r"bool GuestyEPaperGray4::wait_after_controller_command_\("
-        r"const char \*phase\) \{(.*?)\n\}",
+        r"const char \*phase,\s*uint32_t timeout_ms\) \{(.*?)\n\}",
         driver,
         re.DOTALL,
     )
     assert helper is not None
     body = helper.group(1)
-    assert body.index("delay(100)") < body.index("wait_until_idle_(phase)")
+    assert body.index("delay(100)") < body.index("wait_until_idle_(phase, timeout_ms)")
     assert "BUSY never asserted" not in driver
     assert "assertion_started" not in driver
     for phase in (
@@ -830,7 +853,7 @@ def test_uc8179_power_on_and_refresh_use_the_seeed_busy_guard() -> None:
         "during partial refresh",
         "during grayscale refresh",
     ):
-        assert f'wait_after_controller_command_("{phase}")' in driver
+        assert f'wait_after_controller_command_("{phase}",' in driver
 
 
 def test_four_gray_tables_match_the_licensed_seeed_reference() -> None:
@@ -1134,7 +1157,7 @@ def test_privacy_state_changes_only_after_a_successful_physical_refresh() -> Non
     assert "!id(guesty_privacy_clear_pending)" in interval
     assert "Privacy clear failed; keeping the device awake" in interval
     battery_wait = interval[battery_update:battery_success]
-    assert "timeout: 70s" in battery_wait
+    assert "timeout: 120s" in battery_wait
     assert "!id(guesty_epaper).update_in_progress()" in battery_wait
 
     mains_clear = interval.index('id(guesty_mode) = "idle";', battery_commit)
@@ -1149,7 +1172,7 @@ def test_privacy_state_changes_only_after_a_successful_physical_refresh() -> Non
     )
     assert "Privacy clear failed; retrying while external power" in interval
     mains_wait = interval[mains_update:mains_success]
-    assert "timeout: 70s" in mains_wait
+    assert "timeout: 120s" in mains_wait
     assert "!id(guesty_epaper).update_in_progress()" in mains_wait
     assert "&& (id(guesty_privacy_clear_pending)" in interval
     assert "id: guesty_privacy_clear_pending" in package
@@ -1234,7 +1257,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.41", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.42", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -1246,8 +1269,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.41") == 2
-    assert 'version: "0.3.41"' in updated
+    assert updated.count("ref: v0.3.42") == 2
+    assert 'version: "0.3.42"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -1278,7 +1301,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
 def test_update_managed_firmware_configs_rejects_invalid_credentials(
     tmp_path, broken_line
 ) -> None:
-    valid = render_firmware_config(_options()).replace("0.3.41", "0.3.10")
+    valid = render_firmware_config(_options()).replace("0.3.42", "0.3.10")
     if "key:" in broken_line:
         invalid = valid.replace(
             next(line for line in valid.splitlines() if "key:" in line), broken_line
@@ -1315,14 +1338,14 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.41", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.42", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     future.chmod(0o600)
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.41", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.42", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")

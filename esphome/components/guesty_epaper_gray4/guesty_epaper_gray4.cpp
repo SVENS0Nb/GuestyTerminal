@@ -18,10 +18,10 @@ namespace esphome::guesty_epaper_gray4 {
 
 static const char *const TAG = "guesty_epaper_gray4";
 static constexpr uint32_t RETAINED_PARTIAL_MAGIC = 0x47545031UL;
-// Version 2 invalidates the older marker1 || marker2 decision. UC8179 always
-// prefers a valid bank 0, so only that bank's grayscale marker may decide the
-// retained mode when both banks contain data.
-static constexpr uint32_t RETAINED_LUT_SELECTION_MAGIC = 0x47544C32UL;
+// Version 3 invalidates earlier OTP selections once. Auto mode can now retain
+// the licensed register-LUT fallback after a valid OTP profile nevertheless
+// fails to complete a physical refresh on the real panel.
+static constexpr uint32_t RETAINED_LUT_SELECTION_MAGIC = 0x47544C33UL;
 
 struct RetainedPartialFrame {
   uint32_t magic;
@@ -366,9 +366,17 @@ bool GuestyEPaperGray4::wait_until_idle_(const char *phase,
   // must therefore use a non-inverted GPIO input for this driver.
   delay(10);
   const uint32_t started = millis();
+  if (this->busy_pin_->digital_read()) {
+    ESP_LOGD(TAG, "BUSY_N already idle (%s)", phase);
+    return true;
+  }
+  ESP_LOGD(TAG, "BUSY_N active; waiting up to %lu ms (%s)",
+           static_cast<unsigned long>(timeout_ms), phase);
   while (!this->busy_pin_->digital_read()) {
-    if (millis() - started > timeout_ms) {
-      ESP_LOGE(TAG, "Display BUSY timeout (%s)", phase);
+    const uint32_t elapsed = millis() - started;
+    if (elapsed >= timeout_ms) {
+      ESP_LOGE(TAG, "Display BUSY timeout after %lu ms (%s)",
+               static_cast<unsigned long>(elapsed), phase);
       this->last_error_.store(UPDATE_ERROR_BUSY_TIMEOUT);
       this->status_set_warning();
       return false;
@@ -376,17 +384,20 @@ bool GuestyEPaperGray4::wait_until_idle_(const char *phase,
     this->service_long_operation_();
     delay(10);
   }
+  ESP_LOGI(TAG, "BUSY_N released after %lu ms (%s)",
+           static_cast<unsigned long>(millis() - started), phase);
   return true;
 }
 
-bool GuestyEPaperGray4::wait_after_controller_command_(const char *phase) {
+bool GuestyEPaperGray4::wait_after_controller_command_(const char *phase,
+                                                        uint32_t timeout_ms) {
   // Seeed's UC8179 sequences leave a fixed 100 ms guard after POWER ON and
   // DISPLAY REFRESH, then wait for BUSY_N to return HIGH. Requiring this driver
   // to witness the LOW edge is too strict: a valid controller revision may
   // assert it before the first sampled edge or complete a short power-on cycle
   // during the guard period.
   delay(100);
-  return this->wait_until_idle_(phase);
+  return this->wait_until_idle_(phase, timeout_ms);
 }
 
 bool GuestyEPaperGray4::reset_panel_() {
@@ -399,7 +410,7 @@ bool GuestyEPaperGray4::reset_panel_() {
   this->reset_pin_->digital_write(true);
   delay(10);
   this->panel_asleep_ = false;
-  return this->wait_until_idle_("after reset");
+  return this->wait_until_idle_("after reset", RESET_IDLE_TIMEOUT_MS);
 }
 
 bool GuestyEPaperGray4::release_spi_bus_for_gpio_read_() {
@@ -762,7 +773,8 @@ bool GuestyEPaperGray4::init_custom_gray_mode_() {
   this->data_(0x17);
 
   this->command_(0x04);  // POWER ON
-  if (!this->wait_after_controller_command_("after custom-LUT power on"))
+  if (!this->wait_after_controller_command_("after custom-LUT power on",
+                                             POWER_ON_IDLE_TIMEOUT_MS))
     return false;
 
   this->command_(0x00);  // KW mode; waveform loaded from registers
@@ -817,7 +829,8 @@ bool GuestyEPaperGray4::init_otp_gray_mode_() {
   this->data_(0x17);
 
   this->command_(0x04);  // POWER ON
-  if (!this->wait_after_controller_command_("after OTP power on"))
+  if (!this->wait_after_controller_command_("after OTP power on",
+                                             POWER_ON_IDLE_TIMEOUT_MS))
     return false;
 
   this->command_(0x00);  // KW mode; waveform loaded from panel OTP
@@ -828,6 +841,13 @@ bool GuestyEPaperGray4::init_otp_gray_mode_() {
   this->data_(WIDTH & 0xFF);
   this->data_(HEIGHT >> 8);
   this->data_(HEIGHT & 0xFF);
+
+  // Keep Seeed_GFX's complete OTP preparation sequence. N2OCP is selected
+  // before the OTP waveform bank is activated; after activation the second
+  // R50 write below deliberately selects the panel's dedicated LUTBD instead.
+  this->command_(0x50);  // VCOM AND DATA INTERVAL preparation
+  this->data_(0x10);
+  this->data_(0x07);
 
   this->command_(0xE0);  // CASCADE SETTING
   this->data_(0x02);
@@ -855,7 +875,8 @@ bool GuestyEPaperGray4::init_partial_mode_() {
   this->data_(0x17);
 
   this->command_(0x04);  // POWER ON
-  if (!this->wait_after_controller_command_("after partial power on"))
+  if (!this->wait_after_controller_command_("after partial power on",
+                                             POWER_ON_IDLE_TIMEOUT_MS))
     return false;
 
   this->command_(0x00);  // PANEL SETTING: monochrome OTP waveform
@@ -989,7 +1010,8 @@ bool GuestyEPaperGray4::refresh_partial_() {
   // partial window constrains the differential update to the status header.
   this->set_partial_ram_area_();
   this->command_(0x12);  // DISPLAY REFRESH
-  if (!this->wait_after_controller_command_("during partial refresh"))
+  if (!this->wait_after_controller_command_("during partial refresh",
+                                             REFRESH_IDLE_TIMEOUT_MS))
     return false;
   ESP_LOGI(TAG, "Partial weather refresh completed in %lu ms",
            static_cast<unsigned long>(millis() - started));
@@ -1099,7 +1121,8 @@ void GuestyEPaperGray4::log_frame_levels_() {
 bool GuestyEPaperGray4::refresh_() {
   const uint32_t started = millis();
   this->command_(0x12);  // DISPLAY REFRESH
-  if (!this->wait_after_controller_command_("during grayscale refresh"))
+  if (!this->wait_after_controller_command_("during grayscale refresh",
+                                             REFRESH_IDLE_TIMEOUT_MS))
     return false;
   ESP_LOGI(TAG, "Four-level refresh completed in %lu ms",
            static_cast<unsigned long>(millis() - started));
@@ -1107,11 +1130,48 @@ bool GuestyEPaperGray4::refresh_() {
   return true;
 }
 
+bool GuestyEPaperGray4::perform_full_refresh_(bool reset_panel) {
+  if (reset_panel) {
+    this->update_phase_.store(UPDATE_PHASE_RESET);
+    if (!this->reset_panel_())
+      return false;
+  }
+  const bool initialized = this->active_lut_mode_ == LUT_MODE_OTP
+                               ? this->init_otp_gray_mode_()
+                               : this->init_custom_gray_mode_();
+  if (!initialized)
+    return false;
+  this->log_frame_levels_();
+  this->update_phase_.store(UPDATE_PHASE_TRANSFER);
+  this->write_plane_(0x10, 0);  // DTM1: inverted least-significant gray bit
+  this->write_plane_(0x13, 1);  // DTM2: inverted most-significant gray bit
+  this->update_phase_.store(UPDATE_PHASE_REFRESH);
+  return this->refresh_();
+}
+
+bool GuestyEPaperGray4::recover_for_custom_fallback_() {
+  ESP_LOGW(TAG,
+           "OTP refresh did not finish; resetting once for the Seeed "
+           "register-LUT fallback");
+  this->update_phase_.store(UPDATE_PHASE_RESET);
+  if (!this->reset_panel_())
+    return false;
+
+  // A successful hardware reset proves that the failed OTP transaction has
+  // released the controller. Clear only that recoverable error before the
+  // single serialized fallback; a second failure remains visible normally.
+  this->last_error_.store(UPDATE_ERROR_NONE);
+  this->status_clear_warning();
+  this->active_lut_mode_ = LUT_MODE_CUSTOM;
+  this->active_lut_diagnostic_.store(LUT_MODE_CUSTOM);
+  return this->ensure_custom_border_lut_();
+}
+
 bool GuestyEPaperGray4::display_() {
   // AUTO selection and custom-border preparation share the same OTP reader.
-  // Allow one complete attempt per physical full refresh so a transient error
-  // cannot immediately consume a second 45-second BUSY timeout. A later full
-  // refresh may retry; partial and unchanged-content paths never read OTP.
+  // Allow one OTP-profile read per physical full-refresh job. A verified OTP
+  // waveform that later times out may receive one controlled register-LUT
+  // retry, but partial and unchanged-content paths never read OTP.
   this->otp_profile_attempted_this_refresh_ = false;
   // Never report a previous full refresh's waveform or border path while the
   // current attempt is still selecting and validating its controller profile.
@@ -1123,24 +1183,26 @@ bool GuestyEPaperGray4::display_() {
   if (this->active_lut_mode_ == LUT_MODE_CUSTOM &&
       !this->ensure_custom_border_lut_())
     return false;
-  this->update_phase_.store(UPDATE_PHASE_RESET);
-  if (!this->reset_panel_()) {
-    this->deep_sleep_panel_();
-    return false;
+
+  bool refreshed = this->perform_full_refresh_();
+  const bool may_fallback =
+      !refreshed && this->configured_lut_mode_ == LUT_MODE_AUTO &&
+      this->active_lut_mode_ == LUT_MODE_OTP &&
+      this->last_error_.load() == UPDATE_ERROR_BUSY_TIMEOUT &&
+      !this->is_failed();
+  if (may_fallback && this->recover_for_custom_fallback_()) {
+    // Recovery has already reset the controller. Repeating the reset here
+    // would add another hardware transition without improving isolation.
+    refreshed = this->perform_full_refresh_(false);
+    if (refreshed) {
+      // Retain only a proven fallback. A failed custom attempt must not turn a
+      // transient panel problem into a persistent waveform decision.
+      retained_lut_selection.magic = 0;
+      retained_lut_selection.mode = LUT_MODE_CUSTOM;
+      retained_lut_selection.magic = RETAINED_LUT_SELECTION_MAGIC;
+      ESP_LOGI(TAG, "Seeed register-LUT fallback completed successfully");
+    }
   }
-  const bool initialized = this->active_lut_mode_ == LUT_MODE_OTP
-                               ? this->init_otp_gray_mode_()
-                               : this->init_custom_gray_mode_();
-  if (!initialized) {
-    this->deep_sleep_panel_();
-    return false;
-  }
-  this->log_frame_levels_();
-  this->update_phase_.store(UPDATE_PHASE_TRANSFER);
-  this->write_plane_(0x10, 0);  // DTM1: inverted least-significant gray bit
-  this->write_plane_(0x13, 1);  // DTM2: inverted most-significant gray bit
-  this->update_phase_.store(UPDATE_PHASE_REFRESH);
-  const bool refreshed = this->refresh_();
   this->deep_sleep_panel_();
   return refreshed;
 }
@@ -1157,7 +1219,8 @@ void GuestyEPaperGray4::deep_sleep_panel_() {
   this->data_(0x90);     // BDZ=1, BDV=01, N2OCP=0, DDX=00
   this->data_(0x07);     // Documented VCOM/data interval
   this->command_(0x02);  // POWER OFF
-  const bool powered_off = this->wait_until_idle_("after power off");
+  const bool powered_off =
+      this->wait_until_idle_("after power off", POWER_OFF_IDLE_TIMEOUT_MS);
   if (!powered_off)
     ESP_LOGW(TAG, "Power-off timeout; attempting panel deep sleep anyway");
   this->command_(0x07);  // DEEP SLEEP

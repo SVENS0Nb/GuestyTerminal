@@ -226,7 +226,13 @@ SPI2-Bus vollständig frei und initialisiert Bus und SPI-Gerät danach mit der
 E1001-Konfiguration neu. Nach `POWER ON` und `DISPLAY REFRESH` wartet er gemäß
 der Seeed-Sequenz zunächst fest 100 ms und anschließend bis `BUSY_N` inaktiv
 ist; eine bereits vor der ersten Abfrage erfolgte BUSY-Flanke muss nicht noch
-einmal beobachtet werden.
+einmal beobachtet werden. Reset, Einschalten, Refresh und Ausschalten besitzen
+getrennte Sicherheitsgrenzen. Meldet eine als kompatibel erkannte interne
+OTP-Wellenform den sichtbaren Bildaufbau nicht als abgeschlossen, setzt der
+automatische Modus den Controller einmal zurück und wiederholt dasselbe Bild
+mit den lizenzierten Seeed-Register-LUTs. Erst ein erfolgreicher Rückfall wird
+über den Tiefschlaf hinweg behalten. Die Diagnose protokolliert dabei nur
+BUSY-Pegel, Phase und Dauer, niemals Displayinhalte.
 Der logische ESPHome-Framebuffer verwendet
 `00 = Schwarz`, `01 = Dunkelgrau`, `10 = Hellgrau` und `11 = Weiß`. Vor der
 Übertragung invertiert der Treiber jeden Pegel mit `3 - gray`; erst danach
@@ -528,19 +534,31 @@ Die kompakte, fortlaufende Änderungshistorie steht in
 [`CHANGELOG.md`](CHANGELOG.md). Die folgenden Hinweise erklären zusätzlich die
 Firmwareanforderungen älterer Installationen.
 
-Der derzeit unveröffentlichte Stand, Version **0.3.41**, korrigiert die
-Übergabe an die
+Version **0.3.41** korrigiert die Übergabe an die
 mit Home Assistant 2026.8 eingeführten antwortenden ESPHome-Aktionen. v10 ist
 jetzt wieder eine schnelle Fire-and-forget-Aktion; Empfang, Renderbeginn und
 physischer Abschluss werden weiterhin separat über den Display-Endpunkt
-bestätigt. Dadurch kann die bis zu 70 Sekunden dauernde E-Paper-Transaktion
+bestätigt. Dadurch kann die E-Paper-Transaktion
 nicht mehr in die kürzere Aktionsantwortfrist laufen. Übergabefehler werden
 blockierend innerhalb der datenschutzneutralen Integration behandelt, damit
 Home Assistant nicht den vollständigen Service-Payload protokolliert. Für die
-Korrektur sind nach einer Veröffentlichung sowohl das HACS-/Integrationsupdate
-als auch die Display-Firmware 0.3.41 erforderlich. Der erste zugestellte
+Korrektur sind sowohl das HACS-/Integrationsupdate als auch die
+Display-Firmware 0.3.41 erforderlich. Der erste zugestellte
 Willkommens-Payload erzwingt einen Vollrefresh; Rand und Randelektrodendiagnose
 sind danach am realen E1001 erneut zu prüfen.
+
+Version **0.3.42** korrigiert zusätzlich den auf dem realen E1001 beobachteten
+`BUSY_N`-Fehler nach einem tatsächlich sichtbaren Hardwaretestbild. Sie
+vervollständigt die Seeed-OTP-Initialisierung, begrenzt die einzelnen
+Controllerphasen getrennt und verwendet im automatischen Modus genau einen
+kontrollierten Register-LUT-Rückfall. Selbsttest und normale Zustellung warten
+bis zum Ende dieses Hardwareauftrags und versuchen anschließend wieder das
+aktuelle Buchungsbild. Renderrevision 28 erzwingt dafür einmalig einen
+Vollrefresh; die Datenschutz-Lease bleibt bei 15 Minuten. Für diese Korrektur
+sind das HACS-/Integrationsupdate und die Display-Firmware 0.3.42 erforderlich.
+Bestehende 4-MB-Geräte können sie normal per OTA installieren; das Flashlayout
+bleibt unverändert. Die vollständige Wirkung ist noch auf dem realen E1001 zu
+bestätigen.
 
 Version **0.3.40** ergänzt die ausdrückliche Abschaltung der ungenutzten
 SD-Karten-Stromversorgung, einen neutralen Voll-/Teilrefresh-Hardwaretest und

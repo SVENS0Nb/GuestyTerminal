@@ -405,6 +405,8 @@ def _endpoint_event(state: str, endpoint: str = ENDPOINT) -> SimpleNamespace:
 
 def test_v10_waits_for_physical_success_acknowledgement() -> None:
     runtime, hass, _coordinator = _runtime(state=ACTION_V10)
+    runtime_module = sys.modules[GuestyTerminalRuntime.__module__]
+    assert runtime_module._DELIVERY_COMPLETION_TIMEOUT == 135.0
 
     async def exercise() -> bool:
         delivery = asyncio.create_task(runtime.async_push_endpoint(ENDPOINT))

@@ -313,7 +313,7 @@ incomplete change.
 - `guesty_render_revision` invalidates otherwise-identical images after a
   rendering or driver change. When a visible rendering change requires one
   repaint, increment the expected value and the stored-success value together,
-  and update their tests. The current source revision is 27.
+  and update their tests. The current source revision is 28.
 - Publish the displayed-booking confirmation only after a successful physical
   refresh, or when a restored matching fingerprint proves the same content was
   previously drawn.
