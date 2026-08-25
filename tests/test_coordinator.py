@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -810,7 +811,9 @@ def test_expired_definitions_cannot_make_an_opaque_clear_use_cached_code() -> No
     client.definitions["account-1"] = GuestyError("temporary")
     coordinator = _coordinator(client=client)
     coordinator._custom_field_definitions["account-1"] = (
-        0.0,
+        time.monotonic()
+        - coordinator_module._CUSTOM_FIELD_DEFINITION_CACHE_SECONDS
+        - 1,
         [{"_id": "old-field", "name": "keycode"}],
     )
     coordinator._keycode_cache[("res-current", "v1")] = "cached-stale"
