@@ -80,7 +80,7 @@ werden; das erneute Anlegen nur des SPI-Geräts genügt nicht. `POWER ON` und
 `DISPLAY REFRESH` behalten Seeeds feste 100-ms-Wartezeit und warten danach auf
 den inaktiven `BUSY_N`-Pegel. Jede sichtbare Treiberänderung erhöht erwartete
 und gespeicherte Renderrevision gemeinsam; der aktuelle Stand verwendet
-Revision 24.
+Revision 25.
 
 ## Veröffentlichungen und Distribution
 
@@ -89,11 +89,11 @@ Firmwaregenerator, Referenz-YAML und versionsabhängigen Tests übereinstimmen.
 `README.md` und `CHANGELOG.md` müssen die Änderung sowie die Notwendigkeit eines
 Display-Firmwareupdates eindeutig nennen.
 
-Für Version 0.3.33 ist wegen der revisionsabhängigen Netzstromerkennung und der
-Korrektur der Displaypolarität ein Display-Firmwareupdate zwingend
-erforderlich. Der vollständige Testlauf gegen beide Home-Assistant-Baselines
-und die ESPHome-2026.7.4-Kompilierung sind erfolgreich; reale USB-/Akku-Tests
-auf E1001 v1.0 und v1.2 fehlen noch und müssen entsprechend offengelegt bleiben.
+Für Version 0.3.34 ist wegen der Hochohmigschaltung der
+UC8179-Randelektrode und Renderrevision 25 ein Display-Firmwareupdate zwingend
+erforderlich. Vollständiger Testlauf und ESPHome-Kompilierung sind erfolgreich;
+die Randkorrektur ist zusätzlich auf einem realen E1001 zu prüfen oder
+ausdrücklich als nicht hardwaregetestet offenzulegen.
 
 Zusätzlich sind `LICENSE_STATUS.md` und `THIRD_PARTY_NOTICES.md` vor jeder
 öffentlichen Veröffentlichung zu prüfen. Dokumentieren sie einen anwendbaren,

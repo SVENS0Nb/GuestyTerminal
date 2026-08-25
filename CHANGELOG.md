@@ -3,6 +3,30 @@
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt. Einträge
 unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
 
+## 0.3.34 – 2026-08-25
+
+### Displayrand
+
+- Der UC8179-Rand wird jetzt unmittelbar vor `POWER OFF` über `R50h.BDZ`
+  hochohmig geschaltet. Die Randelektrode liegt außerhalb des 800×480-Pixel-RAMs
+  und konnte deshalb trotz vollständig weißer Randpixel als schmaler dunkler
+  Rahmen sichtbar bleiben. Der nächste vollständige Neuaufbau hellt den Rand
+  auf; die anschließende Hochohmigschaltung verhindert, dass er beim Ausschalten
+  erneut dunkel angesteuert bleibt.
+- Die Renderrevision steigt auf 25, damit ein bereits mit 0.3.33 gezeichnetes
+  und ansonsten unverändertes Bild nach dem Firmwareupdate einmal vollständig
+  neu aufgebaut wird. Alle Versionsmarkierungen stehen auf 0.3.34; ein
+  Display-Firmwareupdate ist erforderlich.
+
+### Prüfstatus
+
+- Der vollständige Python-Prüflauf war mit 254 Tests gegen Home Assistant
+  2026.2.3 erfolgreich; die Branch-Abdeckung beträgt 90,79 %. Ruff,
+  Formatprüfung, Mypy und Bytecode-Kompilierung sind ebenfalls fehlerfrei.
+- ESPHome 2026.7.4 hat die Referenzkonfiguration validiert und die Firmware
+  vollständig gebaut; im App-Partition-Report bleiben 21 % frei. Die
+  Randkorrektur wurde noch nicht auf einem realen E1001 geprüft.
+
 ## 0.3.33 – 2026-08-25
 
 ### Automatische Stromerkennung

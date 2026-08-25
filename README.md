@@ -559,6 +559,15 @@ Reconnect-Impuls als auch auf den wiederhergestellten Aktionsnamen und versucht
 die Zustellung innerhalb eines begrenzten Zeitfensters erneut. Nach dem
 HACS-Update muss die Display-Firmware einmalig auf 0.3.26 aktualisiert werden.
 
+Version **0.3.34** schaltet die separate Randelektrode des
+UC8179 unmittelbar vor dem Ausschalten hochohmig. Sie gehört nicht zum
+800×480-Pixel-RAM und konnte daher trotz weißer Bildrandpixel als schmaler
+dunkler Rahmen sichtbar bleiben. Renderrevision 25 erzwingt nach dem
+Display-Firmwareupdate einmalig einen vollständigen Neuaufbau, der den
+vorhandenen Rand aufhellt und anschließend elektrisch freigibt.
+Konfigurationsprüfung und Firmware-Build waren mit ESPHome 2026.7.4
+erfolgreich; die Wirkung am realen E1001 ist noch zu prüfen.
+
 Version **0.3.33** erweitert den Modus **Automatisch** um
 eine revisionsabhängige USB-Erkennung. E1001 v1.2 verwenden weiterhin den
 identifizierten SY6974B und dessen dediziertes `BUS_GD`-Signal. Antwortet dieser

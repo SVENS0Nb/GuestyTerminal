@@ -151,7 +151,7 @@ api:
       then:
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            const bool renderer_current = id(guesty_render_revision) == 24;
+            const bool renderer_current = id(guesty_render_revision) == 25;
             int battery_percent = -1;
             if (id(guesty_battery_level).has_state()
                 && std::isfinite(id(guesty_battery_level).state)) {
@@ -274,7 +274,7 @@ api:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
-                        id(guesty_render_revision) = 24;
+                        id(guesty_render_revision) = 25;
                         id(guesty_screen_sensitive) = mode != "idle";
                         id(guesty_valid_until_epoch) =
                             mode == "idle" ? 0 : valid_until_epoch;

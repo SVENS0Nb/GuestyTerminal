@@ -284,6 +284,11 @@ incomplete change.
   guard and then wait until active-low `BUSY_N` is inactive/high. Do not require
   witnessing a low assertion edge that may already have completed during the
   guard period.
+- Immediately before UC8179 `POWER OFF`, set `R50h.BDZ` so the separate border
+  electrode is high-impedance. The border lies outside the 800×480 framebuffer;
+  leaving it driven can retain a narrow dark frame even when all edge pixels
+  are white. Keep this step on full, partial, failure, and safe-shutdown paths
+  through the shared panel-sleep method.
 - The current LUTs, OTP probe, initialization, plane order, and partial-window
   sequence come only from the fixed permissively licensed Seeed revisions in
   `THIRD_PARTY_NOTICES.md`. Preserve the component's two local license files
@@ -292,7 +297,7 @@ incomplete change.
 - `guesty_render_revision` invalidates otherwise-identical images after a
   rendering or driver change. When a visible rendering change requires one
   repaint, increment the expected value and the stored-success value together,
-  and update their tests. The current source revision is 24.
+  and update their tests. The current source revision is 25.
 - Publish the displayed-booking confirmation only after a successful physical
   refresh, or when a restored matching fingerprint proves the same content was
   previously drawn.

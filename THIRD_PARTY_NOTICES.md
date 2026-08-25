@@ -26,6 +26,18 @@ sequence are adapted from Seeed's Open Source Hardware repository:
 The two-plane transfer retains the reference's explicit `3 - gray` conversion
 between the logical `0=black, 3=white` canvas and the UC8179 DTM wire polarity.
 
+## UC8179 controller documentation
+
+GuestyTerminal uses the UC8179 register descriptions published by UltraChip
+and hosted by Seeed Studio to interpret hardware control fields that are not
+part of the pixel data:
+
+- Datasheet: <https://files.seeedstudio.com/wiki/Other_Display/750-epaper/IC%20Driver%20UC8179.pdf>
+- Relevant field: `R50h.BDZ`, which releases the separate border electrode to
+  high impedance before panel power-off
+
+No datasheet content is bundled in this repository.
+
 ## Seeed_GFX UC8179 support
 
 The panel-OTP detection, OTP grayscale setup, and differential partial-refresh

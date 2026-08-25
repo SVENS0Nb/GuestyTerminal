@@ -850,6 +850,12 @@ bool GuestyEPaperGray4::display_() {
 void GuestyEPaperGray4::deep_sleep_panel_() {
   if (this->panel_asleep_)
     return;
+  // The UC8179 border is a separate electrode outside the 800x480 pixel RAM.
+  // Release it before power-off; leaving it driven can retain a narrow dark
+  // frame even when every framebuffer edge pixel is white. R50h.BDZ=1 makes
+  // the border high-impedance, as required by the controller documentation.
+  this->command_(0x50);  // VCOM AND DATA INTERVAL SETTING
+  this->data_(0xF7);     // Border Hi-Z before POWER OFF
   this->command_(0x02);  // POWER OFF
   const bool powered_off = this->wait_until_idle_("after power off");
   if (!powered_off)
