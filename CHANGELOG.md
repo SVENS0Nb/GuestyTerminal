@@ -2,6 +2,31 @@
 
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
 
+## Unveröffentlicht
+
+### Isolierter Monochrom-Test für den Panelrand
+
+- Der Realgerätetest von 0.3.45 zeigt: Die Custom-Graustufen-Konditionierung
+  hellt den Rand nur ab, entfernt ihn aber nicht; `auto/otp` liefert weiterhin
+  den besseren schwarzen Text. Die zwei direkt folgenden Bildaufbauten waren
+  der beabsichtigte Zwei-Pass-Ablauf und kein doppelter Payload.
+- Der frühere randfreie Treiber wurde eindeutig als ESPHomes eingebautes
+  Waveshare-Modell `7.50inv2` bis GuestyTerminal 0.3.2 identifiziert. Der
+  aktuelle Treiber bleibt aktiv, bildet aber dessen funktionalen monochromen
+  UC8179-KW-OTP-Ablauf einmalig als isolierten Vorlauf nach. Er überträgt nur
+  DTM2/R13h und lässt den Vier-Grau-Framebuffer unverändert; anschließend wird
+  das endgültige Bild über den ausgewählten aktuellen Graustufenpfad mit
+  hochohmigem Rand aufgebaut.
+- Renderrevision 31 fordert den Vorlauf bei bestätigter externer Versorgung
+  genau einmal an. Der Diagnosebutton wiederholt denselben serialisierten
+  Ablauf. Erfolgreich nachgewiesene identische Inhalte bleiben danach ohne
+  weitere physische Aktualisierung unterdrückt.
+- ESPHomes GPLv3-Quelltext diente nur zur historischen Verhaltenszuordnung. Die
+  neue Registerfolge ist unabhängig aus dem offiziellen UC8179-Datenblatt
+  implementiert; es wurden kein GPL-Code und keine zusätzlichen
+  Wellenformtabellen übernommen. Der sichtbare Effekt ist bis zum Test auf dem
+  realen E1001 noch nicht bestätigt.
+
 ## 0.3.45 – 2026-08-26
 
 ### Pixelkontrast und Panelrand getrennt

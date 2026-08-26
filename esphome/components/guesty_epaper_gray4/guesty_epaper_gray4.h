@@ -25,12 +25,13 @@ enum LutMode : uint8_t {
  * most-significant controller bits as separate DTM1 and DTM2 planes. The
  * waveform and register sequence use Seeed's permissively licensed E1001
  * reference implementations: panel OTP waveforms where available and
- * controller-register LUTs as the compatible fallback. Full refreshes keep
- * Seeed's documented R50=0x10 border selection: in KW mode that selects the
- * active black-to-white LUT. A datasheet-derived R52.BDEND=11 then releases
- * the separate border electrode after the LUT has completed instead of
- * holding it at an end voltage. POWER OFF releases all panel outputs; no
- * panel-specific waveform bytes are bundled or copied into R25.
+ * controller-register LUTs as the compatible fallback. Normal grayscale and
+ * partial refreshes keep the separate border electrode high-impedance. A
+ * bounded recovery can first quantize the same framebuffer through the
+ * controller's monochrome OTP KW mode before the selected grayscale path
+ * redraws it. That recovery sequence is independently implemented from the
+ * UC8179 register descriptions; no GPL driver code, panel-specific waveform
+ * bytes, or OTP data are bundled or copied into R25.
  */
 class GuestyEPaperGray4
     : public display::DisplayBuffer,
@@ -114,7 +115,7 @@ class GuestyEPaperGray4
   };
   enum BorderMode : uint8_t {
     BORDER_MODE_UNKNOWN = 0,
-    BORDER_MODE_CONDITIONING_LUTKW,
+    BORDER_MODE_CONDITIONING_MONO_OTP,
     BORDER_MODE_HIGH_Z,
   };
 
@@ -141,7 +142,8 @@ class GuestyEPaperGray4
                       uint8_t *marker);
   bool read_otp_profile_(bool *grayscale_supported);
   bool select_lut_mode_();
-  bool init_custom_gray_mode_(bool drive_border_white = false);
+  bool init_monochrome_border_mode_();
+  bool init_custom_gray_mode_();
   bool init_otp_gray_mode_();
   bool init_partial_mode_();
   void write_lut_(uint8_t command, const uint8_t *lut, size_t length);
@@ -164,8 +166,8 @@ class GuestyEPaperGray4
   static void update_task_(void *parameter);
 #endif
   bool refresh_();
-  bool perform_full_refresh_(bool reset_panel = true,
-                             bool drive_border_white = false);
+  bool perform_monochrome_border_recovery_();
+  bool perform_full_refresh_(bool reset_panel = true);
   bool recover_for_custom_fallback_();
   bool display_();
   void deep_sleep_panel_();

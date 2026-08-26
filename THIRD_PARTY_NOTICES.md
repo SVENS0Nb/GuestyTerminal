@@ -52,12 +52,10 @@ part of the pixel data:
 - Relevant command: `R25h/LUTBD`, the dedicated 42-byte, seven-group border
   waveform table; GuestyTerminal documents it but does not write it
 - Relevant fields: `R50h.BDZ=1` leaves the border electrode high-impedance;
-  during the explicit recovery pass, KW mode with `DDX=00` and `BDV=01`
-  selects the black-to-white `LUTKW` for that separate electrode
+  during the explicit monochrome recovery pass, KW mode with `DDX=00` and
+  `BDV=01` selects the panel's black-to-white OTP waveform for that separate
+  electrode
 - Relevant field: `R00h.PSR.REG`, which selects panel OTP or register LUTs
-- Relevant field: `R52h.BDEND`; GuestyTerminal independently uses the
-  datasheet-defined value `11` to release the border after the bounded recovery
-  LUT completes
 - Relevant power-off behavior: `R02h` releases Source, Gate, Border, and VCOM
   to floating, so GuestyTerminal does not add a late `R50h` override
 - Relevant OTP mapping: bank check codes at `0x0000`/`0x0C00` and the common
@@ -67,9 +65,32 @@ GuestyTerminal reads only the selected banks' check codes and grayscale support
 markers, twice, for its retained auto-mode decision. It does not retain or
 replay the panel-resident LUTBD and never writes R25. Raw OTP waveform bytes are
 not logged, bundled, committed, or redistributed. Normal full refreshes leave
-the border high-impedance; the optional recovery reuses only Seeed's already
-licensed register `LUTKW` and then restores the selected pixel waveform. No
-datasheet content is bundled in this repository.
+the border high-impedance. The optional recovery independently programs only
+the documented monochrome KW mode, geometry, timing and power registers,
+transfers the current framebuffer's monochrome DTM2 projection, and then
+restores the selected four-gray pixel waveform. No datasheet content is
+bundled in this repository.
+
+## Historical ESPHome `7.50inv2` behavior comparison
+
+GuestyTerminal used ESPHome's built-in Waveshare `7.50inv2` model through
+version 0.3.2. Its fixed 2026.7.4 implementation was inspected only to identify
+the controller behavior that had previously produced a border-free monochrome
+image:
+
+- Source: <https://github.com/esphome/esphome/blob/2026.7.4/esphome/components/waveshare_epaper/waveshare_epaper.cpp#L3935>
+- ESPHome license: <https://github.com/esphome/esphome/blob/2026.7.4/LICENSE>
+- Fixed version: `2026.7.4`
+- License of the inspected C++ implementation: GNU GPL v3
+
+No C++ source, comments, class structure, or waveform data from that GPL
+implementation is copied into GuestyTerminal's MIT-licensed external
+component. The new optional recovery sequence is an independent implementation
+of the corresponding UC8179 register functions from the official controller
+documentation above. This comparison does not change the firmware's active
+driver: the GuestyTerminal four-gray component remains responsible for the
+framebuffer, final refresh, partial updates, timing, diagnostics and power
+handling.
 
 ## Seeed_GFX UC8179 support
 

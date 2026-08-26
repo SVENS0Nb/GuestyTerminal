@@ -216,12 +216,14 @@ belastet wird. Der sichtbare schmale Panelrand liegt außerhalb des
 Register-LUT-Vollrefreshs lassen diese Elektrode über das dokumentierte
 `R50h.BDZ=1` hochohmig, damit die für Text und Bild gewählte Pixelwellenform den
 Rand nicht erneut verfärbt. Auch Teilrefreshs behalten diesen Zustand bei. Eine
-begrenzte Randkorrektur auf bestätigter
-externer Versorgung führt denselben Framebuffer zuerst einmal mit Seeeds
-Custom-Schwarz-zu-Weiß-`LUTKW` aus und zeichnet ihn anschließend mit der
-gewählten Pixelwellenform sowie hochohmigem Rand neu. So bleibt der bessere
-OTP-Textkontrast erhalten. Ein spätes `R50h` vor `POWER OFF` entfällt; der
-Ausschaltbefehl selbst schaltet laut Datenblatt alle Panel-Ausgänge
+begrenzte Randkorrektur auf bestätigter externer Versorgung bildet einmalig den
+monochromen UC8179-OTP-Ablauf des früher verwendeten ESPHome-Modells
+`7.50inv2` anhand des Controllerdatenblatts nach. Sie überträgt eine
+Schwarz-Weiß-Quantisierung ausschließlich in die neue DTM2-Ebene und zeichnet
+den unveränderten Vier-Grau-Framebuffer anschließend mit der gewählten
+Pixelwellenform sowie hochohmigem Rand neu. Der aktuelle Graustufentreiber
+bleibt damit vollständig erhalten. Ein spätes `R50h` vor `POWER OFF` entfällt;
+der Ausschaltbefehl selbst schaltet laut Datenblatt alle Panel-Ausgänge
 hochohmig. Der zuvor ergänzte Laufzeitpfad, der
 42 OTP-Bytes nach `R25h/LUTBD` kopierte, wurde entfernt: Das reale Gerät blieb
 damit nach dem sichtbaren Bildaufbau in `BUSY_N` hängen. Die OTP-Prüfung liest
@@ -459,9 +461,10 @@ Symbol folgt ihm in Zehn-Prozent-Stufen.
   Erfolg, ein nachweislich unverändertes Bild und begrenzte Fehlerzustände.
   **E-paper phase**, **E-paper error**, **E-paper waveform** und
   **E-paper border mode** zeigen neutral, in welcher Controllerphase ein
-  Vollrefresh steht und ob die Randelektrode gerade einmalig über den weißen
-  `LUTKW`-Pfad konditioniert oder für den normalen Bildaufbau hochohmig ist. Diese
-  Entitäten enthalten keine Gast-, Türcode- oder WLAN-Daten.
+  Vollrefresh steht und ob die Randelektrode gerade einmalig über den
+  monochromen OTP-Pfad konditioniert oder für den normalen Bildaufbau
+  hochohmig ist. Diese Entitäten enthalten keine Gast-, Türcode- oder
+  WLAN-Daten.
 - **E-paper Randkorrektur** wiederholt die begrenzte Zwei-Pass-Korrektur nur bei
   bestätigter externer Versorgung. **E-paper border recovery** meldet
   `success`, `failed`, `hardware_timeout`, `busy` oder
@@ -545,6 +548,17 @@ ESPHome Device Builder sichtbar.
 Die kompakte, fortlaufende Änderungshistorie steht in
 [`CHANGELOG.md`](CHANGELOG.md). Die folgenden Hinweise erklären zusätzlich die
 Firmwareanforderungen älterer Installationen.
+
+Der derzeit unveröffentlichte Teststand nach **0.3.45** ersetzt ausschließlich
+den erfolglosen Rand-Vorlauf: Statt der Custom-Graustufen-LUT bildet er den
+monochromen UC8179-Registerablauf des früher randfreien ESPHome-Modells
+`7.50inv2` nach. Der aktuelle Vier-Graustufen-Treiber, Renderer, Datenweg und
+die Inhaltsunterdrückung bleiben unverändert. Renderrevision 31 fordert diesen
+zweistufigen Hardwaretest bei bestätigter externer Versorgung einmalig an. Die
+zweite unmittelbar folgende Aktualisierung ist dabei der absichtliche Aufbau
+des endgültigen Graustufenbildes; spätere identische Payloads lösen weiterhin
+keinen physischen Refresh aus. Die sichtbare Wirkung bleibt bis zum Test auf
+dem realen Gerät ausdrücklich unbestätigt.
 
 Version **0.3.45** trennt den sichtbaren Panelrand von der Wellenform für Text
 und Bild. Normale Voll- und Teilrefreshs lassen die eigene Randelektrode

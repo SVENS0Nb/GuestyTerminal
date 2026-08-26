@@ -104,7 +104,7 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     stored_revision = re.search(r"id\(guesty_render_revision\) = (\d+);", package)
     assert expected_revision is not None
     assert stored_revision is not None
-    assert expected_revision.group(1) == "30"
+    assert expected_revision.group(1) == "31"
     assert expected_revision.group(1) == stored_revision.group(1)
     assert "guesty_terminal_update_display_v10" in package
     assert (
@@ -358,7 +358,7 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "wait_after_controller_command_" in driver
     assert "const bool successful = this->display_()" in driver
     assert "this->last_update_successful_.store(successful)" in driver
-    assert "bool GuestyEPaperGray4::perform_full_refresh_(bool reset_panel," in driver
+    assert "bool GuestyEPaperGray4::perform_full_refresh_(bool reset_panel)" in driver
     assert "bool GuestyEPaperGray4::recover_for_custom_fallback_()" in driver
     assert "const bool initialized = this->active_lut_mode_" in driver
     assert "return this->refresh_();" in driver
@@ -379,12 +379,10 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
         )
     ]
     border_register = custom_init.index("this->command_(0x50)")
-    border_select = custom_init.index(
-        "drive_border_white ? 0x10 : 0x90", border_register
-    )
+    border_select = custom_init.index("this->data_(0x90)", border_register)
     border_interval = custom_init.index("this->data_(0x07)", border_select)
     end_voltage = custom_init.index("this->command_(0x52)", border_interval)
-    end_value = custom_init.index("this->data_(0x03)", end_voltage)
+    end_value = custom_init.index("this->data_(0x00)", end_voltage)
     pixel_luts = custom_init.index("this->write_lut_(0x20", end_value)
     assert border_register < border_select < border_interval
     assert border_interval < end_voltage < end_value < pixel_luts
@@ -441,7 +439,7 @@ def test_panel_self_test_is_neutral_serialized_and_restores_payload() -> None:
     package = PACKAGE_FILE.read_text(encoding="utf-8")
 
     script_start = package.index("  - id: guesty_run_panel_self_test\n")
-    script_end = package.index("  # A real-device A/B test proved", script_start)
+    script_end = package.index("  # The former ESPHome 7.50inv2 path", script_start)
     self_test = package[script_start:script_end]
     assert "id: guesty_self_test_page" in package
     assert '"Vier Graustufen · weißer Außenbereich · Teilrefresh"' in package
@@ -483,7 +481,7 @@ def test_border_recovery_is_bounded_external_power_only_and_keeps_proofs() -> No
     assert "name: E-paper Randkorrektur" in package
     assert "name: E-paper border recovery" in package
     assert package.count("request_border_recovery()") == 3
-    assert package.count("id(guesty_render_revision) != 30") == 2
+    assert package.count("id(guesty_render_revision) != 31") == 2
 
 
 def test_firmware_flash_layout_requires_explicit_usb_migration(tmp_path) -> None:
@@ -612,7 +610,7 @@ def test_panel_diagnostics_are_neutral_and_thread_safe() -> None:
     assert "std::atomic<uint8_t> border_mode_" in header
     assert "std::atomic<bool> border_recovery_requested_" in header
     assert 'return "busy_timeout";' in driver
-    assert 'return "conditioning_lutkw";' in driver
+    assert 'return "conditioning_mono_otp";' in driver
     assert 'return "lutkw_floating_end";' not in driver
     assert 'return "validated_lutbd";' not in driver
     assert 'return "high_z";' in driver
@@ -623,27 +621,44 @@ def test_panel_diagnostics_are_neutral_and_thread_safe() -> None:
     assert "this->border_mode_.store(BORDER_MODE_UNKNOWN)" in driver
 
 
-def test_uc8179_decouples_normal_border_and_restores_selected_pixel_waveform() -> None:
-    """Condition the border separately, then leave it high-Z for normal frames."""
+def test_uc8179_uses_isolated_monochrome_border_conditioning() -> None:
+    """Reproduce the old mono controller path, then restore four-gray output."""
     driver = DRIVER_FILE.read_text(encoding="utf-8")
-    custom_start = driver.index("bool GuestyEPaperGray4::init_custom_gray_mode_(")
+    mono_start = driver.index("bool GuestyEPaperGray4::init_monochrome_border_mode_()")
+    custom_start = driver.index("bool GuestyEPaperGray4::init_custom_gray_mode_()")
     otp_start = driver.index("bool GuestyEPaperGray4::init_otp_gray_mode_()")
     partial_start = driver.index("bool GuestyEPaperGray4::init_partial_mode_()")
+    mono = driver[mono_start:custom_start]
     custom = driver[custom_start:otp_start]
     otp = driver[otp_start:partial_start]
 
+    power_setting = mono.index("this->command_(0x01)")
+    border_register = mono.index("this->command_(0x50)", power_setting)
+    border_select = mono.index("this->data_(0x10)", border_register)
+    tcon = mono.index("this->command_(0x60)", border_select)
+    kw_mode = mono.index("this->command_(0x00)", tcon)
+    kw_value = mono.index("this->data_(0x1F)", kw_mode)
+    resolution = mono.index("this->command_(0x61)", kw_value)
+    single_spi = mono.index("this->command_(0x15)", resolution)
+    power_off = mono.index("this->command_(0x02)", single_spi)
+    assert power_setting < border_register < border_select < tcon
+    assert tcon < kw_mode < kw_value < resolution < single_spi < power_off
+    assert "BORDER_MODE_CONDITIONING_MONO_OTP" in mono
+    assert "this->command_(0x52)" not in mono
+    assert "this->command_(0xE5)" not in mono
+    assert "this->write_lut_(" not in mono
+
     border_register = custom.index("this->command_(0x50)")
-    border_select = custom.index("drive_border_white ? 0x10 : 0x90", border_register)
+    border_select = custom.index("this->data_(0x90)", border_register)
     border_interval = custom.index("this->data_(0x07)", border_select)
     end_voltage = custom.index("this->command_(0x52)", border_interval)
-    end_value = custom.index("this->data_(0x03)", end_voltage)
+    end_value = custom.index("this->data_(0x00)", end_voltage)
     pixel_lut_start = custom.index("this->write_lut_(0x20", end_value)
     assert border_register < border_select < border_interval
     assert border_interval < end_voltage < end_value < pixel_lut_start
-    assert "this->data_(drive_border_white ? 0x10 : 0x90);" in custom
-    assert "BORDER_MODE_CONDITIONING_LUTKW" in custom
+    assert "drive_border_white" not in custom
+    assert "this->data_(0x10);" not in custom
     assert "BORDER_MODE_HIGH_Z" in custom
-    assert "this->data_(0x03);" in custom
     assert "this->data_(0x00);" in custom
     assert "this->write_lut_(0x25" not in custom
     assert "this->data_(0x80)" not in custom
@@ -662,9 +677,27 @@ def test_uc8179_decouples_normal_border_and_restores_selected_pixel_waveform() -
     assert "this->command_(0x52)" not in otp
     assert "this->write_lut_(0x25" not in otp
 
+    recovery = driver[
+        driver.index(
+            "bool GuestyEPaperGray4::perform_monochrome_border_recovery_()"
+        ) : driver.index(
+            "bool GuestyEPaperGray4::perform_full_refresh_(bool reset_panel)"
+        )
+    ]
+    recovery_reset = recovery.index("this->reset_panel_()")
+    recovery_init = recovery.index("this->init_monochrome_border_mode_()")
+    recovery_power_on = recovery.index("this->command_(0x04)")
+    recovery_transfer = recovery.index("this->write_monochrome_frame_(0x13, nullptr)")
+    recovery_refresh = recovery.index("this->command_(0x12)")
+    assert recovery_reset < recovery_init < recovery_power_on
+    assert recovery_power_on < recovery_transfer < recovery_refresh
+    assert "this->write_monochrome_frame_(0x10" not in recovery
+    assert "this->write_plane_(" not in recovery
+    assert "this->buffer_[" not in recovery
+
     full_refresh = driver[
         driver.index(
-            "bool GuestyEPaperGray4::perform_full_refresh_(bool reset_panel,"
+            "bool GuestyEPaperGray4::perform_full_refresh_(bool reset_panel)"
         ) : driver.index("bool GuestyEPaperGray4::recover_for_custom_fallback_()")
     ]
     reset = full_refresh.index("this->reset_panel_()")
@@ -679,7 +712,7 @@ def test_uc8179_decouples_normal_border_and_restores_selected_pixel_waveform() -
         )
     ]
     mode_selection = display.index("this->select_lut_mode_()")
-    conditioning = display.index("this->perform_full_refresh_(true, true)")
+    conditioning = display.index("this->perform_monochrome_border_recovery_()")
     conditioning_shutdown = display.index("this->deep_sleep_panel_()", conditioning)
     selected_restore = display.index("this->active_lut_mode_ = selected_lut_mode")
     full_attempt = display.index("this->perform_full_refresh_()", selected_restore)
@@ -828,7 +861,9 @@ def test_uc8179_partial_refresh_and_shutdown_do_not_override_full_border() -> No
     deep_sleep = shutdown.index("this->command_(0x07)", power_off)
     assert power_off < deep_sleep
     assert "this->command_(0x50)" not in shutdown[:power_off]
-    assert driver.count("this->command_(0x02)") == 1
+    # One POWER OFF establishes the retained-register state before the isolated
+    # monochrome recovery; the other is the shared final shutdown path.
+    assert driver.count("this->command_(0x02)") == 2
 
 
 def test_grayscale_framebuffer_polarity_matches_uc8179_wire_format() -> None:

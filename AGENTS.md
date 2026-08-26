@@ -293,13 +293,17 @@ incomplete change.
   Every normal OTP or register-LUT full refresh uses `R50h=0x90,0x07`, whose
   documented `BDZ=1` leaves the border high-impedance without changing either
   DTM pixel plane. Differential partial refreshes must preserve the same
-  `R50h=0x90,0x07` state rather than reselecting a border pixel LUT. A bounded
-  border recovery may run only on confirmed external
-  power: first render the same framebuffer once with Seeed's supported custom
-  `R50h=0x10,0x07` black-to-white `LUTKW` plus the independently
-  datasheet-derived `R52h=0x03`, power the panel down, then redraw the identical
-  framebuffer with the selected OTP/register pixel waveform and high-Z border.
-  Never turn this recovery into a periodic refresh or let it change content
+  high-Z border state, including the `R50h=0xA9,0x07` partial-window value.
+  A bounded border recovery may run only on confirmed external power. It
+  independently reconstructs the former monochrome controller behavior from
+  the UC8179 register documentation: program `R01h=07,07,3F,3F`,
+  `R50h=0x10,0x07`, `R60h=0x22`, `R00h=0x1F`, the 800x480 `R61h` geometry and
+  single-SPI `R15h=0x00`; power the controller off and on; transfer the current
+  framebuffer quantized to monochrome only through DTM2/R13h; then refresh and
+  power down. Immediately redraw the untouched four-level framebuffer with the
+  selected OTP/register pixel waveform and high-Z border. This is a functional
+  compatibility sequence, not a driver switch. Never copy GPL ESPHome driver
+  code, turn the recovery into a periodic refresh, or let it change content
   fingerprints. Do not copy panel OTP bytes into `R25h`: the previously added
   `R25/LUTBD` path left `BUSY_N` asserted after the visible frame settled on
   the real E1001 and produced repeated identical redraw attempts. The `auto`
@@ -320,7 +324,7 @@ incomplete change.
 - `guesty_render_revision` invalidates otherwise-identical images after a
   rendering or driver change. When a visible rendering change requires one
   repaint, increment the expected value and the stored-success value together,
-  and update their tests. The current source revision is 29.
+  and update their tests. The current source revision is 31.
 - Publish the displayed-booking confirmation only after a successful physical
   refresh, or when a restored matching fingerprint proves the same content was
   previously drawn.

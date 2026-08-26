@@ -104,6 +104,35 @@ serialisierte Wiederholung. Inhaltsfingerabdrücke und Gastdaten werden dabei
 nicht verändert. Die Architektur ist statisch und per Firmwarebau prüfbar;
 die endgültige Weißwirkung benötigt weiterhin den Realgerätetest.
 
+### Realgerät-Nachtest 0.3.45 und isolierter Monochrom-Testpfad
+
+Der Realgerätetest von 0.3.45 widerlegte auch die Custom-LUT-Konditionierung:
+Der Rand wurde zwar heller, verschwand aber nicht; zugleich war die Schrift im
+Custom-Modus sichtbar weniger schwarz. Die zwei unmittelbar
+aufeinanderfolgenden Refreshs waren der vorgesehene Zwei-Pass-Ablauf und kein
+zweiter Home-Assistant-Payload. Der erste Pass verwendete jedoch weiterhin die
+Vier-Grau-Initialisierung und reproduzierte damit nicht den früheren
+randfreien Zustand.
+
+Die Historie zeigt, dass GuestyTerminal bis einschließlich 0.3.2 ESPHomes
+eingebautes Waveshare-Modell `7.50inv2` verwendete. Dieser alte Pfad zeichnete
+das E1001 ausschließlich monochrom über den panelinternen KW-OTP-Modus: Er
+programmierte `R50h=0x10,0x07`, `R60h=0x22`, `R00h=0x1F`, Geometrie und
+Single-SPI und übertrug nur die neue DTM2-Ebene (`R13h`). Er verwendete weder
+die Custom-Graustufen-LUTs noch `R52h` oder die Force-Temperature-Auswahl des
+Vier-Grau-Pfads.
+
+Der neue, noch hardwarezuprüfende Testpfad wechselt nicht zum alten Treiber
+zurück. Er implementiert diese funktionale UC8179-Registerfolge unabhängig aus
+dem offiziellen Datenblatt als einmaligen, extern-versorgten Vorlauf im
+aktuellen Treiber. Danach wird exakt derselbe, unangetastete Vier-Grau-
+Framebuffer mit der ausgewählten aktuellen Pixelwellenform und hochohmigem Rand
+neu gezeichnet. Renderrevision 31 fordert den Test einmalig an; der manuelle
+Button **E-paper Randkorrektur** wiederholt ihn kontrolliert. Spätere identische
+Inhalte bleiben durch den erfolgreichen Inhalts- und Rendernachweis
+unterdrückt. ESPHomes GPL-Treibercode wurde nur zur historischen
+Verhaltenszuordnung verglichen und nicht übernommen.
+
 ### Nebenbefund: WLAN-QR in ESPHome-Diagnose
 
 Das Protokoll zeigte außerdem, dass ESPHomes `qr_code.dump_config()` den

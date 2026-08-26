@@ -16,6 +16,14 @@ werden im Repository oder Firmware-Artefakt gebündelt. Die dazugehörigen
 Seeed-Lizenztexte liegen direkt beim Treiber. Der zuvor dokumentierte, unklare
 Drittanbieter-Codepfad wurde entfernt.
 
+Die historische ESPHome-Implementierung des früher verwendeten Waveshare-
+Modells `7.50inv2` steht unter GPLv3. Sie wurde ausschließlich verglichen, um
+den damaligen Hardwareablauf zu identifizieren. Der aktuelle optionale
+Monochrom-Vorlauf ist anhand der offiziellen UC8179-Registerdokumentation
+eigenständig implementiert; Quellcode, Kommentare, Klassenstruktur oder
+Wellenformdaten aus ESPHomes GPL-Datei wurden nicht übernommen. Die Details und
+festgehaltene Quellversion stehen in `THIRD_PARTY_NOTICES.md`.
+
 Vor einem öffentlichen Release oder einer Weiterverteilung sollte der
 Projektinhaber:
 

@@ -78,6 +78,8 @@ def test_maintenance_guidance_covers_current_critical_contracts() -> None:
         "Schedule physical display jobs with Home Assistant background tasks",
         "mypy custom_components/guesty_terminal",
         "version-specific tests, `CHANGELOG.md`",
+        "compatibility sequence, not a driver switch",
+        "Never copy GPL ESPHome driver",
         "Before any public release or redistribution",
         "unresolved right or redistribution",
     ):
@@ -112,6 +114,8 @@ def test_maintenance_guidance_covers_current_critical_contracts() -> None:
         "`loop_task_stack_size: 16384`",
         "Ein erfolgreiches Testbild beweist in diesem Fall nur den separaten",
         "Ein dunkler Panelrand ist getrennt zu untersuchen",
+        "Realgerät-Nachtest 0.3.45 und isolierter Monochrom-Testpfad",
+        "Renderrevision 31 fordert den Test einmalig an",
     ):
         assert phrase in troubleshooting
 
@@ -131,5 +135,9 @@ def test_epaper_driver_has_only_documented_redistributable_sources() -> None:
     notices = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
     assert "b3dbc5e6232d8e5945706bf8c0b7b7466dee144a" in notices
     assert "a2de1abca0597c202193f22d01e9fa35d1ff613b" in notices
+    assert "Historical ESPHome `7.50inv2` behavior comparison" in notices
+    assert "Fixed version: `2026.7.4`" in notices
+    assert "GNU GPL v3" in notices
+    assert "No C++ source, comments, class structure, or waveform data" in notices
     assert (component / "LICENSE").is_file()
     assert (component / "SEEED_GFX_LICENSE.txt").is_file()

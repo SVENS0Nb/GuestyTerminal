@@ -135,8 +135,8 @@ const char *GuestyEPaperGray4::active_lut_mode_name() const {
 
 const char *GuestyEPaperGray4::border_mode_name() const {
   switch (this->border_mode_.load()) {
-    case BORDER_MODE_CONDITIONING_LUTKW:
-      return "conditioning_lutkw";
+    case BORDER_MODE_CONDITIONING_MONO_OTP:
+      return "conditioning_mono_otp";
     case BORDER_MODE_HIGH_Z:
       return "high_z";
     default:
@@ -721,7 +721,45 @@ void GuestyEPaperGray4::write_lut_(uint8_t command, const uint8_t *lut, size_t l
   this->end_data_();
 }
 
-bool GuestyEPaperGray4::init_custom_gray_mode_(bool drive_border_white) {
+bool GuestyEPaperGray4::init_monochrome_border_mode_() {
+  // This is a deliberately isolated one-shot conditioning mode. The UC8179
+  // register values come from the controller datasheet and reproduce the
+  // functional monochrome KW setup used by the E1001's former 7.50inv2 path;
+  // no implementation code or waveform table from that GPL driver is copied.
+  this->border_mode_.store(BORDER_MODE_CONDITIONING_MONO_OTP);
+  this->command_(0x01);  // POWER SETTING
+  this->data_(0x07);
+  this->data_(0x07);
+  this->data_(0x3F);
+  this->data_(0x3F);
+
+  this->command_(0x50);  // VCOM AND DATA INTERVAL
+  this->data_(0x10);     // BDZ=0, BDV=01 selects monochrome OTP LUTKW
+  this->data_(0x07);
+
+  this->command_(0x60);  // TCON SETTING
+  this->data_(0x22);
+
+  this->command_(0x00);  // KW mode with the panel's monochrome OTP waveform
+  this->data_(0x1F);
+
+  this->command_(0x61);  // 800x480 resolution
+  this->data_(WIDTH >> 8);
+  this->data_(WIDTH & 0xFF);
+  this->data_(HEIGHT >> 8);
+  this->data_(HEIGHT & 0xFF);
+
+  this->command_(0x15);  // Single SPI mode
+  this->data_(0x00);
+
+  // Keep the programmed registers but start the subsequent transfer from the
+  // controller's documented powered-off state.
+  this->command_(0x02);  // POWER OFF
+  return this->wait_until_idle_("after monochrome setup power off",
+                                POWER_OFF_IDLE_TIMEOUT_MS);
+}
+
+bool GuestyEPaperGray4::init_custom_gray_mode_() {
   this->command_(0x01);  // POWER SETTING
   this->data_(0x07);
   this->data_(0x17);
@@ -754,25 +792,16 @@ bool GuestyEPaperGray4::init_custom_gray_mode_(bool drive_border_white) {
 
   // Pixel and border waveforms are independent UC8179 outputs. Normal frames
   // leave the border high-impedance so changing the selected pixel waveform
-  // cannot darken it again. A bounded, explicitly requested conditioning pass
-  // uses Seeed's already licensed register LUTKW once to move a dark border
-  // towards white, then the caller redraws the same frame with the selected
-  // pixel waveform and a high-impedance border.
+  // cannot darken it again. The optional conditioning pass uses its own
+  // monochrome OTP initialization and never changes these grayscale LUTs.
   this->command_(0x50);  // VCOM AND DATA INTERVAL
-  this->data_(drive_border_white ? 0x10 : 0x90);
+  this->data_(0x90);     // BDZ=1, BDV ignored, DDX=00
   this->data_(0x07);
-
-  if (drive_border_white) {
-    this->border_mode_.store(BORDER_MODE_CONDITIONING_LUTKW);
-    this->command_(0x52);  // END VOLTAGE SETTING
-    this->data_(0x03);     // VCEND=VCOM_DC, BDEND=floating (datasheet)
-  } else {
-    this->border_mode_.store(BORDER_MODE_HIGH_Z);
-    // Keep Seeed's original register-LUT end setting for the pixel waveform.
-    // BDEND is inert while R50.BDZ keeps the border high-impedance.
-    this->command_(0x52);
-    this->data_(0x00);
-  }
+  this->border_mode_.store(BORDER_MODE_HIGH_Z);
+  // Keep Seeed's original register-LUT end setting for the pixel waveform.
+  // BDEND is inert while R50.BDZ keeps the border high-impedance.
+  this->command_(0x52);  // END VOLTAGE SETTING
+  this->data_(0x00);
 
   this->command_(0x61);  // 800x480 resolution
   this->data_(WIDTH >> 8);
@@ -825,7 +854,7 @@ bool GuestyEPaperGray4::init_otp_gray_mode_() {
 
   this->command_(0xE0);  // CASCADE SETTING
   this->data_(0x02);
-  this->command_(0xE5);  // Select OTP four-gray waveform
+  this->command_(0xE5);  // FORCE TEMPERATURE for Seeed's OTP gray profile
   this->data_(0x5F);
   return true;
 }
@@ -872,7 +901,7 @@ bool GuestyEPaperGray4::init_partial_mode_() {
 
   this->command_(0xE0);  // Use controller temperature override
   this->data_(0x02);
-  this->command_(0xE5);  // OTP fast-partial waveform selection
+  this->command_(0xE5);  // FORCE TEMPERATURE for Seeed's partial profile
   this->data_(0x6E);
   return true;
 }
@@ -1102,8 +1131,41 @@ bool GuestyEPaperGray4::refresh_() {
   return true;
 }
 
-bool GuestyEPaperGray4::perform_full_refresh_(bool reset_panel,
-                                              bool drive_border_white) {
+bool GuestyEPaperGray4::perform_monochrome_border_recovery_() {
+  this->update_phase_.store(UPDATE_PHASE_RESET);
+  if (!this->reset_panel_() || !this->init_monochrome_border_mode_())
+    return false;
+
+  this->command_(0x04);  // POWER ON
+  if (!this->wait_after_controller_command_(
+          "after monochrome border-recovery power on",
+          POWER_ON_IDLE_TIMEOUT_MS))
+    return false;
+
+  this->log_frame_levels_();
+  this->update_phase_.store(UPDATE_PHASE_TRANSFER);
+  // The old monochrome E1001 path transferred only DTM2. Quantize the current
+  // four-gray framebuffer only while serializing it; the final grayscale pass
+  // below receives the untouched original buffer and retains text contrast.
+  this->write_monochrome_frame_(0x13, nullptr);
+  if (!this->wait_after_controller_command_(
+          "after monochrome border-recovery transfer",
+          POWER_ON_IDLE_TIMEOUT_MS))
+    return false;
+
+  this->update_phase_.store(UPDATE_PHASE_REFRESH);
+  const uint32_t started = millis();
+  this->command_(0x12);  // DISPLAY REFRESH
+  if (!this->wait_after_controller_command_(
+          "during monochrome border recovery", REFRESH_IDLE_TIMEOUT_MS))
+    return false;
+  ESP_LOGI(TAG, "Monochrome border-recovery refresh completed in %lu ms",
+           static_cast<unsigned long>(millis() - started));
+  this->status_clear_warning();
+  return true;
+}
+
+bool GuestyEPaperGray4::perform_full_refresh_(bool reset_panel) {
   if (reset_panel) {
     this->update_phase_.store(UPDATE_PHASE_RESET);
     if (!this->reset_panel_())
@@ -1111,8 +1173,7 @@ bool GuestyEPaperGray4::perform_full_refresh_(bool reset_panel,
   }
   const bool initialized = this->active_lut_mode_ == LUT_MODE_OTP
                                ? this->init_otp_gray_mode_()
-                               : this->init_custom_gray_mode_(
-                                     drive_border_white);
+                               : this->init_custom_gray_mode_();
   if (!initialized)
     return false;
   this->log_frame_levels_();
@@ -1155,18 +1216,16 @@ bool GuestyEPaperGray4::display_() {
   const LutMode selected_lut_mode = this->active_lut_mode_;
   if (this->prepared_border_recovery_requested_) {
     ESP_LOGI(TAG,
-             "Running one bounded border-conditioning pass before the "
-             "selected grayscale refresh");
-    this->active_lut_mode_ = LUT_MODE_CUSTOM;
-    this->active_lut_diagnostic_.store(LUT_MODE_CUSTOM);
-    const bool conditioned = this->perform_full_refresh_(true, true);
+             "Running one bounded monochrome OTP border-conditioning pass "
+             "before the selected grayscale refresh");
+    const bool conditioned = this->perform_monochrome_border_recovery_();
     this->deep_sleep_panel_();
     if (!conditioned || this->last_error_.load() != UPDATE_ERROR_NONE)
       return false;
 
-    // The conditioning pass intentionally changes only the physical border
-    // treatment. Redraw the exact same framebuffer with the configured/auto
-    // pixel waveform and high-impedance border so text contrast is unaffected.
+    // Redraw the exact same, still four-level framebuffer with the
+    // configured/auto pixel waveform and high-impedance border. The
+    // monochrome quantization above never modifies the framebuffer itself.
     this->active_lut_mode_ = selected_lut_mode;
     this->active_lut_diagnostic_.store(selected_lut_mode);
     this->border_mode_.store(BORDER_MODE_UNKNOWN);
