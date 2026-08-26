@@ -546,6 +546,23 @@ Die kompakte, fortlaufende Änderungshistorie steht in
 [`CHANGELOG.md`](CHANGELOG.md). Die folgenden Hinweise erklären zusätzlich die
 Firmwareanforderungen älterer Installationen.
 
+Version **0.3.45** trennt den sichtbaren Panelrand von der Wellenform für Text
+und Bild. Normale Voll- und Teilrefreshs lassen die eigene Randelektrode
+hochohmig. Beim ersten Bild mit Renderrevision 30 führt ein sicher am Strom
+erkanntes Display genau eine begrenzte Randkonditionierung mit Seeeds bereits
+lizenziertem Custom-`LUTKW` aus und baut unmittelbar danach denselben
+Framebuffer mit der ausgewählten `auto`-/OTP- oder Custom-Pixelwellenform neu
+auf. Dadurch kann die Randbehandlung den guten schwarzen Textkontrast nicht
+mehr mit aufhellen oder ein späterer Refresh den Rand wieder abdunkeln. Die
+Diagnose **E-paper Randkorrektur** erlaubt den gleichen Ablauf ausschließlich
+bei bestätigter externer Versorgung kontrolliert zu wiederholen.
+Für diese Korrektur sind ein HACS-/Integrationsupdate und die Display-Firmware
+0.3.45 erforderlich. Bestehende 4-MB-Geräte können sie normal per OTA
+installieren; das Flashlayout bleibt unverändert. 291 Tests, beide
+ESPHome-2026.8.1-Flashprofile und die statischen Freigabeprüfungen sind
+erfolgreich. Die sichtbare Randwirkung und die vollständige Hardwarematrix
+müssen nach der Installation auf dem realen E1001 noch bestätigt werden.
+
 Version **0.3.44** wertet das reale 0.3.43-Protokoll
 aus: Der korrekte, unveränderte Willkommens-Framebuffer wurde nicht wegen eines
 Zeitintervalls wiederholt, sondern weil der zusätzliche `R25/LUTBD`-Randpfad

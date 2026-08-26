@@ -130,6 +130,17 @@ parallel; Abhängigkeiten, der stabile ESPHome-Werkzeugsatz und nicht produktive
 inkrementelle Firmware-Builddaten werden getrennt gecacht. Tag-Pushes lösen
 keinen zweiten identischen Testlauf aus.
 
+Version 0.3.45 trennt die Randelektrode vollständig von der gewählten
+Pixelwellenform: Normale Voll- und Teilrefreshs lassen sie hochohmig. Auf sicher
+erkannter externer Versorgung konditioniert ein einmaliger begrenzter
+Custom-LUTKW-Pass den Rand vor dem sofortigen Neuaufbau desselben Framebuffers
+mit der gewählten Pixelwellenform; die Diagnose **E-paper Randkorrektur** kann
+diesen Ablauf kontrolliert wiederholen. Die Version benötigt gemeinsam ein
+Integrations- und Display-Firmwareupdate. Bis Kontrast, Randwirkung und die
+vollständige Voll-/Teilrefresh-Matrix auf einem realen E1001 geprüft sind, muss
+die Veröffentlichung den Hardwarestatus ausdrücklich als nicht getestet
+ausweisen.
+
 Version 0.3.44 beendet Wiederholungsversuche nach einem bestätigten
 `panel_error` oder `panel_timeout` und unterdrückt auf der Firmwareseite
 weitere physische Aufträge für denselben in diesem Start bereits

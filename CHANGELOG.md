@@ -1,9 +1,8 @@
 # Änderungshistorie
 
-Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt. Einträge
-unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
+Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
 
-## Unveröffentlicht
+## 0.3.45 – 2026-08-26
 
 ### Pixelkontrast und Panelrand getrennt
 
@@ -29,6 +28,16 @@ unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
   erzwingt den notwendigen korrigierten Vollrefresh. Konfiguration und
   Softwaretests sind erfolgreich; die sichtbare Restwirkung der neuen
   Zwei-Pass-Korrektur bleibt bis zur Installation auf dem realen E1001 offen.
+- 291 Tests bestanden gegen Home Assistant 2025.12.0 und 2026.2.3 mit 90,72 %
+  Branch-Abdeckung. Ruff, Mypy, Compileall, Release-Vorprüfung sowie
+  Konfigurationsprüfung und vollständige Kompilierung beider ESPHome-2026.8.1-
+  Flashprofile sind erfolgreich. Das sichere 4-MB-OTA-Profil belegt 82,1 %
+  Flash, das optionale 32-MB-Profil 9,1 %; beide belegen 42,0 % RAM.
+- Version 0.3.45 benötigt gemeinsam ein HACS-/Integrationsupdate und ein
+  Display-Firmwareupdate. Bestehende 4-MB-Geräte können normal per OTA
+  aktualisiert werden; das Flashlayout bleibt unverändert. Die sichtbare
+  Randwirkung, wiederholte Voll-/Teilrefreshs und die vollständige
+  Hardwarematrix sind noch nicht auf dem realen E1001 bestätigt.
 
 ## 0.3.44 – 2026-08-26
 
