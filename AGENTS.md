@@ -366,6 +366,14 @@ incomplete change.
   sticky for that boot; three matches may persist the non-sensitive hardware
   revision. A known v1.2 board must still attempt `REG0A` when an individual
   later ID read fails, and it must never enter the legacy fallback.
+- On an identified v1.2 board, combine `REG08.CHRG_STAT` with the neutral fault
+  classes from `REG09`. Require three identical paired snapshots, preserve one
+  failed observation batch, and publish unavailable after the second. Charge
+  termination may resolve the effective battery endpoint to 100% only while
+  `REG0A.BUS_GD` also confirms external power; every other phase keeps the ADC
+  estimate. Never interpret the configured `REG04.VREG` target as measured
+  voltage or state of charge. E1001 v1.0 publishes charging state as unsupported
+  because its charger has no readable host interface.
 - E1001 v1.0 has an ETA6003 without a readable VBUS status. Only while no
   SY6974B has been identified, use the TYPEC_5V-powered USB-UART bridge TXD on
   UART0 RX/GPIO44 as the legacy signal. Before every power observation, pause
@@ -391,11 +399,18 @@ incomplete change.
   Convert voltage to percent with ESPHome's exact piecewise calibration points
   from 3.27 V/0% through 4.15 V/100%; do not replace them with a least-squares
   line. This remains a voltage estimate rather than a coulomb counter.
-- Preserve the diagnostic values `Battery voltage`, `Battery level`,
-  `Wake-up reason`, and `Awake duration`, plus `External power` and
-  `Power detection method`. The default everyday entity profile exposes
-  battery level and external power, while advanced hardware-only values remain
-  local through `advanced_diagnostics_internal: "true"`. Setting that
+- The empty-room header keeps its five-percent battery quantization. While
+  `pre_charge` or `fast_charging` is confirmed on v1.2, use the matching
+  lightning battery glyph and include that flag in retained visible state so a
+  charge-phase-only transition can request one partial header refresh.
+- Preserve the diagnostic values `Battery voltage`, `Battery level`, `Battery
+  charging status`, `Wake-up reason`, and `Awake duration`, plus `External
+  power` and `Power detection method`. The default everyday entity profile
+  exposes battery level, charging status, external power, the one-minute
+  relative sound level, and the panel self-test button plus all three physical
+  button binary sensors, while
+  advanced hardware-only values remain local through
+  `advanced_diagnostics_internal: "true"`. Setting that
   substitution to `"false"` must expose the complete diagnostic set without a
   different firmware build or lost functionality. Publish awake duration
   through the shared sleep script immediately before deep sleep, and keep
@@ -411,11 +426,17 @@ incomplete change.
 - If a battery wake receives no payload while sensitive content may still be on
   screen, clear to the localized idle screen before sleeping. On permanent
   power, enforce lease expiry continuously because no next wake is guaranteed.
-- Keep the status LED, buzzer, and microphone power disabled. On v1.2 the
-  charging LED's STAT output is disabled over the charger's dedicated I2C bus;
-  GPIO-only changes are insufficient. The v1.0 ETA6003 has no equivalent
-  software-disable bit, so documentation must not promise that its hardware
-  charging LED is off.
+- Keep the status LED and buzzer disabled. Keep microphone power and I2S
+  capture disabled during startup and whenever confirmed physical external
+  power is absent. On confirmed external power, enable GPIO38, wait at least
+  200 ms, and capture only for the local 60-second RMS sound-level sensor.
+  Publish only relative dB where 0 dB is digital full scale; never expose raw
+  samples, audio streams, recordings, or an uncalibrated absolute dB(A) claim.
+  Stop capture before removing microphone power and before every battery sleep
+  entry. On v1.2 the charging LED's STAT output is disabled over the charger's
+  dedicated I2C bus; GPIO-only changes are insufficient. The v1.0 ETA6003 has
+  no equivalent software-disable bit, so documentation must not promise that
+  its hardware charging LED is off.
 - Keep the unused SD-card load switch explicitly disabled through active-high
   GPIO16 during boot and every normal battery-sleep path. Its TPS22916 pulldown
   is a hardware fallback, not a replacement for a defined firmware output.
@@ -555,7 +576,8 @@ Use the smallest applicable row, then inspect all named layers:
 | Layout/font/logo/weather rendering | package YAML, `content_id`, render revision, partial-window containment, firmware tests, hardware check |
 | Panel/LUT/partial-refresh code | component Python schema, C++/header, SPI2 teardown/reinitialization, 100-ms/BUSY timing, render revision, package geometry, compile, hardware full/partial/deep-sleep tests |
 | Power/deep-sleep behavior | boot/action/interval paths, privacy fallback, external-power detection, README, firmware tests, battery and USB hardware checks |
-| Battery estimate, VBUS detection, or power diagnostics | 16-sample ADC path, exact piecewise curve, sticky `REG0B`/`REG0A.BUS_GD` v1.2 path, UART0 GPIO43/GPIO44 anti-backfeed v1.0 path, sleep script, diagnostic entities, firmware contract tests, battery and USB hardware checks on both revisions |
+| Battery estimate, charge state, VBUS detection, or power diagnostics | 16-sample ADC path, exact piecewise curve, sticky `REG0B`/`REG0A.BUS_GD` v1.2 path, three matching `REG08`/`REG09` snapshots, completion-only 100% endpoint, UART0 GPIO43/GPIO44 anti-backfeed v1.0 path, sleep script, diagnostic entities, firmware contract tests, battery/charge/USB hardware checks on both revisions |
+| Microphone or sound-level behavior | official E1001 GPIO38/GPIO42/GPIO41 path, confirmed-physical-power gate, 200-ms startup, 60-second RMS semantics, unavailable battery state, sleep shutdown order, audio privacy, package compile, mains/unplug/battery hardware checks |
 | Home Assistant entity/service | platform forwarding, entity IDs/unique IDs, strings/translations, tests, README |
 | Firmware generation/update | managed header, exact template structure, credential preservation, atomic writes, updater parser, tests |
 
@@ -697,7 +719,13 @@ Hardware-affecting releases also require checks of:
 - GPIO16 remaining low during boot and every shared sleep entry;
 - legacy 4 MB OTA retention plus a separate full-USB 32 MB installation test;
 - battery sleep/wake and the next-wake USB detection behavior;
-- LEDs, charging indicator, buzzer, and microphone remaining off.
+- v1.2 pre-charge, fast-charge, completion and simulated fault states matching
+  the Home Assistant entity and charging glyph, plus the v1.0 unsupported path;
+- status LED and buzzer remaining off, charging-indicator behavior matching the
+  board revision, and microphone capture remaining off on battery;
+- mains-only sound level starting after confirmed external power, publishing
+  one relative 60-second RMS value without raw audio, stopping after unplug,
+  and remaining unavailable across battery/deep-sleep cycles.
 
 Update `THIRD_PARTY_NOTICES.md` whenever a bundled or downloaded asset family,
 version, source, or license changes.

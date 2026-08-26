@@ -142,7 +142,7 @@
       },
       "firmware": {
         "title": "E1001-Firmware erstellen",
-        "description": "Erzeugt eine sichere ESPHome-Konfiguration unter /config/esphome. Automatisch erkennt USB-Strom auf den E1001-Hardwareständen v1.0 und v1.2, schläft auf Akku und bleibt bei externer Versorgung online. Status-LED, Buzzer und Mikrofon werden deaktiviert; auf v1.2 zusätzlich die Lade-LED.",
+        "description": "Erzeugt eine sichere ESPHome-Konfiguration unter /config/esphome. Automatisch erkennt USB-Strom auf den E1001-Hardwareständen v1.0 und v1.2, schläft auf Akku und bleibt bei externer Versorgung online. Status-LED und Buzzer bleiben deaktiviert. Das Mikrofon ist nur bei bestätigter externer Versorgung aktiv und veröffentlicht ausschließlich einen lokal berechneten relativen 60-Sekunden-Schallpegel; Audio wird nicht übertragen. Auf v1.2 wird zusätzlich die Lade-LED deaktiviert.",
         "data": {
           "firmware_device_name": "Gerätename",
           "firmware_friendly_name": "Anzeigename",

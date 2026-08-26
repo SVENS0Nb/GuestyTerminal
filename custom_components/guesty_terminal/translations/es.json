@@ -142,7 +142,7 @@
       },
       "firmware": {
         "title": "Crear firmware E1001",
-        "description": "Crea una configuración ESPHome segura en /config/esphome. El modo Automático detecta la alimentación USB en las revisiones de hardware E1001 v1.0 y v1.2, pone la pantalla en reposo con batería y la mantiene conectada con alimentación externa. El LED de estado, el zumbador y el micrófono se desactivan; en v1.2 también se desactiva el LED de carga.",
+        "description": "Crea una configuración ESPHome segura en /config/esphome. El modo Automático detecta la alimentación USB en las revisiones de hardware E1001 v1.0 y v1.2, pone la pantalla en reposo con batería y la mantiene conectada con alimentación externa. El LED de estado y el zumbador permanecen desactivados. El micrófono solo está activo con alimentación externa confirmada y publica únicamente un nivel sonoro relativo de 60 segundos calculado localmente; no se transmite audio. En v1.2 también se desactiva el LED de carga.",
         "data": {
           "firmware_device_name": "Nombre del dispositivo",
           "firmware_friendly_name": "Nombre visible",

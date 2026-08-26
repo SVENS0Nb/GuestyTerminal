@@ -142,7 +142,7 @@
       },
       "firmware": {
         "title": "Create E1001 firmware",
-        "description": "Creates a secure ESPHome configuration under /config/esphome. Automatic mode detects USB power on E1001 hardware revisions v1.0 and v1.2, sleeps on battery, and stays online on external power. The status LED, buzzer, and microphone are disabled; the charging LED is also disabled on v1.2.",
+        "description": "Creates a secure ESPHome configuration under /config/esphome. Automatic mode detects USB power on E1001 hardware revisions v1.0 and v1.2, sleeps on battery, and stays online on external power. The status LED and buzzer stay disabled. The microphone is active only on confirmed external power and publishes only a locally calculated 60-second relative sound level; no audio is transmitted. The charging LED is also disabled on v1.2.",
         "data": {
           "firmware_device_name": "Device name",
           "firmware_friendly_name": "Display name",

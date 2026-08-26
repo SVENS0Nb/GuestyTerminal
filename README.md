@@ -421,12 +421,16 @@ Symbol folgt ihm in Zehn-Prozent-Stufen.
   das Gerät bereits wach ist, ändert die Taste weder Betriebsmodus noch
   Wachzeit. Ein beim Einschlafen noch gehaltener Taster kann keine Schleife aus
   Deep Sleep und sofortigem Wiederaufwachen erzeugen.
-- GPIO-Status-LED, Buzzer und Mikrofon-Stromversorgung werden auf beiden
-  Hardwareständen deaktiviert. Auf v1.2 schaltet die Firmware zusätzlich den
-  Lade-LED-Ausgang des SY6974B ab. Der ETA6003 von v1.0 bietet dafür keinen
-  entsprechenden Software-Schalter; dort kann die rote, hardwaregesteuerte
-  Lade-LED während des Ladens sichtbar bleiben. Auch auf v1.2 kann sie nach
-  einem vollständig stromlosen Neustart bis zum Firmwarestart kurz aufleuchten.
+- GPIO-Status-LED und Buzzer bleiben auf beiden Hardwareständen deaktiviert.
+  Die Mikrofon-Stromversorgung bleibt beim Start und im Akkubetrieb ebenfalls
+  aus. Erst nach bestätigter externer Versorgung wird sie eingeschaltet; das
+  E1001 berechnet dann lokal einen relativen RMS-Schallpegel über jeweils 60
+  Sekunden. Beim Abziehen des Kabels werden Aufnahme und Versorgung wieder
+  gestoppt. Auf v1.2 schaltet die Firmware zusätzlich den Lade-LED-Ausgang des
+  SY6974B ab. Der ETA6003 von v1.0 bietet dafür keinen entsprechenden
+  Software-Schalter; dort kann die rote, hardwaregesteuerte Lade-LED während
+  des Ladens sichtbar bleiben. Auch auf v1.2 kann sie nach einem vollständig
+  stromlosen Neustart bis zum Firmwarestart kurz aufleuchten.
 - Die ungenutzte SD-Karten-Stromversorgung wird über GPIO16 beim Start und vor
   jedem Deep Sleep ausdrücklich ausgeschaltet. Der interne Pulldown des
   Lastschalters ist dadurch nicht die einzige Absicherung gegen unnötigen
@@ -455,24 +459,32 @@ Symbol folgt ihm in Zehn-Prozent-Stufen.
   einen vollständigen Refresh zurück. Unveränderte Wetterdaten lösen weiterhin
   überhaupt keine E-Paper-Aktualisierung aus.
 - Die normale Home-Assistant-Geräteseite zeigt nur die im Alltag sinnvollen
-  Werte und Bedienelemente: geschätzter **Batteriestand**, **External power**,
-  Temperatur, relative Luftfeuchte, **Angezeigte Buchung**, **Display
-  aktualisieren** und **Neustart**. Der für die Integration benötigte
-  **GuestyTerminal Endpoint** bleibt als Diagnose-Entität sichtbar. Der
-  Aktualisieren-Button
-  stößt zuerst einen sofortigen Guesty-Abgleich an, übernimmt den danach
-  ermittelten Seitenmodus und zeichnet anschließend genau dieses aktuelle Bild
-  neu. Im Deep Sleep sind die beiden Buttons bis zum nächsten Aufwachen nicht
-  erreichbar. Der Batteriestand wird bei jedem Aufwachen und bei USB-Betrieb
-  alle fünf Minuten aus 16 gemittelten Spannungsmessungen neu geschätzt. Die
-  Prozentanzeige basiert nicht auf einem Coulomb-Counter, sondern auf einer
-  stückweisen Li-Ion-Spannungskennlinie und kann deshalb unter Last schwanken.
+  Werte und Bedienelemente: geschätzter **Batteriestand**, **Battery charging
+  status**, **External power**, Temperatur, relative Luftfeuchte, **Angezeigte
+  Buchung**, **Display
+  aktualisieren**, **E-paper Hardwaretest** und **Neustart** sowie die drei
+  physischen Tasten **Green button**, **Middle button** und **Left button** als
+  Binärsensoren. Bei bestätigter externer Versorgung steht zusätzlich
+  **Relativer Schallpegel (1 Minute)** zur Verfügung. Der für die Integration
+  benötigte **GuestyTerminal Endpoint** bleibt als Diagnose-Entität sichtbar.
+  Der Aktualisieren-Button stößt zuerst einen sofortigen Guesty-Abgleich an,
+  übernimmt den danach ermittelten Seitenmodus und zeichnet anschließend genau
+  dieses aktuelle Bild neu. Im Deep Sleep sind diese Bedienelemente bis zum
+  nächsten Aufwachen nicht erreichbar. Der Batteriestand wird bei jedem
+  Aufwachen und bei USB-Betrieb alle fünf Minuten aus 16 gemittelten
+  Spannungsmessungen neu geschätzt. Die Prozentanzeige basiert nicht auf einem
+  Coulomb-Counter, sondern auf einer stückweisen Li-Ion-Spannungskennlinie und
+  kann deshalb unter Last schwanken. Auf E1001 v1.2 ergänzt der identifizierte
+  SY6974B diese Schätzung um Vorladen, Schnellladen, Ladeabschluss und neutrale
+  Fehlerklassen. Nur ein zusammen mit externer Versorgung bestätigter
+  Ladeabschluss setzt den effektiven Wert auf 100 %. E1001 v1.0 melden diesen
+  digitalen Ladestatus als nicht unterstützt.
 - Erweiterte Hardwarediagnosen bleiben vollständig in der Firmware erhalten,
   werden standardmäßig aber nicht an Home Assistant veröffentlicht. Dazu
   gehören Batteriespannung, Wach-/Resetgrund, Wachzeit, Stromerkennungsmethode,
-  Flashlayout, Zustell- und E-Paper-Phasen, Wellenform/Randmodus, die drei
-  physischen Tasten sowie Hardwaretest und Randkorrektur. Für eine zeitlich
-  begrenzte Fehlersuche kann in den YAML-`substitutions`
+  Flashlayout, Zustell- und E-Paper-Phasen, Wellenform/Randmodus,
+  Hardwaretest-Ergebnis sowie Randkorrektur. Für eine zeitlich begrenzte
+  Fehlersuche kann in den YAML-`substitutions`
   `advanced_diagnostics_internal: "false"` gesetzt und die Firmware erneut
   installiert werden. Mit `"true"` oder ohne eigene Angabe gilt wieder die
   aufgeräumte Alltagsansicht.
@@ -568,6 +580,35 @@ ESPHome Device Builder sichtbar.
 Die kompakte, fortlaufende Änderungshistorie steht in
 [`CHANGELOG.md`](CHANGELOG.md). Die folgenden Hinweise erklären zusätzlich die
 Firmwareanforderungen älterer Installationen.
+
+Version **0.3.48** kombiniert beim E1001 v1.2 die vorhandene
+Batteriespannungsschätzung mit dem digitalen Ladestatus des eindeutig
+identifizierten SY6974B. Drei gleiche `REG08`-/`REG09`-Messungen bestätigen
+Vorladen, Schnellladen, Ladeabschluss oder einen neutralen Fehlerzustand. Nur
+`complete` zusammen mit `REG0A.BUS_GD` ergibt 100 %; ein Zielwert aus dem
+Laderegister wird nie als gemessene Kapazität behandelt. Auf dem leeren
+Buchungsbildschirm kennzeichnet ein Blitz im Batteriesymbol den aktiven
+Ladevorgang. Die Anzeige bleibt auf fünf Prozent quantisiert und kann
+Ladezustandsänderungen weiterhin mit einem kleinen Teilrefresh darstellen.
+E1001 v1.0 verwenden unverändert die ADC-Kennlinie und melden den digitalen
+Ladestatus als nicht unterstützt.
+
+Die Version veröffentlicht außerdem bei bestätigter externer Versorgung den
+lokal berechneten relativen 60-Sekunden-RMS-Schallpegel. Rohsamples und Audio
+verlassen das Gerät nicht; auf Akku bleiben Mikrofon und Aufnahme ausgeschaltet.
+Der E-Paper-Hardwaretest und alle drei physischen Tastensensoren sind wieder in
+der Alltagsansicht sichtbar. Renderrevision 33 fordert wegen des neuen
+Ladesymbols genau einen vollständigen Neuaufbau an.
+
+Version 0.3.48 benötigt ein gemeinsames HACS-/Integrations- und
+Display-Firmwareupdate. Bestehende 4-MB-Geräte können normal per OTA
+aktualisiert werden; das Flashlayout bleibt unverändert. Die Ladestatuslogik,
+das Ladesymbol und der Schallpegelsensor sind noch nicht auf einem realen E1001
+geprüft und werden deshalb als nicht hardwaregetestet veröffentlicht.
+Die vollständige Suite besteht aus 302 bestandenen Tests bei 90,72 %
+Abdeckung; die Freigabe prüft Home Assistant 2025.12.0 und 2026.2.3. Beide
+ESPHome-2026.8.1-Profile kompilieren, mit 16 % freier App-Partition im sicheren
+4-MB-Profil und 91 % im experimentellen 32-MB-Profil.
 
 Version **0.3.47** hellt mit Renderrevision 32 die beiden mittleren
 Graubereiche über eine feste 4×4-Matrix und die neue Standard-Tonkurve
@@ -987,6 +1028,14 @@ Die von der Integration angelegten Statussensoren enthalten weder Gastnamen
 noch Tür- oder WiFi-Codes. In den Attributen steht lediglich, ob der aktuelle
 Bildschirm solche Daten enthält. Fehlerprotokolle geben ebenfalls keine
 Zugangsdaten aus.
+
+Der Display-Sensor **Relativer Schallpegel (1 Minute)** verarbeitet die
+PDM-Samples ausschließlich im flüchtigen Speicher des ESP32 und veröffentlicht
+nur den relativen 60-Sekunden-RMS-Wert. Es werden weder Audiodaten noch einzelne
+Messproben an Home Assistant übertragen, aufgezeichnet oder dauerhaft
+gespeichert. `0 dB` bezeichnet dabei den digitalen Vollpegel des eingebauten
+Mikrofons; ohne individuelle akustische Kalibrierung ist der Wert bewusst kein
+geeichter dB(A)-Raumpegel. Auf Akku ist der Sensor nicht aktiv.
 
 Über Home Assistants Download-Diagnose kann zusätzlich ein strikt
 erlaubnisbasiertes Abbild mit Listingnamen, Entity-IDs, Protokollversionen,

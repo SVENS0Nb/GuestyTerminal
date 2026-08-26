@@ -2,6 +2,58 @@
 
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
 
+## 0.3.48 – 2026-08-26
+
+### Ladestatus und effektiver Batteriestand
+
+- E1001 v1.2 lesen nach der eindeutigen SY6974B-Erkennung zusätzlich den
+  Ladezustand aus `REG08.CHRG_STAT` und neutrale Fehlerklassen aus `REG09`.
+  Erst drei identische kombinierte Messungen gelten als bestätigt; eine
+  fehlgeschlagene Gruppe wird überbrückt, die zweite meldet den Zustand als
+  nicht verfügbar.
+- **Battery charging status** unterscheidet Nichtladen, Vorladen,
+  Schnellladen, abgeschlossenes Laden sowie Lade-, Batterie- und
+  Temperaturfehler. Beim E1001 v1.0 wird der Zustand ausdrücklich als nicht
+  unterstützt gemeldet, weil dessen Ladecontroller keine auslesbare
+  Host-Schnittstelle besitzt.
+- Nur ein bestätigtes `complete` zusammen mit `REG0A.BUS_GD` setzt den
+  effektiven Batteriestand auf 100 %. Alle anderen Zustände verwenden
+  weiterhin die aus 16 ADC-Messungen gebildete Spannungskennlinie; die
+  programmierte Lade-Zielspannung wird niemals als Messwert missverstanden.
+- Während Vor- oder Schnellladen zeigt der leere Buchungsbildschirm ein
+  Batteriesymbol mit Blitz. Dieser sichtbare Status ist Teil der
+  Teilrefresh-Unterdrückung; Renderrevision 33 erzwingt beim Upgrade genau
+  einen vollständigen Neuaufbau.
+
+### Stromgebundener Schallpegelsensor
+
+- Das E1001 veröffentlicht bei bestätigter externer Versorgung einen lokal
+  berechneten relativen RMS-Schallpegel über vollständige 60-Sekunden-Fenster.
+  Auf Akku bleiben Mikrofon-Stromversorgung und I²S-Aufnahme aus; beim Abziehen
+  des Kabels werden beide wieder gestoppt.
+- Home Assistant erhält ausschließlich den aggregierten relativen dB-Wert.
+  Rohsamples und Audiodaten werden weder übertragen noch gespeichert; ohne
+  individuelle Kalibrierung wird bewusst kein absoluter dB(A)-Wert behauptet.
+- Der neutrale **E-paper Hardwaretest** bleibt in der aufgeräumten
+  Alltagsansicht sichtbar. Nur sein technischer Ergebnis-Sensor bleibt Teil der
+  optionalen erweiterten Diagnose.
+- **Green button**, **Middle button** und **Left button** sind wieder als
+  entprellte Home-Assistant-Binärsensoren sichtbar. Ihre bisherigen IDs und die
+  Wake-up-Funktion der grünen Taste bleiben unverändert.
+
+### Veröffentlichung
+
+- Version 0.3.48 benötigt gemeinsam ein HACS-/Integrationsupdate und ein
+  Display-Firmwareupdate. Bestehende 4-MB-Geräte bleiben OTA-kompatibel; das
+  Flashlayout wird nicht geändert. Die neue Ladestatusauswertung, das
+  Ladesymbol und der Schallpegelsensor sind noch nicht auf einem realen E1001
+  geprüft und werden deshalb als `not_tested` veröffentlicht.
+- Die vollständige Suite umfasst 302 bestandene Tests bei 90,72 % Abdeckung;
+  die Freigabe ist zusätzlich an grüne CI-Läufe mit Home Assistant 2025.12.0
+  und 2026.2.3 gebunden. ESPHome 2026.8.1 kompiliert sowohl das sichere
+  4-MB-Profil (16 % freie App-Partition) als auch das experimentelle
+  32-MB-Profil (91 % frei).
+
 ## 0.3.47 – 2026-08-26
 
 ### Helleres, fein abgestuftes Gesamtbild

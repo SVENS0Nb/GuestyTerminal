@@ -105,7 +105,7 @@ werden; das erneute Anlegen nur des SPI-Geräts genügt nicht. `POWER ON` und
 `DISPLAY REFRESH` behalten Seeeds feste 100-ms-Wartezeit und warten danach auf
 den inaktiven `BUSY_N`-Pegel. Jede sichtbare Treiberänderung erhöht erwartete
 und gespeicherte Renderrevision gemeinsam; der aktuelle Stand verwendet
-Revision 29.
+Revision 33.
 
 ## Veröffentlichungen und Distribution
 
@@ -123,6 +123,20 @@ eine wahrheitsgemäße Angabe zur realen Hardwareprüfung und erzeugt die
 Release-Notizen aus dem aktuellen Changelog. Erst danach legt er den annotierten
 Tag und das GitHub-Release an. Ein vorhandener Tag wird nur dann wiederverwendet,
 wenn er exakt auf denselben geprüften Commit zeigt.
+
+Version 0.3.48 verwendet Renderrevision 33 und ergänzt beim identifizierten
+E1001 v1.2 die ADC-Batterieschätzung um drei bestätigte
+`REG08.CHRG_STAT`-/`REG09`-Messungen. Nur Ladeabschluss zusammen mit
+`REG0A.BUS_GD` darf den effektiven Wert auf 100 % setzen; v1.0 bleibt beim
+ADC-Pfad und meldet den digitalen Status als nicht unterstützt. Vor- und
+Schnellladen verwenden im kleinen Header ein Batteriesymbol mit Blitz, dessen
+Zustand an der Teilrefresh-Unterdrückung teilnimmt. Die Version aktiviert
+zusätzlich den mains-only relativen 60-Sekunden-Schallpegel und veröffentlicht
+den Hardwaretest sowie die drei physischen Tasten wieder als Alltagsentitäten.
+Sie benötigt ein gemeinsames Integrations- und Firmwareupdate; 4-MB-Geräte
+bleiben OTA-kompatibel. Ladestatus, Ladesymbol, Mikrofon-Gate und die
+vollständige Hardwarematrix sind zum Release noch nicht am realen E1001
+geprüft und müssen als `not_tested` veröffentlicht werden.
 
 Version 0.3.47 verwendet Renderrevision 32, eine feste 4×4-Matrix und eine
 standardmäßige Gamma-Tonkurve von 1,35, um die mittleren Graustufen

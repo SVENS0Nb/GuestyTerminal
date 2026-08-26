@@ -47,9 +47,11 @@ esphome:
         - script.wait: guesty_quiesce_uart0
     - priority: 700
       then:
-        # Keep every user-visible/audible peripheral off. The SY6974B STAT
-        # output drives the red charging LED independently from GPIO6, so its
-        # pin function is disabled over the charger's dedicated I2C bus too.
+        # Keep every user-visible/audible peripheral off during startup. The
+        # microphone is enabled later only after external power is confirmed.
+        # The SY6974B STAT output drives the red charging LED independently
+        # from GPIO6, so its pin function is disabled over the charger's
+        # dedicated I2C bus too.
         - output.turn_off: guesty_status_led
         - output.turn_off: guesty_buzzer
         - output.turn_off: guesty_microphone_power
@@ -115,6 +117,7 @@ esphome:
         - component.update: guesty_flash_layout
         - component.update: guesty_self_test_status
         - component.update: guesty_border_recovery_status
+        - component.update: guesty_charging_status
         - delay: 500ms
         - component.update: guesty_terminal_endpoint
 
@@ -276,7 +279,7 @@ api:
                   else:
                     - lambda: |-
                         const bool renderer_current =
-                            id(guesty_render_revision) == 32;
+                            id(guesty_render_revision) == 33;
                         const int configured_gray_gamma_x100 =
                             static_cast<int>(std::lround(
                                 ${gray_gamma} * 100.0f));
@@ -299,10 +302,16 @@ api:
                         }
                         const bool empty_page =
                             mode != "welcome" && mode != "checkout";
+                        const bool battery_charging =
+                            confirmed_external_power
+                            && (id(guesty_charge_status_code) == 1
+                                || id(guesty_charge_status_code) == 2);
                         const bool battery_changed = empty_page
                             && battery_percent >= 0
-                            && battery_percent !=
-                                id(guesty_rendered_battery_percent);
+                            && (battery_percent !=
+                                    id(guesty_rendered_battery_percent)
+                                || battery_charging !=
+                                    id(guesty_rendered_battery_charging));
                         id(guesty_content_changed) = force_redraw
                             || content_id.empty()
                             || content_id != id(guesty_content_id)
@@ -336,6 +345,7 @@ api:
                         id(guesty_privacy_clear_pending) =
                             mode == "idle" && id(guesty_content_changed);
                         id(guesty_display_battery_percent) = battery_percent;
+                        id(guesty_display_battery_charging) = battery_charging;
                         id(guesty_mode) = mode;
                         id(guesty_property_name) = property_name;
                         id(guesty_welcome_title) = welcome_title;
@@ -476,7 +486,7 @@ api:
                                           id(guesty_content_id) = content_id;
                                           id(guesty_base_content_id) =
                                               base_content_id;
-                                          id(guesty_render_revision) = 32;
+                                          id(guesty_render_revision) = 33;
                                           id(guesty_rendered_gray_gamma_x100) =
                                               static_cast<int>(std::lround(
                                                   ${gray_gamma} * 100.0f));
@@ -502,6 +512,8 @@ api:
                                                   >= 0) {
                                             id(guesty_rendered_battery_percent) =
                                                 id(guesty_display_battery_percent);
+                                            id(guesty_rendered_battery_charging) =
+                                                id(guesty_display_battery_charging);
                                           }
                                       - text_sensor.template.publish:
                                           id: guesty_last_booking
@@ -663,7 +675,7 @@ api:
                     && !id(guesty_epaper).update_in_progress();
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            const bool renderer_current = id(guesty_render_revision) == 32;
+            const bool renderer_current = id(guesty_render_revision) == 33;
             const int configured_gray_gamma_x100 =
                 static_cast<int>(std::lround(${gray_gamma} * 100.0f));
             const bool tone_curve_current =
@@ -684,9 +696,14 @@ api:
                   ((rounded + 2) / 5) * 5));
             }
             const bool empty_page = mode != "welcome" && mode != "checkout";
+            const bool battery_charging = confirmed_external_power
+                && (id(guesty_charge_status_code) == 1
+                    || id(guesty_charge_status_code) == 2);
             const bool battery_changed = empty_page
                 && battery_percent >= 0
-                && battery_percent != id(guesty_rendered_battery_percent);
+                && (battery_percent != id(guesty_rendered_battery_percent)
+                    || battery_charging !=
+                        id(guesty_rendered_battery_charging));
             id(guesty_content_changed) = force_redraw || content_id.empty()
                 || content_id != id(guesty_content_id)
                 || !renderer_current
@@ -710,6 +727,7 @@ api:
             id(guesty_privacy_clear_pending) =
                 mode == "idle" && id(guesty_content_changed);
             id(guesty_display_battery_percent) = battery_percent;
+            id(guesty_display_battery_charging) = battery_charging;
             id(guesty_mode) = mode;
             id(guesty_property_name) = property_name;
             id(guesty_welcome_title) = welcome_title;
@@ -817,7 +835,7 @@ api:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
-                        id(guesty_render_revision) = 32;
+                        id(guesty_render_revision) = 33;
                         id(guesty_rendered_gray_gamma_x100) =
                             static_cast<int>(std::lround(
                                 ${gray_gamma} * 100.0f));
@@ -833,6 +851,8 @@ api:
                             && id(guesty_display_battery_percent) >= 0) {
                           id(guesty_rendered_battery_percent) =
                               id(guesty_display_battery_percent);
+                          id(guesty_rendered_battery_charging) =
+                              id(guesty_display_battery_charging);
                         }
                     - text_sensor.template.publish:
                         id: guesty_last_booking
@@ -1028,6 +1048,9 @@ globals:
   - id: guesty_display_battery_percent
     type: int
     initial_value: "-1"
+  - id: guesty_display_battery_charging
+    type: bool
+    initial_value: "false"
   # Persist only an opaque, reservation-salted display fingerprint. This lets
   # the device skip identical E-paper refreshes without storing credentials.
   - id: guesty_content_id
@@ -1073,6 +1096,12 @@ globals:
     type: int
     restore_value: true
     initial_value: "-1"
+  # The charging pictogram is visible state too. Retain only this neutral flag
+  # so a later cable or charger-state transition can request one header update.
+  - id: guesty_rendered_battery_charging
+    type: bool
+    restore_value: true
+    initial_value: "false"
   # The renewable epoch changes on every Home Assistant poll and therefore
   # remains volatile to avoid periodic NVS writes. A reboot with a physically
   # sensitive screen and no renewed epoch is treated as an expired lease.
@@ -1114,6 +1143,30 @@ globals:
   - id: guesty_sy6974_bus_good_reads
     type: uint8_t
     initial_value: "0"
+  # REG08.CHRG_STAT exposes the v1.2 charger's state, while REG09 distinguishes
+  # charge, battery and temperature faults. Three identical combined snapshots
+  # are required before the public status or the effective 100% value changes.
+  - id: guesty_sy6974_charge_status_candidate
+    type: int
+    initial_value: "-1"
+  - id: guesty_sy6974_charge_status_reads
+    type: uint8_t
+    initial_value: "0"
+  - id: guesty_sy6974_charge_status_matches
+    type: uint8_t
+    initial_value: "0"
+  # -2=unsupported v1.0, -1=unavailable, 0=not charging, 1=pre-charge,
+  # 2=fast charging, 3=complete, 4=charge fault, 5=battery fault,
+  # 6=temperature-limited/faulted.
+  - id: guesty_charge_status_code
+    type: int
+    initial_value: "-1"
+  - id: guesty_charge_status_invalid_batches
+    type: uint8_t
+    initial_value: "0"
+  - id: guesty_battery_level_refresh_requested
+    type: bool
+    initial_value: "false"
   # E1001 v1.0 has no readable charger status. Its CH340C bridge is powered
   # only by TYPEC_5V. Three sampled windows distinguish that driven TXD signal
   # from the pulled-down line of an unpowered bridge.
@@ -1502,6 +1555,11 @@ script:
       - output.turn_off: guesty_battery_enable
       - output.turn_off: guesty_status_led
       - output.turn_off: guesty_buzzer
+      - microphone.stop_capture: guesty_microphone
+      - wait_until:
+          condition:
+            lambda: return id(guesty_microphone).is_stopped();
+          timeout: 500ms
       - output.turn_off: guesty_microphone_power
       - output.turn_off: guesty_sd_power
       - component.update: guesty_awake_duration
@@ -1525,6 +1583,10 @@ script:
           id(guesty_sy6974_id_matches) = 0;
           id(guesty_sy6974_status_reads) = 0;
           id(guesty_sy6974_bus_good_reads) = 0;
+          id(guesty_sy6974_charge_status_candidate) = -1;
+          id(guesty_sy6974_charge_status_reads) = 0;
+          id(guesty_sy6974_charge_status_matches) = 0;
+          id(guesty_battery_level_refresh_requested) = false;
           id(guesty_usb_uart_powered_windows) = 0;
           id(guesty_usb_uart_unpowered_windows) = 0;
           id(guesty_usb_uart_power_probe_ready) = false;
@@ -1566,6 +1628,40 @@ script:
                     id(guesty_sy6974_status_reads)++;
                     if ((status & 0x80) != 0) {
                       id(guesty_sy6974_bus_good_reads)++;
+                    }
+                  }
+
+                  // The charger does not expose voltage or a fuel-gauge SOC,
+                  // but REG08 and REG09 provide an authoritative charge phase
+                  // and bounded fault classification on E1001 v1.2.
+                  reg = 0x08;
+                  uint8_t charge_status = 0;
+                  const auto charge_error =
+                      id(guesty_power_i2c)->write_readv(
+                          0x6B, &reg, 1, &charge_status, 1);
+                  reg = 0x09;
+                  uint8_t fault_status = 0;
+                  const auto fault_error =
+                      id(guesty_power_i2c)->write_readv(
+                          0x6B, &reg, 1, &fault_status, 1);
+                  if (charge_error == esphome::i2c::ERROR_OK
+                      && fault_error == esphome::i2c::ERROR_OK) {
+                    int charge_code =
+                        static_cast<int>((charge_status >> 3) & 0x03);
+                    if ((fault_status & 0x08) != 0) {
+                      charge_code = 5;  // battery over-voltage
+                    } else if ((fault_status & 0x07) != 0) {
+                      charge_code = 6;  // NTC limited/cold/hot
+                    } else if ((fault_status & 0x30) != 0) {
+                      charge_code = 4;  // input, thermal or safety-timer fault
+                    }
+                    id(guesty_sy6974_charge_status_reads)++;
+                    if (id(guesty_sy6974_charge_status_candidate)
+                            == charge_code) {
+                      id(guesty_sy6974_charge_status_matches)++;
+                    } else {
+                      id(guesty_sy6974_charge_status_candidate) = charge_code;
+                      id(guesty_sy6974_charge_status_matches) = 1;
                     }
                   }
                 }
@@ -1664,6 +1760,48 @@ script:
             }
           }
 
+          const bool modern_charger = id(guesty_sy6974_detected)
+              || id(guesty_sy6974_seen_this_boot);
+          int next_charge_status = id(guesty_charge_status_code);
+          if (modern_charger) {
+            const bool stable_charge_status =
+                id(guesty_sy6974_charge_status_reads) == 3
+                && id(guesty_sy6974_charge_status_matches) == 3;
+            if (stable_charge_status) {
+              id(guesty_charge_status_invalid_batches) = 0;
+              next_charge_status =
+                  id(guesty_sy6974_charge_status_candidate);
+            } else {
+              if (id(guesty_charge_status_invalid_batches) < 2) {
+                id(guesty_charge_status_invalid_batches)++;
+              }
+              if (id(guesty_charge_status_invalid_batches) >= 2) {
+                next_charge_status = -1;  // unavailable
+              }
+            }
+          } else {
+            id(guesty_charge_status_invalid_batches) = 0;
+            next_charge_status = -2;  // unsupported on E1001 v1.0
+          }
+
+          if (next_charge_status != id(guesty_charge_status_code)) {
+            id(guesty_charge_status_code) = next_charge_status;
+            const char *charge_state = "unavailable";
+            switch (next_charge_status) {
+              case -2: charge_state = "unsupported"; break;
+              case 0: charge_state = "not_charging"; break;
+              case 1: charge_state = "pre_charge"; break;
+              case 2: charge_state = "fast_charging"; break;
+              case 3: charge_state = "complete"; break;
+              case 4: charge_state = "charge_fault"; break;
+              case 5: charge_state = "battery_fault"; break;
+              case 6: charge_state = "temperature_limited"; break;
+              default: break;
+            }
+            id(guesty_charging_status).publish_state(charge_state);
+            id(guesty_battery_level_refresh_requested) = true;
+          }
+
           if (measurement_valid) {
             id(guesty_external_power_invalid_batches) = 0;
             id(guesty_power_detection_warning_active) = false;
@@ -1676,6 +1814,10 @@ script:
             }
             if (!id(guesty_external_power).has_state()
                 || id(guesty_external_power).state != external_power) {
+              // The effective 100% endpoint is valid only while BUS_GD is
+              // confirmed. Re-evaluate immediately on either cable edge even
+              // when CHRG_STAT itself has not changed yet.
+              id(guesty_battery_level_refresh_requested) = true;
               id(guesty_external_power).publish_state(external_power);
             }
             return;
@@ -1704,6 +1846,12 @@ script:
             ESP_LOGW("guesty_power",
                      "External power detection unavailable; using battery behavior");
           }
+      - if:
+          condition:
+            lambda: return id(guesty_battery_level_refresh_requested);
+          then:
+            - component.update: guesty_battery_level
+            - lambda: id(guesty_battery_level_refresh_requested) = false;
 
 font:
   - file: "gfonts://Inter@600"
@@ -1789,6 +1937,17 @@ font:
       - "\U000F0081" # mdi-battery-80
       - "\U000F0082" # mdi-battery-90
       - "\U000F008E" # mdi-battery-outline (empty)
+      - "\U000F0085" # mdi-battery-charging-100
+      - "\U000F0086" # mdi-battery-charging-20
+      - "\U000F0087" # mdi-battery-charging-30
+      - "\U000F0088" # mdi-battery-charging-40
+      - "\U000F0089" # mdi-battery-charging-60
+      - "\U000F008A" # mdi-battery-charging-80
+      - "\U000F008B" # mdi-battery-charging-90
+      - "\U000F089C" # mdi-battery-charging-10
+      - "\U000F089D" # mdi-battery-charging-50
+      - "\U000F089E" # mdi-battery-charging-70
+      - "\U000F089F" # mdi-battery-charging-outline
   # Material Design Icons 7.4.47, the same established pictogram family used
   # throughout Home Assistant. Only the weather glyphs below are compiled into
   # the firmware; the complete webfont is never stored on the device.
@@ -1847,6 +2006,23 @@ i2c:
     scan: false
     frequency: 100kHz
 
+# Seeed's onboard E1001 microphone is a PDM device. GPIO42 supplies its clock,
+# GPIO41 carries sample data, and GPIO38 switches the microphone power rail.
+# Capture is controlled by External power below, so this bus consumes no audio
+# processing time during a battery wake.
+i2s_audio:
+  - id: guesty_microphone_i2s
+    i2s_lrclk_pin: GPIO42
+
+microphone:
+  - platform: i2s_audio
+    id: guesty_microphone
+    i2s_audio_id: guesty_microphone_i2s
+    adc_type: external
+    pdm: true
+    i2s_din_pin: GPIO41
+    correct_dc_offset: true
+
 output:
   - platform: gpio
     id: guesty_battery_enable
@@ -1892,7 +2068,14 @@ sensor:
     state_class: measurement
     entity_category: diagnostic
     update_interval: never
-    lambda: return id(guesty_battery_voltage).state;
+    lambda: |-
+      // REG08 reports charge completion but not voltage or remaining capacity.
+      // Use it only to resolve the fully charged endpoint on an identified
+      // v1.2 board; every other state keeps the measured ADC estimate.
+      const bool charge_complete = id(guesty_charge_status_code) == 3
+          && id(guesty_external_power).has_state()
+          && id(guesty_external_power).state;
+      return charge_complete ? 4.15f : id(guesty_battery_voltage).state;
     filters:
       - calibrate_linear:
           # Battery voltage is deliberately non-linear. ESPHome otherwise
@@ -1936,6 +2119,20 @@ sensor:
       name: Relative humidity
       entity_category: diagnostic
     update_interval: never
+  # ESPHome computes RMS from every sample in one complete 60-second window.
+  # The result is relative dB (0 dB is the microphone's digital full scale),
+  # not an uncalibrated claim of absolute dB(A). Passive mode also guarantees
+  # that no microphone capture is started independently from the power gate.
+  - platform: sound_level
+    id: guesty_sound_level
+    passive: true
+    measurement_duration: 60s
+    microphone:
+      microphone: guesty_microphone
+    rms:
+      id: guesty_sound_level_1_minute
+      name: Relativer Schallpegel (1 Minute)
+      icon: mdi:volume-high
 
 text_sensor:
   # This state is evaluated once per boot and lets Home Assistant distinguish
@@ -1998,6 +2195,26 @@ text_sensor:
     icon: mdi:power-plug-battery
     entity_category: diagnostic
     update_interval: never
+  # E1001 v1.2 exposes a charging phase and neutral fault classes through the
+  # identified SY6974B. The legacy v1.0 charger has no readable host interface.
+  - platform: template
+    id: guesty_charging_status
+    name: Battery charging status
+    icon: mdi:battery-charging
+    entity_category: diagnostic
+    update_interval: never
+    lambda: |-
+      switch (id(guesty_charge_status_code)) {
+        case -2: return {"unsupported"};
+        case 0: return {"not_charging"};
+        case 1: return {"pre_charge"};
+        case 2: return {"fast_charging"};
+        case 3: return {"complete"};
+        case 4: return {"charge_fault"};
+        case 5: return {"battery_fault"};
+        case 6: return {"temperature_limited"};
+        default: return {"unavailable"};
+      }
   - platform: template
     id: guesty_flash_layout
     name: Flash layout
@@ -2092,10 +2309,30 @@ binary_sensor:
     name: External power
     device_class: power
     entity_category: diagnostic
+    # Only a confirmed physical cable may power and start the microphone.
+    # Stopping capture first ensures the I2S task releases the source before
+    # GPIO38 removes power. A fresh cable connection always starts a new,
+    # complete 60-second RMS window.
+    on_press:
+      then:
+        - output.turn_on: guesty_microphone_power
+        - delay: 200ms
+        - if:
+            condition:
+              binary_sensor.is_on: guesty_external_power
+            then:
+              - microphone.capture: guesty_microphone
+    on_release:
+      then:
+        - microphone.stop_capture: guesty_microphone
+        - wait_until:
+            condition:
+              lambda: return id(guesty_microphone).is_stopped();
+            timeout: 500ms
+        - output.turn_off: guesty_microphone_power
   - platform: gpio
     id: guesty_button_green
     name: Green button
-    internal: ${advanced_diagnostics_internal}
     entity_category: diagnostic
     pin:
       number: GPIO3
@@ -2108,7 +2345,6 @@ binary_sensor:
   - platform: gpio
     id: guesty_button_middle
     name: Middle button
-    internal: ${advanced_diagnostics_internal}
     entity_category: diagnostic
     pin:
       number: GPIO4
@@ -2120,7 +2356,6 @@ binary_sensor:
   - platform: gpio
     id: guesty_button_left
     name: Left button
-    internal: ${advanced_diagnostics_internal}
     entity_category: diagnostic
     pin:
       number: GPIO5
@@ -2131,9 +2366,9 @@ binary_sensor:
       - delayed_off: 20ms
 
 button:
-  # Both controls are exposed as entities of this ESPHome display device.
-  # Refresh is deliberately explicit and therefore bypasses the automatic
-  # duplicate-image suppression used for background Guesty synchronisation.
+  # User-facing controls are exposed as entities of this ESPHome display
+  # device. Refresh is deliberately explicit and therefore bypasses the
+  # automatic duplicate-image suppression used for background Guesty sync.
   - platform: template
     id: guesty_refresh_display
     name: Display aktualisieren
@@ -2155,7 +2390,6 @@ button:
   - platform: template
     id: guesty_panel_self_test
     name: E-paper Hardwaretest
-    internal: ${advanced_diagnostics_internal}
     icon: mdi:test-tube
     entity_category: diagnostic
     on_press:
@@ -2565,6 +2799,7 @@ display:
           };
 
           int battery_percent = id(guesty_display_battery_percent);
+          bool battery_charging = id(guesty_display_battery_charging);
           if (battery_percent < 0
               && id(guesty_battery_level).has_state()
               && std::isfinite(id(guesty_battery_level).state)) {
@@ -2572,11 +2807,30 @@ display:
                 std::lround(id(guesty_battery_level).state));
             battery_percent = std::max(0, std::min(100,
                 ((rounded + 2) / 5) * 5));
+            battery_charging =
+                id(guesty_external_power).has_state()
+                && id(guesty_external_power).state
+                && (id(guesty_charge_status_code) == 1
+                    || id(guesty_charge_status_code) == 2);
           }
           it.print(32, 24, id(guesty_font_property),
                    id(guesty_property_name).c_str());
           if (battery_percent >= 0) {
-            const auto battery_codepoint_for_percent = [](int percent) -> uint32_t {
+            const auto battery_codepoint_for_percent = [](
+                int percent, bool charging) -> uint32_t {
+              if (charging) {
+                if (percent <= 0) return 0xF089FUL;
+                if (percent < 20) return 0xF089CUL;
+                if (percent < 30) return 0xF0086UL;
+                if (percent < 40) return 0xF0087UL;
+                if (percent < 50) return 0xF0088UL;
+                if (percent < 60) return 0xF089DUL;
+                if (percent < 70) return 0xF0089UL;
+                if (percent < 80) return 0xF089EUL;
+                if (percent < 90) return 0xF008AUL;
+                if (percent < 100) return 0xF008BUL;
+                return 0xF0085UL;
+              }
               if (percent <= 0) return 0xF008EUL;
               if (percent < 20) return 0xF007AUL;
               if (percent < 30) return 0xF007BUL;
@@ -2629,7 +2883,9 @@ display:
             it.printf(660, 24, id(guesty_font_weather_temperature),
                       TextAlign::TOP_LEFT, "%d %%", battery_percent);
             draw_rotated_battery_icon(
-                768, 38, battery_codepoint_for_percent(battery_percent));
+                768, 38,
+                battery_codepoint_for_percent(
+                    battery_percent, battery_charging));
           }
           const std::string &empty_title = id(guesty_next_booking_title).empty()
               ? id(guesty_idle_title) : id(guesty_next_booking_title);

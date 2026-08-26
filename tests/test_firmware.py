@@ -79,7 +79,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
     assert 'gray_gamma: "1.35"' in rendered
-    assert rendered.count("ref: v0.3.47") == 2
+    assert rendered.count("ref: v0.3.48") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
@@ -107,7 +107,7 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     stored_revision = re.search(r"id\(guesty_render_revision\) = (\d+);", package)
     assert expected_revision is not None
     assert stored_revision is not None
-    assert expected_revision.group(1) == "32"
+    assert expected_revision.group(1) == "33"
     assert expected_revision.group(1) == stored_revision.group(1)
     assert "guesty_terminal_update_display_v10" in package
     assert (
@@ -157,7 +157,8 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "id(guesty_has_weather)" not in idle_page
     assert "id(guesty_weather_condition)" not in idle_page
     assert "id(guesty_font_battery_icon)" in idle_page
-    assert "battery_codepoint_for_percent(battery_percent)" in idle_page
+    assert "battery_codepoint_for_percent(" in idle_page
+    assert "battery_percent, battery_charging" in idle_page
     assert "return 0xF008EUL" in idle_page
     for threshold, glyph in zip(
         range(20, 101, 10), range(0xF007A, 0xF0083), strict=True
@@ -172,7 +173,10 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "Color(ink, ink, ink)" in idle_page
     assert "it.printf(660, 24, id(guesty_font_weather_temperature)" in idle_page
     assert 'TextAlign::TOP_LEFT, "%d %%", battery_percent' in idle_page
-    assert "768, 38, battery_codepoint_for_percent(battery_percent)" in idle_page
+    assert "id(guesty_display_battery_charging)" in idle_page
+    assert "if (charging)" in idle_page
+    assert "return 0xF0085UL" in idle_page
+    assert "return 0xF089FUL" in idle_page
     assert "id: guesty_font_battery_icon\n    size: 36" in package
     assert "it.print(682, 26, id(guesty_font_battery_icon)" not in idle_page
     assert "id(guesty_display_battery_percent)" in idle_page
@@ -210,6 +214,10 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     for glyph in range(0xF0079, 0xF0083):
         assert f'"\\U{glyph:08X}"' in battery_font
     assert '"\\U000F008E"' in battery_font
+    for glyph in (0xF0085, 0xF0086, 0xF0087, 0xF0088, 0xF0089, 0xF008A, 0xF008B):
+        assert f'"\\U{glyph:08X}"' in battery_font
+    for glyph in (0xF089C, 0xF089D, 0xF089E, 0xF089F):
+        assert f'"\\U{glyph:08X}"' in battery_font
     assert "id: guesty_font_weather_icon" in package
     assert 'return "\\U000F0599"' in package
     assert "draw_weather_icon" not in package
@@ -249,6 +257,8 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "method: exact" in battery_level
     assert "datapoints:" in battery_level
     assert battery_level.index("3.27 -> 0.0") < battery_level.index("4.15 -> 100.0")
+    assert "id(guesty_charge_status_code) == 3" in battery_level
+    assert "return charge_complete ? 4.15f" in battery_level
     assert "id: guesty_awake_duration" in package
     assert "lambda: return millis() / 1000.0f;" in package
     assert "id: guesty_wake_reason" in package
@@ -496,10 +506,6 @@ def test_default_entity_profile_exposes_only_everyday_entities() -> None:
         "guesty_border_mode",
         "guesty_self_test_status",
         "guesty_border_recovery_status",
-        "guesty_button_green",
-        "guesty_button_middle",
-        "guesty_button_left",
-        "guesty_panel_self_test",
         "guesty_border_recovery",
     )
     for entity_id in advanced_entities:
@@ -507,14 +513,65 @@ def test_default_entity_profile_exposes_only_everyday_entities() -> None:
 
     everyday_entities = (
         "guesty_battery_level",
+        "guesty_charging_status",
         "guesty_last_booking",
         "guesty_terminal_endpoint",
         "guesty_external_power",
         "guesty_refresh_display",
         "guesty_restart",
+        "guesty_panel_self_test",
+        "guesty_button_green",
+        "guesty_button_middle",
+        "guesty_button_left",
     )
     for entity_id in everyday_entities:
         assert "internal:" not in entity_block(entity_id)
+
+
+def test_sound_level_is_a_private_mains_only_sixty_second_rms() -> None:
+    """Measure locally only while confirmed external power is present."""
+    package = PACKAGE_FILE.read_text(encoding="utf-8")
+
+    assert "id: guesty_microphone_i2s\n    i2s_lrclk_pin: GPIO42" in package
+    assert "id: guesty_microphone\n    i2s_audio_id: guesty_microphone_i2s" in package
+    assert "pdm: true\n    i2s_din_pin: GPIO41" in package
+    assert "correct_dc_offset: true" in package
+    microphone_start = package.index("microphone:\n")
+    microphone_end = package.index("\noutput:\n", microphone_start)
+    assert "on_data:" not in package[microphone_start:microphone_end]
+
+    sound_level_start = package.index("  - platform: sound_level\n")
+    sound_level_end = package.index("\ntext_sensor:\n", sound_level_start)
+    sound_level = package[sound_level_start:sound_level_end]
+    assert "passive: true" in sound_level
+    assert "measurement_duration: 60s" in sound_level
+    assert "microphone: guesty_microphone" in sound_level
+    assert "id: guesty_sound_level_1_minute" in sound_level
+    assert "name: Relativer Schallpegel (1 Minute)" in sound_level
+    assert "internal:" not in sound_level
+    assert "peak:" not in sound_level
+
+    external_power_start = package.index("    id: guesty_external_power\n")
+    external_power_end = package.index("  - platform: gpio\n", external_power_start)
+    external_power = package[external_power_start:external_power_end]
+    assert "on_press:" in external_power
+    assert "output.turn_on: guesty_microphone_power" in external_power
+    assert "delay: 200ms" in external_power
+    assert "binary_sensor.is_on: guesty_external_power" in external_power
+    assert "microphone.capture: guesty_microphone" in external_power
+    assert "on_release:" in external_power
+    assert "microphone.stop_capture: guesty_microphone" in external_power
+    assert "return id(guesty_microphone).is_stopped();" in external_power
+    assert "timeout: 500ms" in external_power
+    assert "output.turn_off: guesty_microphone_power" in external_power
+
+    sleep_start = package.index("  - id: guesty_enter_battery_sleep\n")
+    sleep_end = package.index("  - id: guesty_read_external_power\n", sleep_start)
+    sleep_script = package[sleep_start:sleep_end]
+    stop_position = sleep_script.index("microphone.stop_capture: guesty_microphone")
+    stopped_position = sleep_script.index("return id(guesty_microphone).is_stopped();")
+    power_off_position = sleep_script.index("output.turn_off: guesty_microphone_power")
+    assert stop_position < stopped_position < power_off_position
 
 
 def test_border_recovery_is_bounded_external_power_only_and_keeps_proofs() -> None:
@@ -1185,8 +1242,11 @@ def test_auto_power_detection_supports_both_e1001_hardware_revisions() -> None:
     assert "(part_id & 0x78) == 0x40" in power_script
     assert "reg = 0x0A" in power_script
     assert "(status & 0x80) != 0" in power_script
-    assert "uint8_t reg = 0x08" not in power_script
-    assert "bus_status" not in power_script
+    assert "reg = 0x08" in power_script
+    assert "reg = 0x09" in power_script
+    assert "(charge_status >> 3) & 0x03" in power_script
+    assert "(fault_status & 0x30) != 0" in power_script
+    assert "BUS_STAT" not in power_script
     assert "id(guesty_sy6974_seen_this_boot) = true" in power_script
     assert "id(guesty_sy6974_id_matches) == 3" in power_script
     assert "id(guesty_sy6974_detected) = true" in power_script
@@ -1213,6 +1273,13 @@ def test_auto_power_detection_supports_both_e1001_hardware_revisions() -> None:
     assert "publish_state(external_power)" in power_script
     assert "publish_state(false)" in power_script
     assert "publish_state((status & 0x80) != 0)" not in power_script
+    assert "id(guesty_sy6974_charge_status_reads) == 3" in power_script
+    assert "id(guesty_sy6974_charge_status_matches) == 3" in power_script
+    assert "id(guesty_charge_status_invalid_batches) >= 2" in power_script
+    assert 'charge_state = "complete"' in power_script
+    assert "state != external_power" in power_script
+    assert power_script.count("id(guesty_battery_level_refresh_requested) = true;") == 2
+    assert "component.update: guesty_battery_level" in power_script
 
     detector_start = package.index("    id: guesty_power_detection_method\n")
     detector_end = package.index("  # This diagnostic state", detector_start)
@@ -1220,6 +1287,43 @@ def test_auto_power_detection_supports_both_e1001_hardware_revisions() -> None:
     assert "name: Power detection method" in detector
     assert "entity_category: diagnostic" in detector
     assert "update_interval: never" in detector
+
+    charging_start = package.index("    id: guesty_charging_status\n")
+    charging_end = package.index("  - platform: template\n", charging_start + 1)
+    charging = package[charging_start:charging_end]
+    assert "name: Battery charging status" in charging
+    assert 'case -2: return {"unsupported"};' in charging
+    assert 'case 3: return {"complete"};' in charging
+    assert 'case 4: return {"charge_fault"};' in charging
+    assert "internal:" not in charging
+
+
+@pytest.mark.parametrize(
+    ("reg08", "reg09", "expected"),
+    [
+        (0x00, 0x00, 0),
+        (0x08, 0x00, 1),
+        (0x10, 0x00, 2),
+        (0x18, 0x00, 3),
+        (0x18, 0x10, 4),
+        (0x18, 0x08, 5),
+        (0x18, 0x02, 6),
+        # Battery and temperature faults take precedence over a generic
+        # charging fault so the published status remains actionable.
+        (0x18, 0x1A, 5),
+    ],
+)
+def test_sy6974_charge_status_classifier(reg08: int, reg09: int, expected: int) -> None:
+    """Mirror the firmware's privacy-safe REG08/REG09 classification."""
+    charge_code = (reg08 >> 3) & 0x03
+    if reg09 & 0x08:
+        charge_code = 5
+    elif reg09 & 0x07:
+        charge_code = 6
+    elif reg09 & 0x30:
+        charge_code = 4
+
+    assert charge_code == expected
 
 
 @pytest.mark.parametrize(
@@ -1474,7 +1578,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.47", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.48", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -1486,8 +1590,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.47") == 2
-    assert 'version: "0.3.47"' in updated
+    assert updated.count("ref: v0.3.48") == 2
+    assert 'version: "0.3.48"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -1518,7 +1622,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
 def test_update_managed_firmware_configs_rejects_invalid_credentials(
     tmp_path, broken_line
 ) -> None:
-    valid = render_firmware_config(_options()).replace("0.3.47", "0.3.10")
+    valid = render_firmware_config(_options()).replace("0.3.48", "0.3.10")
     if "key:" in broken_line:
         invalid = valid.replace(
             next(line for line in valid.splitlines() if "key:" in line), broken_line
@@ -1555,14 +1659,14 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.47", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.48", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     future.chmod(0o600)
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.47", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.48", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")
