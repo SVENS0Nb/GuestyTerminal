@@ -130,6 +130,16 @@ parallel; Abhängigkeiten, der stabile ESPHome-Werkzeugsatz und nicht produktive
 inkrementelle Firmware-Builddaten werden getrennt gecacht. Tag-Pushes lösen
 keinen zweiten identischen Testlauf aus.
 
+Version 0.3.46 ersetzt den erfolglosen Custom-Graustufen-Randvorlauf aus
+0.3.45 durch eine isolierte, unabhängig aus dem UC8179-Datenblatt umgesetzte
+Monochrom-Konditionierung nach dem früher randfreien ESPHome-Modell
+`7.50inv2`. Der aktuelle Vier-Graustufen-Treiber bleibt für den endgültigen
+Bildaufbau aktiv; Renderrevision 31 fordert den Zwei-Pass-Test einmalig an.
+Die Version benötigt gemeinsam ein Integrations- und Display-Firmwareupdate.
+Bis der neue Vorlauf, Randwirkung, Inhaltsunterdrückung und die vollständige
+Voll-/Teilrefresh-Matrix auf einem realen E1001 geprüft sind, muss die
+Veröffentlichung den Hardwarestatus ausdrücklich als nicht getestet ausweisen.
+
 Version 0.3.45 trennt die Randelektrode vollständig von der gewählten
 Pixelwellenform: Normale Voll- und Teilrefreshs lassen sie hochohmig. Auf sicher
 erkannter externer Versorgung konditioniert ein einmaliger begrenzter

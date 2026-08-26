@@ -2,7 +2,7 @@
 
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
 
-## Unveröffentlicht
+## 0.3.46 – 2026-08-26
 
 ### Isolierter Monochrom-Test für den Panelrand
 
@@ -26,6 +26,16 @@ Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
   implementiert; es wurden kein GPL-Code und keine zusätzlichen
   Wellenformtabellen übernommen. Der sichtbare Effekt ist bis zum Test auf dem
   realen E1001 noch nicht bestätigt.
+- 291 Tests bestanden gegen Home Assistant 2025.12.0 und 2026.2.3 mit 90,72 %
+  Branch-Abdeckung. Ruff, Mypy, Compileall, Release-Vorprüfung sowie die
+  vollständige Kompilierung beider ESPHome-2026.8.1-Flashprofile sind
+  erfolgreich. Das sichere 4-MB-OTA-Profil belegt 82,1 % Flash, das optionale
+  32-MB-Profil 9,1 %; beide belegen 42,0 % RAM.
+- Version 0.3.46 benötigt gemeinsam ein HACS-/Integrationsupdate und ein
+  Display-Firmwareupdate. Bestehende 4-MB-Geräte können normal per OTA
+  aktualisiert werden; das Flashlayout bleibt unverändert. Die neue
+  Monochrom-Konditionierung, der sichtbare Rand und die vollständige
+  Voll-/Teilrefresh-Matrix sind noch nicht auf dem realen E1001 bestätigt.
 
 ## 0.3.45 – 2026-08-26
 

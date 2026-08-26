@@ -549,8 +549,8 @@ Die kompakte, fortlaufende Änderungshistorie steht in
 [`CHANGELOG.md`](CHANGELOG.md). Die folgenden Hinweise erklären zusätzlich die
 Firmwareanforderungen älterer Installationen.
 
-Der derzeit unveröffentlichte Teststand nach **0.3.45** ersetzt ausschließlich
-den erfolglosen Rand-Vorlauf: Statt der Custom-Graustufen-LUT bildet er den
+Version **0.3.46** ersetzt ausschließlich den erfolglosen Rand-Vorlauf aus
+0.3.45: Statt der Custom-Graustufen-LUT bildet sie den
 monochromen UC8179-Registerablauf des früher randfreien ESPHome-Modells
 `7.50inv2` nach. Der aktuelle Vier-Graustufen-Treiber, Renderer, Datenweg und
 die Inhaltsunterdrückung bleiben unverändert. Renderrevision 31 fordert diesen
@@ -558,7 +558,11 @@ zweistufigen Hardwaretest bei bestätigter externer Versorgung einmalig an. Die
 zweite unmittelbar folgende Aktualisierung ist dabei der absichtliche Aufbau
 des endgültigen Graustufenbildes; spätere identische Payloads lösen weiterhin
 keinen physischen Refresh aus. Die sichtbare Wirkung bleibt bis zum Test auf
-dem realen Gerät ausdrücklich unbestätigt.
+dem realen Gerät ausdrücklich unbestätigt. Für diese Korrektur sind ein
+HACS-/Integrationsupdate und die Display-Firmware 0.3.46 erforderlich.
+Bestehende 4-MB-Geräte können sie normal per OTA installieren; das Flashlayout
+bleibt unverändert. 291 Tests, beide ESPHome-2026.8.1-Flashprofile und die
+statischen Freigabeprüfungen sind erfolgreich.
 
 Version **0.3.45** trennt den sichtbaren Panelrand von der Wellenform für Text
 und Bild. Normale Voll- und Teilrefreshs lassen die eigene Randelektrode
