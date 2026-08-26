@@ -25,6 +25,11 @@ esp32:
       loop_task_stack_size: 16384
 
 esphome:
+  # ESPHome's qr_code component normally resolves this MIT-licensed library
+  # through the PlatformIO registry. Pin the byte-equivalent upstream source
+  # so firmware builds do not depend on that registry's availability.
+  libraries:
+    - "wjtje/qr-code-generator-library=https://github.com/wjtje/QR-Code-generator-esphome.git#5f7449c095cf975bb14a34e1813b191205f78ccb"
   on_boot:
     - priority: 750
       then:

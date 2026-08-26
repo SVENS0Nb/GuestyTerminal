@@ -39,6 +39,10 @@ unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
   `dump_config()`-Ausgabe weder WLAN-Namen noch Passwort aus dem flüchtigen
   Willkommens-QR protokollieren; eine Selbsttest-Wiederherstellung rekonstruiert
   den QR-Wert nur für den benötigten Renderdurchlauf.
+- Der Firmwarebau bezieht die von ESPHomes QR-Komponente verwendete
+  MIT-lizenzierte Bibliothek jetzt aus ihrem inhaltlich identischen, exakt
+  festgeschriebenen GitHub-Ursprung. Damit blockiert ein Ausfall der
+  PlatformIO-Registry weder Release-CI noch eine neue Gerätekonfiguration.
 - 290 Tests bestanden gegen Home Assistant 2025.12.0 und 2026.2.3 mit 90,72 %
   Branch-Abdeckung. Ruff, Mypy, Compileall, Release-Vorprüfung sowie
   Konfigurationsprüfung und vollständige Kompilierung beider ESPHome-2026.8.1-

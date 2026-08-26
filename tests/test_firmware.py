@@ -406,6 +406,11 @@ def test_wifi_qr_generation_has_stack_headroom_and_neutral_boot_value() -> None:
     """Avoid loop-task overflow and credential-like QR config logging."""
     package = PACKAGE_FILE.read_text(encoding="utf-8")
 
+    assert (
+        '"wjtje/qr-code-generator-library='
+        "https://github.com/wjtje/QR-Code-generator-esphome.git#"
+        '5f7449c095cf975bb14a34e1813b191205f78ccb"'
+    ) in package
     assert package.count("loop_task_stack_size: 16384") == 1
     assert package.count("id(guesty_wifi_qr).set_value(qr_value);") == 2
     assert "id(guesty_wifi_qr).generate_qr_code();" not in package

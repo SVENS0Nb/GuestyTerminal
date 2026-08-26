@@ -549,6 +549,10 @@ einmal neu auf, und Runtime plus Firmware unterdrücken identische
 Wiederholungen nach einem bestätigten Hardwarefehler. Der flüchtige
 WLAN-QR-Wert wird außerdem direkt nach dem Framebuffer-Aufbau neutralisiert,
 damit ESPHome ihn nicht in einer späteren Konfigurationsausgabe protokolliert.
+Die dazugehörige MIT-lizenzierte QR-Bibliothek ist auf ihren inhaltlich mit
+PlatformIO 1.7.0 identischen GitHub-Quellcommit festgeschrieben, sodass eine
+vorübergehend nicht erreichbare PlatformIO-Registry den Firmwarebau nicht
+blockiert.
 Die genaue Diagnose steht in
 [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 Für diese Korrektur sind ein HACS-/Integrationsupdate und die Display-Firmware

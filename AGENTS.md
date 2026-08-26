@@ -466,6 +466,10 @@ incomplete change.
   reset the component to the neutral `GuestyTerminal` placeholder immediately
   after synchronous framebuffer construction; reconstruct it briefly before a
   self-test restores a welcome page.
+  Keep the MIT-licensed QR generator pinned to the fixed upstream Git revision
+  documented in `THIRD_PARTY_NOTICES.md`; do not reintroduce a release-time
+  dependency on the PlatformIO registry without an equally reproducible
+  fallback.
 - A v10 `panel_error` or `panel_timeout` is a deterministic physical failure,
   not an action-registration race. Do not retry the same payload immediately.
   The firmware keeps the failed content fingerprint only in volatile RAM and

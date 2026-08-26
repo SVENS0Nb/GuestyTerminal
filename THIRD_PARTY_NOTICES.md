@@ -1,5 +1,21 @@
 # Third-party notices
 
+## QR Code Generator Library 1.7.0
+
+ESPHome's `qr_code` component uses Wouter van der Wal's ESPHome packaging of
+Project Nayuki's QR Code Generator C library. GuestyTerminal pins the upstream
+source commit directly so firmware compilation does not depend on the
+availability of the PlatformIO registry:
+
+- Source: <https://github.com/wjtje/QR-Code-generator-esphome>
+- Fixed revision: `5f7449c095cf975bb14a34e1813b191205f78ccb`
+- PlatformIO package: `wjtje/qr-code-generator-library` version `1.7.0`
+- License: MIT
+
+The fixed revision's C source and header are content-identical to the
+PlatformIO 1.7.0 package after normalizing line endings. They are downloaded
+during the ESPHome build and are not bundled in this repository.
+
 ## Material Design Icons 7.4.47
 
 GuestyTerminal uses selected weather glyphs from the Material Design Icons
