@@ -246,6 +246,14 @@ Der logische ESPHome-Framebuffer verwendet
 `00 = Schwarz`, `01 = Dunkelgrau`, `10 = Hellgrau` und `11 = Weiß`. Vor der
 Übertragung invertiert der Treiber jeden Pegel mit `3 - gray`; erst danach
 werden nieder- und höherwertiges Bit getrennt an UC8179-DTM1 und DTM2 gesendet.
+Die Standard-Tonkurve `gray_gamma: "1.35"` verteilt Zwischenwerte mit einem
+festen 4×4-Muster auf zwei benachbarte native Stufen. Dadurch erscheinen die
+beiden mittleren Graubereiche heller, während Papierweiß und sattes Schwarz
+pixelgenau erhalten bleiben. Wer die frühere dunklere Abstufung benötigt, kann
+in den `substitutions` `gray_gamma: "1.0"` setzen. Diese Einstellung verändert
+nur die Pixel-Tonkurve, nicht die Wellenform oder die separate Randkorrektur.
+Die Firmware erkennt einen geänderten Wert und erzwingt genau einen neuen
+Vollaufbau; danach werden identische Bilder wieder normal unterdrückt.
 Quellen, feste Revisionen und Lizenztexte sind in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) dokumentiert.
 
@@ -446,9 +454,11 @@ Symbol folgt ihm in Zehn-Prozent-Stufen.
   Teilupdate nicht sicher ausgeführt werden, fällt der Treiber automatisch auf
   einen vollständigen Refresh zurück. Unveränderte Wetterdaten lösen weiterhin
   überhaupt keine E-Paper-Aktualisierung aus.
-- Jedes Display stellt in Home Assistant Batteriespannung, geschätzten
-  Batteriestand, **Wake-up reason**, **Reset reason** und **Awake duration**
-  sowie die Buttons **Display aktualisieren** und **Neustart** bereit. Der
+- Die normale Home-Assistant-Geräteseite zeigt nur die im Alltag sinnvollen
+  Werte und Bedienelemente: geschätzter **Batteriestand**, **External power**,
+  Temperatur, relative Luftfeuchte, **Angezeigte Buchung**, **Display
+  aktualisieren** und **Neustart**. Der für die Integration benötigte
+  **GuestyTerminal Endpoint** bleibt als Diagnose-Entität sichtbar. Der
   Aktualisieren-Button
   stößt zuerst einen sofortigen Guesty-Abgleich an, übernimmt den danach
   ermittelten Seitenmodus und zeichnet anschließend genau dieses aktuelle Bild
@@ -457,7 +467,17 @@ Symbol folgt ihm in Zehn-Prozent-Stufen.
   alle fünf Minuten aus 16 gemittelten Spannungsmessungen neu geschätzt. Die
   Prozentanzeige basiert nicht auf einem Coulomb-Counter, sondern auf einer
   stückweisen Li-Ion-Spannungskennlinie und kann deshalb unter Last schwanken.
-- **Display delivery status** unterscheidet Annahme, Rendern, bestätigten
+- Erweiterte Hardwarediagnosen bleiben vollständig in der Firmware erhalten,
+  werden standardmäßig aber nicht an Home Assistant veröffentlicht. Dazu
+  gehören Batteriespannung, Wach-/Resetgrund, Wachzeit, Stromerkennungsmethode,
+  Flashlayout, Zustell- und E-Paper-Phasen, Wellenform/Randmodus, die drei
+  physischen Tasten sowie Hardwaretest und Randkorrektur. Für eine zeitlich
+  begrenzte Fehlersuche kann in den YAML-`substitutions`
+  `advanced_diagnostics_internal: "false"` gesetzt und die Firmware erneut
+  installiert werden. Mit `"true"` oder ohne eigene Angabe gilt wieder die
+  aufgeräumte Alltagsansicht.
+- Die erweiterte Diagnose **Display delivery status** unterscheidet Annahme,
+  Rendern, bestätigten
   Erfolg, ein nachweislich unverändertes Bild und begrenzte Fehlerzustände.
   **E-paper phase**, **E-paper error**, **E-paper waveform** und
   **E-paper border mode** zeigen neutral, in welcher Controllerphase ein
@@ -465,7 +485,7 @@ Symbol folgt ihm in Zehn-Prozent-Stufen.
   monochromen OTP-Pfad konditioniert oder für den normalen Bildaufbau
   hochohmig ist. Diese Entitäten enthalten keine Gast-, Türcode- oder
   WLAN-Daten.
-- **E-paper Randkorrektur** wiederholt die begrenzte Zwei-Pass-Korrektur nur bei
+- Die erweiterte Diagnose **E-paper Randkorrektur** wiederholt die begrenzte Zwei-Pass-Korrektur nur bei
   bestätigter externer Versorgung. **E-paper border recovery** meldet
   `success`, `failed`, `hardware_timeout`, `busy` oder
   `requires_external_power`. Der sichtbare Payload und seine gespeicherten
@@ -549,6 +569,27 @@ Die kompakte, fortlaufende Änderungshistorie steht in
 [`CHANGELOG.md`](CHANGELOG.md). Die folgenden Hinweise erklären zusätzlich die
 Firmwareanforderungen älterer Installationen.
 
+Version **0.3.47** hellt mit Renderrevision 32 die beiden mittleren
+Graubereiche über eine feste 4×4-Matrix und die neue Standard-Tonkurve
+`gray_gamma: "1.35"` auf. Reines Weiß, schwarzer Text, Türcode und QR-Code
+bleiben unverändert. Eine lokale Gamma-Änderung erzwingt genau einen
+Vollaufbau. Der erfolgreiche Rand-Vorlauf wird erstmals getrennt von normalen
+Rendererrevisionen gespeichert; beim Upgrade von 0.3.46 kann er einmalig
+wiederholt werden, spätere Layout- oder Tonkurvenänderungen starten ihn nicht
+erneut. Die normale Home-Assistant-Geräteseite zeigt standardmäßig nur noch
+die für den Alltag sinnvollen Werte und Bedienelemente, während die vollständige
+Hardwarediagnose intern erhalten bleibt und bei Bedarf eingeblendet werden
+kann.
+
+Version 0.3.47 benötigt ein gemeinsames HACS-/Integrations- und
+Display-Firmwareupdate. Bestehende 4-MB-Geräte können normal per OTA
+aktualisiert werden; das Flashlayout wird nicht geändert. 293 Tests gegen Home
+Assistant 2025.12.0 und 2026.2.3, 90,72 % Branch-Abdeckung, alle statischen
+Prüfungen und beide ESPHome-2026.8.1-Firmwareprofile sind erfolgreich. Die in
+0.3.46 eingeführte Randkorrektur wurde am realen E1001 bestätigt; die neue
+Gamma-Tonkurve und die vollständige Hardwarematrix von 0.3.47 sind noch nicht
+am realen Gerät geprüft.
+
 Version **0.3.46** ersetzt ausschließlich den erfolglosen Rand-Vorlauf aus
 0.3.45: Statt der Custom-Graustufen-LUT bildet sie den
 monochromen UC8179-Registerablauf des früher randfreien ESPHome-Modells
@@ -557,9 +598,11 @@ die Inhaltsunterdrückung bleiben unverändert. Renderrevision 31 fordert diesen
 zweistufigen Hardwaretest bei bestätigter externer Versorgung einmalig an. Die
 zweite unmittelbar folgende Aktualisierung ist dabei der absichtliche Aufbau
 des endgültigen Graustufenbildes; spätere identische Payloads lösen weiterhin
-keinen physischen Refresh aus. Die sichtbare Wirkung bleibt bis zum Test auf
-dem realen Gerät ausdrücklich unbestätigt. Für diese Korrektur sind ein
-HACS-/Integrationsupdate und die Display-Firmware 0.3.46 erforderlich.
+keinen physischen Refresh aus. Der Realgerätetest am 26. August 2026 bestätigt,
+dass dieser Ablauf den zuvor dunklen/grauen Außenrand vollständig entfernt,
+ohne den schwarzen Text oder das Vier-Grau-Bild aufzuhellen. Für diese
+Korrektur sind ein HACS-/Integrationsupdate und die Display-Firmware 0.3.46
+erforderlich.
 Bestehende 4-MB-Geräte können sie normal per OTA installieren; das Flashlayout
 bleibt unverändert. 291 Tests, beide ESPHome-2026.8.1-Flashprofile und die
 statischen Freigabeprüfungen sind erfolgreich.

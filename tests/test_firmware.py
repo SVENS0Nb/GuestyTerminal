@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import math
 import re
 import stat
 from pathlib import Path
@@ -77,7 +78,8 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
-    assert rendered.count("ref: v0.3.46") == 2
+    assert 'gray_gamma: "1.35"' in rendered
+    assert rendered.count("ref: v0.3.47") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
@@ -100,11 +102,12 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
 
     assert package.count("bpp: 2") == 12
     assert "lut_mode: ${gray_lut_mode}" in package
+    assert "gray_gamma: ${gray_gamma}" in package
     expected_revision = re.search(r"id\(guesty_render_revision\) == (\d+);", package)
     stored_revision = re.search(r"id\(guesty_render_revision\) = (\d+);", package)
     assert expected_revision is not None
     assert stored_revision is not None
-    assert expected_revision.group(1) == "31"
+    assert expected_revision.group(1) == "32"
     assert expected_revision.group(1) == stored_revision.group(1)
     assert "guesty_terminal_update_display_v10" in package
     assert (
@@ -461,6 +464,59 @@ def test_panel_self_test_is_neutral_serialized_and_restores_payload() -> None:
     assert "name: E-paper self-test" in package
 
 
+def test_default_entity_profile_exposes_only_everyday_entities() -> None:
+    """Keep support diagnostics available locally without cluttering HA."""
+    package = PACKAGE_FILE.read_text(encoding="utf-8")
+    assert 'advanced_diagnostics_internal: "true"' in package
+
+    def entity_block(entity_id: str) -> str:
+        declaration = re.search(
+            rf"(?m)^  - platform: [^\n]+\n    id: {re.escape(entity_id)}$", package
+        )
+        assert declaration is not None
+        start = declaration.start()
+        candidates = [
+            position
+            for marker in ("\n  - platform:", "\nbutton:\n", "\ntime:\n")
+            if (position := package.find(marker, start + 1)) >= 0
+        ]
+        return package[start : min(candidates)]
+
+    advanced_entities = (
+        "guesty_battery_voltage",
+        "guesty_awake_duration",
+        "guesty_wake_reason",
+        "guesty_reset_reason",
+        "guesty_power_detection_method",
+        "guesty_flash_layout",
+        "guesty_delivery_status",
+        "guesty_panel_phase",
+        "guesty_panel_error",
+        "guesty_waveform_mode",
+        "guesty_border_mode",
+        "guesty_self_test_status",
+        "guesty_border_recovery_status",
+        "guesty_button_green",
+        "guesty_button_middle",
+        "guesty_button_left",
+        "guesty_panel_self_test",
+        "guesty_border_recovery",
+    )
+    for entity_id in advanced_entities:
+        assert "internal: ${advanced_diagnostics_internal}" in entity_block(entity_id)
+
+    everyday_entities = (
+        "guesty_battery_level",
+        "guesty_last_booking",
+        "guesty_terminal_endpoint",
+        "guesty_external_power",
+        "guesty_refresh_display",
+        "guesty_restart",
+    )
+    for entity_id in everyday_entities:
+        assert "internal:" not in entity_block(entity_id)
+
+
 def test_border_recovery_is_bounded_external_power_only_and_keeps_proofs() -> None:
     """Condition the border once without coupling it to normal pixel refreshes."""
     package = PACKAGE_FILE.read_text(encoding="utf-8")
@@ -478,10 +534,62 @@ def test_border_recovery_is_bounded_external_power_only_and_keeps_proofs() -> No
     assert "id(guesty_content_id).clear()" not in recovery
     assert "id(guesty_base_content_id).clear()" not in recovery
     assert "id(guesty_render_revision)" not in recovery
+    assert "id(guesty_border_conditioning_revision) = 1" in recovery
     assert "name: E-paper Randkorrektur" in package
     assert "name: E-paper border recovery" in package
     assert package.count("request_border_recovery()") == 3
-    assert package.count("id(guesty_render_revision) != 31") == 2
+    assert (
+        len(re.findall(r"id\(guesty_border_conditioning_revision\)\s*!= 1", package))
+        == 4
+    )
+    assert "id(guesty_render_revision) != 31" not in package
+    border_revision_start = package.index(
+        "  - id: guesty_border_conditioning_revision\n"
+    )
+    border_revision_end = package.index("\n  - id:", border_revision_start + 1)
+    border_revision = package[border_revision_start:border_revision_end]
+    assert "restore_value: true" in border_revision
+
+
+def test_grayscale_tone_curve_lightens_midtones_without_moving_endpoints() -> None:
+    """Mix adjacent native levels while retaining exact paper and black."""
+    package = PACKAGE_FILE.read_text(encoding="utf-8")
+    driver = DRIVER_FILE.read_text(encoding="utf-8")
+    header = DRIVER_FILE.with_suffix(".h").read_text(encoding="utf-8")
+    platform = DRIVER_FILE.with_name("display.py").read_text(encoding="utf-8")
+
+    assert 'gray_gamma: "1.35"' in package
+    assert "cv.Optional(CONF_GRAY_GAMMA, default=1.35)" in platform
+    assert "min=1.0, max=2.2" in platform
+    assert "var.set_gray_gamma(config[CONF_GRAY_GAMMA])" in platform
+    assert "float gray_gamma_{1.35f};" in header
+    assert "std::array<uint8_t, 256> tone_curve_{};" in header
+    assert "std::pow(normalized, this->gray_gamma_)" in driver
+    assert "static constexpr uint8_t BAYER_4X4[16]" in driver
+    assert "threshold < fraction" in driver
+    assert "return 3U - ink_level;" in driver
+    assert package.count("const bool tone_curve_current") == 2
+    assert package.count("|| !tone_curve_current") == 2
+    assert package.count("id(guesty_rendered_gray_gamma_x100) =") == 2
+    gamma_state_start = package.index("  - id: guesty_rendered_gray_gamma_x100\n")
+    gamma_state_end = package.index("\n  - id:", gamma_state_start + 1)
+    assert "restore_value: true" in package[gamma_state_start:gamma_state_end]
+
+    bayer = (0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5)
+
+    def rendered_levels(coverage: int) -> list[int]:
+        fixed_ink = round(math.pow(coverage / 255, 1.35) * 3 * 16)
+        base, fraction = divmod(fixed_ink, 16)
+        return [3 - (base + (threshold < fraction)) for threshold in bayer]
+
+    assert set(rendered_levels(0)) == {3}
+    assert set(rendered_levels(255)) == {0}
+    light_gray = rendered_levels(85)
+    assert light_gray.count(2) == 11
+    assert light_gray.count(3) == 5
+    dark_gray = rendered_levels(170)
+    assert dark_gray.count(1) == 12
+    assert dark_gray.count(2) == 4
 
 
 def test_firmware_flash_layout_requires_explicit_usb_migration(tmp_path) -> None:
@@ -553,6 +661,7 @@ def test_v10_action_acknowledges_only_confirmed_panel_delivery() -> None:
         "id(guesty_failed_content_suppressed) =\n"
         "                            id(guesty_content_changed)\n"
         "                            && !force_redraw\n"
+        "                            && !border_conditioning_needed\n"
         "                            && !content_id.empty()\n"
         "                            && content_id == id(guesty_failed_content_id);"
     )
@@ -1365,7 +1474,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.46", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.47", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -1377,8 +1486,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.46") == 2
-    assert 'version: "0.3.46"' in updated
+    assert updated.count("ref: v0.3.47") == 2
+    assert 'version: "0.3.47"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -1409,7 +1518,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
 def test_update_managed_firmware_configs_rejects_invalid_credentials(
     tmp_path, broken_line
 ) -> None:
-    valid = render_firmware_config(_options()).replace("0.3.46", "0.3.10")
+    valid = render_firmware_config(_options()).replace("0.3.47", "0.3.10")
     if "key:" in broken_line:
         invalid = valid.replace(
             next(line for line in valid.splitlines() if "key:" in line), broken_line
@@ -1446,14 +1555,14 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.46", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.47", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     future.chmod(0o600)
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.46", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.47", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")

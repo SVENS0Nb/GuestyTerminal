@@ -122,16 +122,56 @@ Single-SPI und übertrug nur die neue DTM2-Ebene (`R13h`). Er verwendete weder
 die Custom-Graustufen-LUTs noch `R52h` oder die Force-Temperature-Auswahl des
 Vier-Grau-Pfads.
 
-Der neue, noch hardwarezuprüfende Testpfad wechselt nicht zum alten Treiber
-zurück. Er implementiert diese funktionale UC8179-Registerfolge unabhängig aus
-dem offiziellen Datenblatt als einmaligen, extern-versorgten Vorlauf im
-aktuellen Treiber. Danach wird exakt derselbe, unangetastete Vier-Grau-
-Framebuffer mit der ausgewählten aktuellen Pixelwellenform und hochohmigem Rand
-neu gezeichnet. Renderrevision 31 fordert den Test einmalig an; der manuelle
-Button **E-paper Randkorrektur** wiederholt ihn kontrolliert. Spätere identische
-Inhalte bleiben durch den erfolgreichen Inhalts- und Rendernachweis
-unterdrückt. ESPHomes GPL-Treibercode wurde nur zur historischen
+Firmware 0.3.46 wechselt nicht zum alten Treiber zurück. Sie implementiert
+diese funktionale UC8179-Registerfolge unabhängig aus dem offiziellen
+Datenblatt als einmaligen, nur bei bestätigter externer Versorgung zulässigen
+Vorlauf im aktuellen Treiber:
+
+1. Der UC8179 wird für den früher randfreien monochromen KW-OTP-Zustand mit
+   `R01h=07,07,3F,3F`, `R50h=0x10,0x07`, `R60h=0x22`, `R00h=0x1F`, der
+   800×480-Geometrie in `R61h` und Single-SPI über `R15h=0x00` initialisiert.
+2. Der aktuelle Framebuffer wird nur für diesen Vorlauf nach Schwarzweiß
+   quantisiert und ausschließlich als neue DTM2-Ebene über `R13h` übertragen.
+   Nach dem abgeschlossenen Refresh wird der Controller sauber ausgeschaltet.
+3. Anschließend wird exakt derselbe, unangetastete Vier-Grau-Framebuffer mit
+   dem aktuellen Vier-Graustufen-Treiber, der ausgewählten Pixelwellenform und
+   hochohmiger Randelektrode neu gezeichnet.
+
+Der Realgerätetest am 26. August 2026 bestätigte das Ergebnis: Der zuvor auch
+nach mehreren LUTBD-, High-Z- und Custom-LUT-Versuchen sichtbare dunkle bzw.
+graue Außenrand ist nach diesem Ablauf vollständig verschwunden; Text und Bild
+bleiben im kontrastreichen `auto/otp`-Graustufenpfad schwarz. Die zwei direkt
+aufeinanderfolgenden Panelaktualisierungen beim ersten maßgeblichen Bild sind
+absichtlich der Monochrom-Vorlauf und der endgültige Vier-Grau-Aufbau, nicht
+zwei Home-Assistant-Payloads. In Firmware 0.3.46 gilt verbindlich:
+Renderrevision 31 fordert den Test einmalig an. Neuere Firmwarestände bewahren
+den erfolgreichen Rand-Vorlauf in einem eigenen, nicht sensiblen
+Konditionierungsstand auf. Dadurch können Layout, Schrift oder Tonkurve einen
+notwendigen Pixel-Neuaufbau auslösen, ohne den Rand-Vorlauf erneut zu starten.
+Spätere identische Inhalte bleiben durch den erfolgreichen Inhalts- und
+Rendernachweis ohne weitere physische Aktualisierung unterdrückt.
+
+Ist das Pixelbild insgesamt zu dunkel, wird die Helligkeit nicht über
+`gray_lut_mode` oder die Randkorrektur eingestellt. Die Substitution
+`gray_gamma` steuert ausschließlich die mittleren Pixelstufen: `1.35` ist der
+hellere Standard, `1.0` entspricht der früheren dunkleren Abstufung. Schwarz
+und Weiß bleiben bei beiden Werten unverändert.
+
+Diese Abgrenzung ist für künftige Änderungen verbindlich: Den Rand nicht über
+den Renderer, einen Pixelrahmen, die Custom-Graustufen-LUT oder eine späte
+`R50h`-Änderung beim Ausschalten behandeln. Diese Ansätze entfernten den
+bistabilen Rand nicht oder hellten zugleich die Schrift auf. Der funktionierende
+Monochrom-Vorlauf darf nicht periodisch ausgeführt, nicht mit Gastdaten oder
+Inhaltsfingerabdrücken gekoppelt und nicht durch einen Wechsel zurück zum alten
+GPL-Treiber ersetzt werden. ESPHomes GPL-Treibercode wurde nur zur historischen
 Verhaltenszuordnung verglichen und nicht übernommen.
+
+Die zugehörigen Hardwaretest-, Randkorrektur- und Controllerdiagnosen sind in
+der normalen Alltagsansicht nicht sichtbar. Für eine begrenzte Fehlersuche kann
+`advanced_diagnostics_internal: "false"` in den YAML-`substitutions` gesetzt
+und die Firmware erneut installiert werden. Danach stellt `"true"` wieder die
+reduzierte Standardansicht her; die Diagnosefunktionen selbst werden dabei
+nicht aus der Firmware entfernt.
 
 ### Nebenbefund: WLAN-QR in ESPHome-Diagnose
 

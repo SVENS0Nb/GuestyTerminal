@@ -6,6 +6,14 @@ substitutions:
   battery_sleep_duration: 30min
   awake_duration_seconds: "90"
   gray_lut_mode: auto
+  # A mild display tone curve keeps black/white exact while making the two
+  # intermediate grays visibly lighter through deterministic 4x4 dithering.
+  # Use 1.0 for the former, darker four-level quantization.
+  gray_gamma: "1.35"
+  # Keep the normal Home Assistant device page focused on everyday controls.
+  # Set this to "false" temporarily when advanced hardware diagnostics are
+  # needed; the entities continue to exist locally in either mode.
+  advanced_diagnostics_internal: "true"
   # Existing OTA configurations without this substitution use ESPHome's
   # historic 4 MB layout. Newly USB-installed devices may select expanded_32mb.
   flash_layout: legacy_4mb
@@ -268,7 +276,19 @@ api:
                   else:
                     - lambda: |-
                         const bool renderer_current =
-                            id(guesty_render_revision) == 31;
+                            id(guesty_render_revision) == 32;
+                        const int configured_gray_gamma_x100 =
+                            static_cast<int>(std::lround(
+                                ${gray_gamma} * 100.0f));
+                        const bool tone_curve_current =
+                            id(guesty_rendered_gray_gamma_x100)
+                                == configured_gray_gamma_x100;
+                        const bool confirmed_external_power =
+                            id(guesty_external_power).has_state()
+                            && id(guesty_external_power).state;
+                        const bool border_conditioning_needed =
+                            confirmed_external_power
+                            && id(guesty_border_conditioning_revision) != 1;
                         int battery_percent = -1;
                         if (id(guesty_battery_level).has_state()
                             && std::isfinite(id(guesty_battery_level).state)) {
@@ -287,10 +307,13 @@ api:
                             || content_id.empty()
                             || content_id != id(guesty_content_id)
                             || !renderer_current
+                            || !tone_curve_current
+                            || border_conditioning_needed
                             || battery_changed;
                         id(guesty_failed_content_suppressed) =
                             id(guesty_content_changed)
                             && !force_redraw
+                            && !border_conditioning_needed
                             && !content_id.empty()
                             && content_id == id(guesty_failed_content_id);
                         id(guesty_delivery_unchanged) =
@@ -299,6 +322,7 @@ api:
                             id(guesty_content_changed)
                             && !force_redraw
                             && renderer_current
+                            && tone_curve_current
                             && !content_id.empty()
                             && !base_content_id.empty()
                             && base_content_id == id(guesty_base_content_id)
@@ -306,6 +330,7 @@ api:
                         id(guesty_battery_only_changed) = battery_changed
                             && !force_redraw
                             && renderer_current
+                            && tone_curve_current
                             && !content_id.empty()
                             && content_id == id(guesty_content_id);
                         id(guesty_privacy_clear_pending) =
@@ -406,14 +431,17 @@ api:
                                 && !id(guesty_failed_content_suppressed);
                         then:
                           - lambda: |-
-                              const bool renderer_upgrade =
-                                  id(guesty_render_revision) != 31;
                               const bool confirmed_external_power =
                                   id(guesty_external_power).has_state()
                                   && id(guesty_external_power).state;
-                              if (renderer_upgrade
-                                  && confirmed_external_power) {
+                              const bool border_conditioning_needed =
+                                  confirmed_external_power
+                                  && id(guesty_border_conditioning_revision)
+                                      != 1;
+                              id(guesty_border_conditioning_requested) = false;
+                              if (border_conditioning_needed) {
                                 id(guesty_epaper).request_border_recovery();
+                                id(guesty_border_conditioning_requested) = true;
                               } else if (id(guesty_weather_only_changed)
                                          || id(guesty_battery_only_changed)) {
                                 id(guesty_epaper).request_partial_update();
@@ -448,7 +476,15 @@ api:
                                           id(guesty_content_id) = content_id;
                                           id(guesty_base_content_id) =
                                               base_content_id;
-                                          id(guesty_render_revision) = 31;
+                                          id(guesty_render_revision) = 32;
+                                          id(guesty_rendered_gray_gamma_x100) =
+                                              static_cast<int>(std::lround(
+                                                  ${gray_gamma} * 100.0f));
+                                          if (id(guesty_border_conditioning_requested)) {
+                                            id(guesty_border_conditioning_revision) =
+                                                1;
+                                          }
+                                          id(guesty_border_conditioning_requested) = false;
                                           id(guesty_failed_content_id).clear();
                                           id(guesty_screen_sensitive) =
                                               mode != "idle";
@@ -627,7 +663,18 @@ api:
                     && !id(guesty_epaper).update_in_progress();
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            const bool renderer_current = id(guesty_render_revision) == 31;
+            const bool renderer_current = id(guesty_render_revision) == 32;
+            const int configured_gray_gamma_x100 =
+                static_cast<int>(std::lround(${gray_gamma} * 100.0f));
+            const bool tone_curve_current =
+                id(guesty_rendered_gray_gamma_x100)
+                    == configured_gray_gamma_x100;
+            const bool confirmed_external_power =
+                id(guesty_external_power).has_state()
+                && id(guesty_external_power).state;
+            const bool border_conditioning_needed =
+                confirmed_external_power
+                && id(guesty_border_conditioning_revision) != 1;
             int battery_percent = -1;
             if (id(guesty_battery_level).has_state()
                 && std::isfinite(id(guesty_battery_level).state)) {
@@ -643,10 +690,13 @@ api:
             id(guesty_content_changed) = force_redraw || content_id.empty()
                 || content_id != id(guesty_content_id)
                 || !renderer_current
+                || !tone_curve_current
+                || border_conditioning_needed
                 || battery_changed;
             id(guesty_weather_only_changed) = id(guesty_content_changed)
                 && !force_redraw
                 && renderer_current
+                && tone_curve_current
                 && !content_id.empty()
                 && !base_content_id.empty()
                 && base_content_id == id(guesty_base_content_id)
@@ -654,6 +704,7 @@ api:
             id(guesty_battery_only_changed) = battery_changed
                 && !force_redraw
                 && renderer_current
+                && tone_curve_current
                 && !content_id.empty()
                 && content_id == id(guesty_content_id);
             id(guesty_privacy_clear_pending) =
@@ -736,13 +787,16 @@ api:
               lambda: return id(guesty_content_changed);
             then:
               - lambda: |-
-                  const bool renderer_upgrade =
-                      id(guesty_render_revision) != 31;
                   const bool confirmed_external_power =
                       id(guesty_external_power).has_state()
                       && id(guesty_external_power).state;
-                  if (renderer_upgrade && confirmed_external_power) {
+                  const bool border_conditioning_needed =
+                      confirmed_external_power
+                      && id(guesty_border_conditioning_revision) != 1;
+                  id(guesty_border_conditioning_requested) = false;
+                  if (border_conditioning_needed) {
                     id(guesty_epaper).request_border_recovery();
+                    id(guesty_border_conditioning_requested) = true;
                   } else if (id(guesty_weather_only_changed)
                              || id(guesty_battery_only_changed)) {
                     id(guesty_epaper).request_partial_update();
@@ -763,7 +817,14 @@ api:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
-                        id(guesty_render_revision) = 31;
+                        id(guesty_render_revision) = 32;
+                        id(guesty_rendered_gray_gamma_x100) =
+                            static_cast<int>(std::lround(
+                                ${gray_gamma} * 100.0f));
+                        if (id(guesty_border_conditioning_requested)) {
+                          id(guesty_border_conditioning_revision) = 1;
+                        }
+                        id(guesty_border_conditioning_requested) = false;
                         id(guesty_screen_sensitive) = mode != "idle";
                         id(guesty_valid_until_epoch) =
                             mode == "idle" ? 0 : valid_until_epoch;
@@ -988,6 +1049,23 @@ globals:
     type: uint32_t
     restore_value: true
     initial_value: "0"
+  # A local tone-curve substitution is renderer state too. Persist only its
+  # non-sensitive hundredth-step value so changing gray_gamma forces one full
+  # repaint even when Home Assistant sends an identical content fingerprint.
+  - id: guesty_rendered_gray_gamma_x100
+    type: int
+    restore_value: true
+    initial_value: "-1"
+  # Keep the one-time physical border conditioning independent from ordinary
+  # renderer revisions. A later font, layout or tone change must repaint the
+  # pixels once without repeating the already proven two-pass border cycle.
+  - id: guesty_border_conditioning_revision
+    type: uint32_t
+    restore_value: true
+    initial_value: "0"
+  - id: guesty_border_conditioning_requested
+    type: bool
+    initial_value: "false"
   # The empty-room battery widget is quantized to five-percent steps. Persist
   # only the last successfully drawn value so regular wake cycles can suppress
   # redundant panel activity while still updating the small header window.
@@ -1394,6 +1472,7 @@ script:
                   id(guesty_border_recovery_result) = "hardware_timeout";
                 } else if (id(guesty_epaper).last_update_successful()) {
                   id(guesty_border_recovery_result) = "success";
+                  id(guesty_border_conditioning_revision) = 1;
                 } else {
                   id(guesty_border_recovery_result) = "failed";
                 }
@@ -1795,6 +1874,7 @@ sensor:
     id: guesty_battery_voltage
     pin: GPIO1
     name: Battery voltage
+    internal: ${advanced_diagnostics_internal}
     entity_category: diagnostic
     update_interval: never
     attenuation: 12db
@@ -1838,6 +1918,7 @@ sensor:
   - platform: template
     id: guesty_awake_duration
     name: Awake duration
+    internal: ${advanced_diagnostics_internal}
     unit_of_measurement: s
     accuracy_decimals: 0
     icon: mdi:timer-outline
@@ -1862,6 +1943,7 @@ text_sensor:
   - platform: template
     id: guesty_wake_reason
     name: Wake-up reason
+    internal: ${advanced_diagnostics_internal}
     icon: mdi:power-sleep
     entity_category: diagnostic
     update_interval: never
@@ -1883,6 +1965,7 @@ text_sensor:
   - platform: template
     id: guesty_reset_reason
     name: Reset reason
+    internal: ${advanced_diagnostics_internal}
     icon: mdi:restart-alert
     entity_category: diagnostic
     update_interval: never
@@ -1911,12 +1994,14 @@ text_sensor:
   - platform: template
     id: guesty_power_detection_method
     name: Power detection method
+    internal: ${advanced_diagnostics_internal}
     icon: mdi:power-plug-battery
     entity_category: diagnostic
     update_interval: never
   - platform: template
     id: guesty_flash_layout
     name: Flash layout
+    internal: ${advanced_diagnostics_internal}
     icon: mdi:memory
     entity_category: diagnostic
     update_interval: never
@@ -1934,6 +2019,7 @@ text_sensor:
   - platform: template
     id: guesty_delivery_status
     name: Display delivery status
+    internal: ${advanced_diagnostics_internal}
     icon: mdi:send-check-outline
     entity_category: diagnostic
     update_interval: never
@@ -1941,6 +2027,7 @@ text_sensor:
   - platform: template
     id: guesty_panel_phase
     name: E-paper phase
+    internal: ${advanced_diagnostics_internal}
     icon: mdi:progress-wrench
     entity_category: diagnostic
     update_interval: never
@@ -1948,6 +2035,7 @@ text_sensor:
   - platform: template
     id: guesty_panel_error
     name: E-paper error
+    internal: ${advanced_diagnostics_internal}
     icon: mdi:alert-circle-outline
     entity_category: diagnostic
     update_interval: never
@@ -1955,6 +2043,7 @@ text_sensor:
   - platform: template
     id: guesty_waveform_mode
     name: E-paper waveform
+    internal: ${advanced_diagnostics_internal}
     icon: mdi:sine-wave
     entity_category: diagnostic
     update_interval: never
@@ -1962,6 +2051,7 @@ text_sensor:
   - platform: template
     id: guesty_border_mode
     name: E-paper border mode
+    internal: ${advanced_diagnostics_internal}
     icon: mdi:border-outside
     entity_category: diagnostic
     update_interval: never
@@ -1969,6 +2059,7 @@ text_sensor:
   - platform: template
     id: guesty_self_test_status
     name: E-paper self-test
+    internal: ${advanced_diagnostics_internal}
     icon: mdi:test-tube
     entity_category: diagnostic
     update_interval: never
@@ -1976,6 +2067,7 @@ text_sensor:
   - platform: template
     id: guesty_border_recovery_status
     name: E-paper border recovery
+    internal: ${advanced_diagnostics_internal}
     icon: mdi:border-outside
     entity_category: diagnostic
     update_interval: never
@@ -2003,6 +2095,7 @@ binary_sensor:
   - platform: gpio
     id: guesty_button_green
     name: Green button
+    internal: ${advanced_diagnostics_internal}
     entity_category: diagnostic
     pin:
       number: GPIO3
@@ -2015,6 +2108,7 @@ binary_sensor:
   - platform: gpio
     id: guesty_button_middle
     name: Middle button
+    internal: ${advanced_diagnostics_internal}
     entity_category: diagnostic
     pin:
       number: GPIO4
@@ -2026,6 +2120,7 @@ binary_sensor:
   - platform: gpio
     id: guesty_button_left
     name: Left button
+    internal: ${advanced_diagnostics_internal}
     entity_category: diagnostic
     pin:
       number: GPIO5
@@ -2060,6 +2155,7 @@ button:
   - platform: template
     id: guesty_panel_self_test
     name: E-paper Hardwaretest
+    internal: ${advanced_diagnostics_internal}
     icon: mdi:test-tube
     entity_category: diagnostic
     on_press:
@@ -2067,6 +2163,7 @@ button:
   - platform: template
     id: guesty_border_recovery
     name: E-paper Randkorrektur
+    internal: ${advanced_diagnostics_internal}
     icon: mdi:border-outside
     entity_category: diagnostic
     on_press:
@@ -2093,6 +2190,7 @@ display:
     data_pin:
       number: GPIO9
       allow_other_uses: true
+    gray_gamma: ${gray_gamma}
     lut_mode: ${gray_lut_mode}
     cs_pin: GPIO10
     dc_pin: GPIO11

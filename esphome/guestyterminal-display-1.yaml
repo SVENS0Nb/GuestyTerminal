@@ -5,6 +5,7 @@ substitutions:
   battery_sleep_duration: 30min
   awake_duration_seconds: "90"
   gray_lut_mode: auto
+  gray_gamma: "1.35"
   # Keep this existing OTA device on its current partition table. Select
   # expanded_32mb only together with a one-time complete USB installation.
   flash_layout: legacy_4mb
@@ -26,7 +27,7 @@ esphome:
   friendly_name: ${friendly_name}
   project:
     name: guestyterminal.reterminal-e1001
-    version: "0.3.46"
+    version: "0.3.47"
 
 esp32:
   board: esp32-s3-devkitc-1

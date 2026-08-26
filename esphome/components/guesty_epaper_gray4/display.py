@@ -19,6 +19,7 @@ DEPENDENCIES = ["spi"]
 
 CONF_CLOCK_PIN = "clock_pin"
 CONF_DATA_PIN = "data_pin"
+CONF_GRAY_GAMMA = "gray_gamma"
 CONF_LUT_MODE = "lut_mode"
 CONF_PARTIAL_REFRESH = "partial_refresh"
 CONF_X = "x"
@@ -77,6 +78,9 @@ CONFIG_SCHEMA = cv.All(
             cv.Required(CONF_BUSY_PIN): pins.gpio_input_pin_schema,
             cv.Required(CONF_CLOCK_PIN): pins.gpio_output_pin_schema,
             cv.Required(CONF_DATA_PIN): pins.gpio_output_pin_schema,
+            cv.Optional(CONF_GRAY_GAMMA, default=1.35): cv.float_range(
+                min=1.0, max=2.2
+            ),
             cv.Optional(CONF_LUT_MODE, default="auto"): cv.enum(LUT_MODES, lower=True),
             cv.Optional(CONF_PARTIAL_REFRESH): PARTIAL_REFRESH_SCHEMA,
             cv.Optional(CONF_RESET_DURATION): cv.All(
@@ -112,6 +116,7 @@ async def to_code(config):
     cg.add(var.set_clock_pin(clock_pin))
     data_pin = await cg.gpio_pin_expression(config[CONF_DATA_PIN])
     cg.add(var.set_data_pin(data_pin))
+    cg.add(var.set_gray_gamma(config[CONF_GRAY_GAMMA]))
     cg.add(var.set_lut_mode(config[CONF_LUT_MODE]))
 
     if partial := config.get(CONF_PARTIAL_REFRESH):

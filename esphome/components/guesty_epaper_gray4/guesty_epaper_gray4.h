@@ -53,6 +53,7 @@ class GuestyEPaperGray4
   void set_busy_pin(GPIOPin *busy_pin) { this->busy_pin_ = busy_pin; }
   void set_clock_pin(GPIOPin *clock_pin) { this->clock_pin_ = clock_pin; }
   void set_data_pin(GPIOPin *data_pin) { this->data_pin_ = data_pin; }
+  void set_gray_gamma(float gray_gamma) { this->gray_gamma_ = gray_gamma; }
   void set_lut_mode(LutMode lut_mode) { this->configured_lut_mode_ = lut_mode; }
   void set_reset_duration(uint32_t duration) { this->reset_duration_ = duration; }
   void set_partial_refresh_window(uint16_t x, uint16_t y, uint16_t width,
@@ -123,7 +124,9 @@ class GuestyEPaperGray4
   int get_width_internal() override { return WIDTH; }
   int get_height_internal() override { return HEIGHT; }
 
-  static uint8_t color_to_panel_gray_(Color color);
+  static uint8_t color_coverage_(Color color);
+  uint8_t color_to_dithered_panel_gray_(Color color, int x, int y) const;
+  void rebuild_tone_curve_();
   static constexpr uint32_t get_buffer_length_() { return WIDTH * HEIGHT / 4U; }
 
   void command_(uint8_t value);
@@ -198,6 +201,8 @@ class GuestyEPaperGray4
   uint16_t partial_width_{0};
   uint16_t partial_height_{0};
   uint8_t max_partial_updates_{5};
+  float gray_gamma_{1.35f};
+  std::array<uint8_t, 256> tone_curve_{};
   std::array<uint8_t, PARTIAL_BUFFER_CAPACITY> partial_previous_{};
   std::array<uint8_t, PARTIAL_BUFFER_CAPACITY> partial_current_{};
   LutMode configured_lut_mode_{LUT_MODE_AUTO};

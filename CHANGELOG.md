@@ -2,6 +2,60 @@
 
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
 
+## 0.3.47 – 2026-08-26
+
+### Helleres, fein abgestuftes Gesamtbild
+
+- Die Standard-Tonkurve hellt beide mittleren Graubereiche auf, ohne echtes
+  Schwarz, reines Weiß, QR-Code oder Türcode zu verändern. Eine feste
+  4×4-Matrix mischt benachbarte native Panelstufen, damit die bisher zu dunkle
+  hellste Graustufe nicht direkt zu reinem Weiß springen muss.
+- `gray_gamma: "1.35"` ist der neue, milde Standard; `1.0` stellt die bisherige
+  dunklere Abstufung wieder her. Das Muster ist positionsstabil und verändert
+  daher weder die Inhaltsunterdrückung noch die Teilrefresh-Basis. Eine lokale
+  Änderung des Werts erzwingt automatisch genau einen Vollaufbau.
+- Renderrevision 32 erzwingt genau einen Neuaufbau mit der neuen Tonkurve. Der
+  erfolgreiche Rand-Vorlauf erhält dabei erstmals einen eigenen gespeicherten
+  Stand. Ein Upgrade von 0.3.46 kann den sicheren Zwei-Pass-Ablauf deshalb
+  einmalig wiederholen, um diesen bislang fehlenden Nachweis zu setzen; spätere
+  Layout-, Schrift- oder Tonkurvenrevisionen wiederholen ihn nicht mehr.
+
+### Realgerätbestätigung der Randkorrektur
+
+- Der Realgerätetest mit Firmware 0.3.46 bestätigt den unabhängig
+  implementierten monochromen KW-OTP-Vorlauf: Der dunkle/graue Außenrand ist
+  vollständig verschwunden, während Schrift und Vier-Grau-Bild im
+  kontrastreichen `auto/otp`-Pfad schwarz bleiben.
+- Die Projektdokumentation hält Ursache, Registerfolge, absichtlichen
+  Zwei-Pass-Aufbau und die erfolglosen früheren Ansätze verbindlich fest, damit
+  eine spätere Treiberänderung die Korrektur nicht unbemerkt zurücknimmt.
+
+### Aufgeräumte Home-Assistant-Geräteseite
+
+- Standardmäßig veröffentlicht die Display-Firmware nur noch die im Alltag
+  hilfreichen Entitäten: Batteriestand, externe Stromversorgung,
+  Temperatur/Luftfeuchte, angezeigte Buchung, manuelle Aktualisierung und
+  Neustart. Der für die Integration erforderliche Endpoint bleibt sichtbar.
+- Technische Hardwarediagnosen, die drei physischen Tastenzustände sowie
+  Hardwaretest und Randkorrektur bleiben funktionsfähig, sind im Standardprofil
+  aber intern. Mit `advanced_diagnostics_internal: "false"` lassen sie sich für
+  eine begrenzte Fehlersuche vollständig einblenden.
+
+### Prüfung und Aktualisierung
+
+- 293 Tests bestanden gegen Home Assistant 2025.12.0 und 2026.2.3 mit 90,72 %
+  Branch-Abdeckung. Ruff, Formatprüfung, Mypy, Compileall und
+  Release-Vorprüfung sind erfolgreich.
+- Beide ESPHome-2026.8.1-Profile wurden vollständig kompiliert. Das sichere
+  4-MB-OTA-Profil belegt 82,3 % Flash und 42,1 % RAM; das optionale
+  32-MB-USB-Profil belegt 9,1 % Flash und 42,1 % RAM.
+- Version 0.3.47 benötigt gemeinsam ein HACS-/Integrationsupdate und ein
+  Display-Firmwareupdate. Bestehende 4-MB-Geräte können normal per OTA
+  aktualisiert werden; das Flashlayout bleibt unverändert. Die Randkorrektur
+  aus 0.3.46 wurde am realen E1001 bestätigt, die neue Gamma-Tonkurve und die
+  vollständige Voll-/Teilrefresh- und Tiefschlafmatrix von 0.3.47 jedoch noch
+  nicht auf einem realen Gerät geprüft.
+
 ## 0.3.46 – 2026-08-26
 
 ### Isolierter Monochrom-Test für den Panelrand
@@ -24,8 +78,9 @@ Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
 - ESPHomes GPLv3-Quelltext diente nur zur historischen Verhaltenszuordnung. Die
   neue Registerfolge ist unabhängig aus dem offiziellen UC8179-Datenblatt
   implementiert; es wurden kein GPL-Code und keine zusätzlichen
-  Wellenformtabellen übernommen. Der sichtbare Effekt ist bis zum Test auf dem
-  realen E1001 noch nicht bestätigt.
+  Wellenformtabellen übernommen. Zum Veröffentlichungszeitpunkt war der
+  sichtbare Effekt noch nicht auf dem realen E1001 bestätigt; die spätere
+  Bestätigung ist im Abschnitt **0.3.47** dokumentiert.
 - 291 Tests bestanden gegen Home Assistant 2025.12.0 und 2026.2.3 mit 90,72 %
   Branch-Abdeckung. Ruff, Mypy, Compileall, Release-Vorprüfung sowie die
   vollständige Kompilierung beider ESPHome-2026.8.1-Flashprofile sind

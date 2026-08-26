@@ -256,6 +256,15 @@ incomplete change.
   `3 - framebuffer_gray` before its least- and most-significant bits are sent
   to `0x10` and `0x13`. The monochrome differential path keeps its independent
   convention of `0=black`, `1=white`.
+- Preserve exact black and white endpoints in the configurable grayscale tone
+  curve. Intermediate coverage uses a deterministic, coordinate-stable 4x4
+  ordered dither between adjacent native levels; the default gamma is 1.35 and
+  1.0 is the legacy darker mapping. Do not apply random/error-diffusion state,
+  change QR/code endpoints, or let the tone curve alter UC8179 waveform,
+  polarity, border conditioning, or the retained monochrome partial baseline.
+  Persist the non-sensitive configured gamma separately and require one full
+  refresh when it changes; an identical content fingerprint must not suppress
+  a locally reconfigured tone curve.
 - Do not refresh the physical panel when visible content is unchanged. The
   `content_id` includes every visible field and a high-entropy reservation ID;
   `base_content_id` intentionally excludes weather.
@@ -302,9 +311,20 @@ incomplete change.
   framebuffer quantized to monochrome only through DTM2/R13h; then refresh and
   power down. Immediately redraw the untouched four-level framebuffer with the
   selected OTP/register pixel waveform and high-Z border. This is a functional
-  compatibility sequence, not a driver switch. Never copy GPL ESPHome driver
-  code, turn the recovery into a periodic refresh, or let it change content
-  fingerprints. Do not copy panel OTP bytes into `R25h`: the previously added
+  compatibility sequence, not a driver switch. The real-device test on
+  2026-08-26 confirmed that this sequence removes the dark/gray outer border
+  while preserving black text and four-gray content in `auto/otp` mode. Treat
+  that result as a regression requirement: the initial two physical refreshes
+  are the intentional monochrome conditioning pass and final grayscale frame,
+  while later identical payloads must remain suppressed.
+  Never copy GPL ESPHome driver code, turn the recovery into a periodic
+  refresh, or let it change content fingerprints. Persist its non-sensitive
+  success revision
+  separately from `guesty_render_revision`, so later renderer upgrades repaint
+  once without repeating a proven conditioning pass. If a device first
+  upgrades on battery, retain the pending conditioning state and complete it
+  once on confirmed external power. Do not copy panel OTP bytes into `R25h`:
+  the previously added
   `R25/LUTBD` path left `BUSY_N` asserted after the visible frame settled on
   the real E1001 and produced repeated identical redraw attempts. The `auto`
   probe may read check codes and grayscale markers twice, with bank 0 priority,
@@ -324,7 +344,7 @@ incomplete change.
 - `guesty_render_revision` invalidates otherwise-identical images after a
   rendering or driver change. When a visible rendering change requires one
   repaint, increment the expected value and the stored-success value together,
-  and update their tests. The current source revision is 31.
+  and update their tests. The current source revision is 32.
 - Publish the displayed-booking confirmation only after a successful physical
   refresh, or when a restored matching fingerprint proves the same content was
   previously drawn.
@@ -371,11 +391,15 @@ incomplete change.
   Convert voltage to percent with ESPHome's exact piecewise calibration points
   from 3.27 V/0% through 4.15 V/100%; do not replace them with a least-squares
   line. This remains a voltage estimate rather than a coulomb counter.
-- Preserve the diagnostic entities `Battery voltage`, `Battery level`,
+- Preserve the diagnostic values `Battery voltage`, `Battery level`,
   `Wake-up reason`, and `Awake duration`, plus `External power` and
-  `Power detection method`. Publish awake duration through the shared sleep
-  script immediately before deep sleep, and keep timer, button, cold-boot, and
-  other wake reasons distinguishable.
+  `Power detection method`. The default everyday entity profile exposes
+  battery level and external power, while advanced hardware-only values remain
+  local through `advanced_diagnostics_internal: "true"`. Setting that
+  substitution to `"false"` must expose the complete diagnostic set without a
+  different firmware build or lost functionality. Publish awake duration
+  through the shared sleep script immediately before deep sleep, and keep
+  timer, button, cold-boot, and other wake reasons distinguishable.
 - Route every normal battery sleep entry through that shared script. It must
   disable the battery measurement circuit and unused peripherals, publish the
   awake duration, mark the OTA boot successful, and only then enter deep sleep;

@@ -124,6 +124,20 @@ Release-Notizen aus dem aktuellen Changelog. Erst danach legt er den annotierten
 Tag und das GitHub-Release an. Ein vorhandener Tag wird nur dann wiederverwendet,
 wenn er exakt auf denselben geprüften Commit zeigt.
 
+Version 0.3.47 verwendet Renderrevision 32, eine feste 4×4-Matrix und eine
+standardmäßige Gamma-Tonkurve von 1,35, um die mittleren Graustufen
+aufzuhellen. Sie reduziert außerdem die normale Home-Assistant-Geräteseite auf
+alltagstaugliche Entitäten und dokumentiert die reale Bestätigung der
+Randkorrektur aus 0.3.46. Die Version benötigt gemeinsam ein Integrations- und
+Display-Firmwareupdate; bestehende 4-MB-Geräte bleiben OTA-kompatibel.
+Hardwaretests müssen besonders bestätigen, dass reines Weiß, schwarzer Text und
+QR-Code unverändert bleiben, das Dithermuster ruhig wirkt, der monochrome
+Teilrefresh stabil bleibt und nach dem einmaligen Aufbau keine identischen
+Vollrefreshs folgen. Der neue separate Rand-Konditionierungsstand darf nur nach
+einem erfolgreichen Zwei-Pass-Ablauf gesetzt werden. Die Tonkurve und die
+vollständige Hardwarematrix sind zum Release noch nicht am realen E1001
+geprüft und müssen deshalb als `not_tested` veröffentlicht werden.
+
 Der normale Test-Workflow trennt Vorprüfung, statische Analyse, beide
 Home-Assistant-Baselines und den ESPHome-Bau. Alle Prüfzweige starten sofort
 parallel; Abhängigkeiten, der stabile ESPHome-Werkzeugsatz und nicht produktive
@@ -136,9 +150,11 @@ Monochrom-Konditionierung nach dem früher randfreien ESPHome-Modell
 `7.50inv2`. Der aktuelle Vier-Graustufen-Treiber bleibt für den endgültigen
 Bildaufbau aktiv; Renderrevision 31 fordert den Zwei-Pass-Test einmalig an.
 Die Version benötigt gemeinsam ein Integrations- und Display-Firmwareupdate.
-Bis der neue Vorlauf, Randwirkung, Inhaltsunterdrückung und die vollständige
-Voll-/Teilrefresh-Matrix auf einem realen E1001 geprüft sind, muss die
-Veröffentlichung den Hardwarestatus ausdrücklich als nicht getestet ausweisen.
+Bei der Veröffentlichung war der neue Pfad deshalb korrekt als nicht getestet
+gekennzeichnet. Der Realgerätetest am 26. August 2026 hat anschließend das
+Verschwinden des Außenrands bei weiterhin schwarzer Schrift bestätigt. Die
+vollständige Voll-/Teilrefresh- und Tiefschlafmatrix bleibt davon eine getrennte
+Hardwareprüfung und darf nicht aus diesem einzelnen Ergebnis abgeleitet werden.
 
 Version 0.3.45 trennt die Randelektrode vollständig von der gewählten
 Pixelwellenform: Normale Voll- und Teilrefreshs lassen sie hochohmig. Auf sicher
