@@ -34,21 +34,22 @@ part of the pixel data:
 
 - Datasheet: <https://files.seeedstudio.com/wiki/Other_Display/750-epaper/IC%20Driver%20UC8179.pdf>
 - Relevant command: `R25h/LUTBD`, the dedicated 42-byte, seven-group border
-  waveform table
-- Relevant fields: `R50h.BDV=00`, which selects LUTBD, and `R50h.BDZ`, which
-  releases the separate border electrode to high impedance before panel
-  power-off
+  waveform table; GuestyTerminal documents it but does not write it
+- Relevant fields: in KW mode with `DDX=00`, `R50h.BDV=01` selects the
+  black-to-white `LUTKW` for the separate border electrode
 - Relevant field: `R00h.PSR.REG`, which selects panel OTP or register LUTs
-- Relevant field: `R52h.BDEND`, whose documented default `10b` holds the border
-  at `VCOM_DC` after its refresh LUT completes
+- Relevant field: `R52h.BDEND`; GuestyTerminal independently uses the
+  datasheet-defined value `11` to release the border after its LUT completes
+- Relevant power-off behavior: `R02h` releases Source, Gate, Border, and VCOM
+  to floating, so GuestyTerminal does not add a late `R50h` override
 - Relevant OTP mapping: bank check codes at `0x0000`/`0x0C00` and the common
   LUTBD ranges `0x001F..0x0048`/`0x0C1F..0x0C48`
 
-In register-LUT mode, the panel-resident 42-byte LUTBD is read twice at runtime
-and written back to R25 on the same controller only after both reads match. OTP
-mode uses that table internally without a host-side copy. The bytes are not
-logged, bundled, committed, or redistributed. No datasheet content is bundled
-in this repository.
+GuestyTerminal reads only the selected banks' check codes and grayscale support
+markers, twice, for its retained auto-mode decision. It does not retain or
+replay the panel-resident LUTBD and never writes R25. Raw OTP waveform bytes are
+not logged, bundled, committed, or redistributed. No datasheet content is
+bundled in this repository.
 
 ## Seeed_GFX UC8179 support
 

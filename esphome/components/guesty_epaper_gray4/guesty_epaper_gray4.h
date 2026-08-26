@@ -25,10 +25,12 @@ enum LutMode : uint8_t {
  * most-significant controller bits as separate DTM1 and DTM2 planes. The
  * waveform and register sequence use Seeed's permissively licensed E1001
  * reference implementations: panel OTP waveforms where available and
- * controller-register LUTs as the compatible fallback. The separate border
- * electrode uses the panel's own common LUTBD: directly in OTP mode and as a
- * twice-validated runtime copy in register mode. It is released to high
- * impedance before power-off; no panel-specific waveform bytes are bundled.
+ * controller-register LUTs as the compatible fallback. Full refreshes keep
+ * Seeed's documented R50=0x10 border selection: in KW mode that selects the
+ * active black-to-white LUT. A datasheet-derived R52.BDEND=11 then releases
+ * the separate border electrode after the LUT has completed instead of
+ * holding it at an end voltage. POWER OFF releases all panel outputs; no
+ * panel-specific waveform bytes are bundled or copied into R25.
  */
 class GuestyEPaperGray4
     : public display::DisplayBuffer,
@@ -44,7 +46,6 @@ class GuestyEPaperGray4
   static constexpr uint32_t OTP_IDLE_TIMEOUT_MS = 3000;
   static constexpr size_t PARTIAL_BUFFER_CAPACITY = 2048;
   static constexpr size_t MONOCHROME_FRAME_LENGTH = WIDTH * HEIGHT / 8U;
-  static constexpr size_t BORDER_LUT_LENGTH = 42;
 
   void set_dc_pin(GPIOPin *dc_pin) { this->dc_pin_ = dc_pin; }
   void set_reset_pin(GPIOPin *reset_pin) { this->reset_pin_ = reset_pin; }
@@ -110,8 +111,7 @@ class GuestyEPaperGray4
   };
   enum BorderMode : uint8_t {
     BORDER_MODE_UNKNOWN = 0,
-    BORDER_MODE_PANEL_OTP,
-    BORDER_MODE_VALIDATED_LUTBD,
+    BORDER_MODE_LUTKW_FLOATING_END,
     BORDER_MODE_HIGH_Z,
   };
 
@@ -135,9 +135,8 @@ class GuestyEPaperGray4
   uint8_t gpio_read_byte_();
   bool read_otp_bank_(uint16_t read_length, uint16_t bank_base,
                       uint16_t marker_offset, uint8_t *check_code,
-                      uint8_t *marker, uint8_t *border_lut);
+                      uint8_t *marker);
   bool read_otp_profile_(bool *grayscale_supported);
-  bool ensure_custom_border_lut_();
   bool select_lut_mode_();
   bool init_custom_gray_mode_();
   bool init_otp_gray_mode_();
@@ -193,10 +192,6 @@ class GuestyEPaperGray4
   uint8_t max_partial_updates_{5};
   std::array<uint8_t, PARTIAL_BUFFER_CAPACITY> partial_previous_{};
   std::array<uint8_t, PARTIAL_BUFFER_CAPACITY> partial_current_{};
-  std::array<uint8_t, BORDER_LUT_LENGTH> border_lut_{};
-  bool border_lut_available_{false};
-  bool border_lut_unavailable_{false};
-  bool otp_profile_attempted_this_refresh_{false};
   LutMode configured_lut_mode_{LUT_MODE_AUTO};
   LutMode active_lut_mode_{LUT_MODE_CUSTOM};
 };

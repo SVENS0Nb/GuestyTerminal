@@ -1119,6 +1119,33 @@ def test_reconnect_push_spans_slow_esphome_action_registration(monkeypatch) -> N
     assert ENDPOINT not in runtime._pending_endpoint_pushes
 
 
+def test_reconnect_push_does_not_repeat_a_confirmed_physical_panel_error(
+    monkeypatch,
+) -> None:
+    runtime, _hass, _coordinator = _runtime(state=ACTION_V10)
+    attempts = 0
+    delays = []
+
+    async def push(_runtime, endpoint):
+        nonlocal attempts
+        attempts += 1
+        runtime._record_delivery(endpoint, "panel_error", attempted=True, failed=True)
+        return False
+
+    async def no_wait(delay):
+        delays.append(delay)
+
+    monkeypatch.setattr(GuestyTerminalRuntime, "async_push_endpoint", push)
+    monkeypatch.setattr(asyncio, "sleep", no_wait)
+    runtime._pending_endpoint_pushes.add(ENDPOINT)
+
+    assert not asyncio.run(runtime._async_push_endpoint_with_retry(ENDPOINT))
+    assert attempts == 1
+    assert delays == []
+    assert runtime.delivery_diagnostic(ENDPOINT).status == "panel_error"
+    assert ENDPOINT not in runtime._pending_endpoint_pushes
+
+
 def test_reconnect_push_stops_when_forced_sync_takes_ownership(monkeypatch) -> None:
     runtime, _hass, _coordinator = _runtime(state=ACTION_V9)
     attempts = 0

@@ -289,22 +289,22 @@ incomplete change.
   guard and then wait until active-low `BUSY_N` is inactive/high. Do not require
   witnessing a low assertion edge that may already have completed during the
   guard period.
-- Establish the UC8179 border's visible white state through its dedicated
-  `LUTBD` during a full refresh, never through a pixel LUT or during shutdown.
-  With `PSR.REG=0`, set `R50h=0x00,0x07` after OTP waveform selection so the
-  panel's internal common LUTBD remains active. With `PSR.REG=1`, read the
-  active panel OTP bank twice, require check code `0xA5` plus identical marker
-  and all 42 bytes from `0x001F..0x0048` or `0x0C1F..0x0C48`, write those bytes
-  to `R25h`, and then use the same `R50h=0x00,0x07`. Bank 0 has priority; inspect
-  bank 1 only after two matching invalid bank-0 check codes. Never substitute a
-  pixel `LUTWW`/`LUTKW`: level `00` means VCOM in LUTBD but GND in those pixel
-  LUTs. If the OTP read is incomplete, inconsistent, or has no valid bank, do
-  not activate undefined R25 data; keep the border high-Z for that refresh.
-  Keep custom-mode `R52h=0x02` as the post-LUT VCOM end voltage, not as a
-  replacement for LUTBD. Immediately before `POWER OFF`, set
-  `R50h=0x90,0x07`; `BDZ=1` makes the retained BDV selection inert. Retain the
-  shared full, partial, failure, and safe-shutdown path. Keep real panel OTP
-  bytes volatile, and never log or commit them.
+- Establish the UC8179 border's visible white state with Seeed's supported
+  E1001 `R50h=0x10,0x07` full-refresh selection; in KW mode with `DDX=00`,
+  `BDV=01` selects the active black-to-white `LUTKW` for the separate border
+  electrode. In both OTP and register-LUT modes use the independently
+  datasheet-derived `R52h=0x03`: `VCEND=0` retains `VCOM_DC`, while
+  `BDEND=11` releases the border after its LUT completes. Do not add a second
+  `R50h` write after OTP
+  `RE5h=0x5F`, and do not copy panel OTP bytes into `R25h`: the previously added
+  `R25/LUTBD` path left `BUSY_N` asserted after the visible frame settled on
+  the real E1001 and produced repeated identical redraw attempts. The `auto`
+  probe may read check codes and grayscale markers twice, with bank 0 priority,
+  but it must not retain, log, bundle, or replay raw OTP waveform bytes.
+  Do not write `R50h` immediately before `POWER OFF`; the UC8179 command itself
+  releases Source, Gate, Border, and VCOM to floating, and the late R50 variants
+  tested in 0.3.34 through 0.3.43 did not whiten an already-dark bistable
+  border. Retain the shared full, partial, failure, and safe-shutdown path.
 - The static LUTs, bidirectional OTP read pattern, base initialization, plane
   order, and partial-window sequence come from the fixed permissively licensed
   Seeed revisions in `THIRD_PARTY_NOTICES.md`. Bank priority, check codes,
@@ -316,7 +316,7 @@ incomplete change.
 - `guesty_render_revision` invalidates otherwise-identical images after a
   rendering or driver change. When a visible rendering change requires one
   repaint, increment the expected value and the stored-success value together,
-  and update their tests. The current source revision is 28.
+  and update their tests. The current source revision is 29.
 - Publish the displayed-booking confirmation only after a successful physical
   refresh, or when a restored matching fingerprint proves the same content was
   previously drawn.
@@ -462,7 +462,15 @@ incomplete change.
   the QR encoder needs roughly 4 KiB of temporary stack and the 8 KiB default
   overflowed in the argument-heavy welcome action before `rendering`. A panel
   hardware test bypasses this QR path and therefore cannot validate normal
-  booking delivery.
+  booking delivery. ESPHome's QR `dump_config()` prints its current value, so
+  reset the component to the neutral `GuestyTerminal` placeholder immediately
+  after synchronous framebuffer construction; reconstruct it briefly before a
+  self-test restores a welcome page.
+- A v10 `panel_error` or `panel_timeout` is a deterministic physical failure,
+  not an action-registration race. Do not retry the same payload immediately.
+  The firmware keeps the failed content fingerprint only in volatile RAM and
+  reports later identical normal deliveries without another panel refresh.
+  Changed content, an explicit forced refresh, or a reboot may try again.
 - Schedule physical display jobs with Home Assistant background tasks, not
   setup-tracked tasks. Retain local cancellation ownership so integration
   unload still stops every outstanding delivery.

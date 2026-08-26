@@ -3,6 +3,52 @@
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt. Einträge
 unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
 
+## 0.3.44 – 2026-08-26
+
+### Identische Refresh-Schleife und dunkler Panelrand
+
+- Das reale 0.3.43-Gerätelog belegt erstmals den vollständigen Ablauf: Jeder
+  v10-Auftrag erreichte `received` und `rendering`, baute denselben Framebuffer
+  auf und blieb anschließend im Vollrefresh 45 Sekunden an `BUSY_N` hängen.
+  Nach dem zehnsekündigen Ausschaltfehler wurde der Auftrag als `panel_error`
+  beendet und derselbe unveränderte Payload sofort erneut übertragen. Die
+  Wiederholung war damit kein 30-Sekunden-Inhaltsintervall und kein wechselnder
+  Wetter- oder Buchungsfingerabdruck.
+- Der nicht von Seeed stammende Laufzeitpfad, der die 42 Bytes der gemeinsamen
+  Panel-`LUTBD` nach `R25h` kopierte und sie nach der OTP-Auswahl erneut über
+  `R50h` aktivierte, ist entfernt. OTP- und Registermodus behalten Seeeds
+  E1001-Auswahl `R50h=0x10,0x07`; sie wählt im KW-Modus die
+  Schwarz-zu-Weiß-`LUTKW` für die separate Randelektrode. Die unveränderte
+  Seeed-Endspannung aus 0.3.33 hatte den realen Rand jedoch nicht beseitigt.
+  Deshalb setzen jetzt beide Vollrefresh-Modi das unabhängig aus dem
+  UC8179-Datenblatt abgeleitete `R52h.BDEND=11`: Nach der Weiß-Wellenform wird
+  die Randelektrode freigegeben, statt weiter auf einer Endspannung zu liegen.
+  Ein spätes `R50h` vor `POWER OFF` entfällt; der Befehl selbst gibt laut
+  Datenblatt Source, Gate, Border und VCOM hochohmig frei.
+- Die automatische Wellenformwahl wird nach dem Update einmal neu geprüft und
+  ihr Diagnosewert auch bei einer bereits im RAM gewählten Wellenform korrekt
+  veröffentlicht. Renderrevision 29 erzwingt genau einen vollständigen Aufbau
+  mit dem korrigierten Treiber.
+- Home Assistant beendet seine Wiederholungsfolge sofort nach einem bestätigten
+  `panel_error` oder `panel_timeout`. Zusätzlich merkt sich die Firmware den
+  fehlgeschlagenen Inhaltsfingerabdruck nur im RAM und lehnt spätere identische
+  Normalzustellungen ohne weitere Panelaktivität ab. Geänderter Inhalt, ein
+  ausdrücklich erzwungener Refresh oder ein Neustart dürfen erneut versuchen.
+- Der QR-Baustein wird unmittelbar nach dem synchronen Framebuffer-Aufbau auf
+  einen neutralen Wert zurückgesetzt. Dadurch kann ESPHomes spätere
+  `dump_config()`-Ausgabe weder WLAN-Namen noch Passwort aus dem flüchtigen
+  Willkommens-QR protokollieren; eine Selbsttest-Wiederherstellung rekonstruiert
+  den QR-Wert nur für den benötigten Renderdurchlauf.
+- 290 Tests bestanden gegen Home Assistant 2025.12.0 und 2026.2.3 mit 90,72 %
+  Branch-Abdeckung. Ruff, Mypy, Compileall, Release-Vorprüfung sowie
+  Konfigurationsprüfung und vollständige Kompilierung beider ESPHome-2026.8.1-
+  Flashprofile sind erfolgreich. Die Randwirkung ist erst nach Installation
+  auf dem realen E1001 bestätigt oder widerlegt; die Dokumentation kennzeichnet
+  diesen Hardwaretest ausdrücklich als offen.
+- Version 0.3.44 benötigt gemeinsam ein HACS-/Integrationsupdate und ein
+  Display-Firmwareupdate. Bestehende 4-MB-Geräte können normal per OTA
+  aktualisiert werden; das Flashlayout bleibt unverändert.
+
 ## 0.3.43 – 2026-08-26
 
 ### Willkommensbild und Home-Assistant-Start

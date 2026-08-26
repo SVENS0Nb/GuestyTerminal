@@ -212,15 +212,19 @@ andernfalls greift der Treiber auf Seeeds MIT-lizenzierte Register-LUTs zurück.
 Die erkannte Auswahl bleibt über den Tiefschlaf erhalten, damit der
 30-Minuten-Akkuzyklus nicht durch eine erneute Modusprüfung bei jedem Aufwachen
 belastet wird. Der sichtbare schmale Panelrand liegt außerhalb des
-800×480-Bildspeichers und besitzt eine eigene Elektrode. Im OTP-Modus verwendet
-sie deshalb direkt die panelinterne gemeinsame `LUTBD`. Beim Rückfall auf
-Register-LUTs liest der Treiber vor einem tatsächlich erforderlichen
-Vollrefresh die 42 Bytes derselben, durch den Checkcode ausgewählten OTP-Bank
-zweimal identisch ein und überträgt sie erst dann zur Laufzeit nach `R25h`.
-Unvollständige oder widersprüchliche Daten werden niemals
-als Hochspannungs-Wellenform verwendet; der Rand bleibt in diesem Fall während
-des Refreshs hochohmig. Die Paneldaten werden weder protokolliert noch in der
-Firmware gebündelt.
+800×480-Bildspeichers und besitzt eine eigene Elektrode. Für OTP- und
+Register-LUT-Vollrefreshs behält der Treiber Seeeds E1001-Auswahl
+`R50h=0x10,0x07`. Im aktiven Schwarz-Weiß-Modus wählt sie für den Rand die
+Schwarz-zu-Weiß-Wellenform `LUTKW`. Da Seeeds ursprüngliche Endspannung den
+realen dunklen Rand nicht beseitigte, geben jetzt beide Modi die Elektrode nach
+der Wellenform über das datenblattdefinierte `R52h.BDEND=11` frei. Ein spätes
+`R50h` vor `POWER OFF` entfällt; der Ausschaltbefehl selbst schaltet laut
+Datenblatt alle Panel-Ausgänge hochohmig. Der zuvor ergänzte Laufzeitpfad, der
+42 OTP-Bytes nach `R25h/LUTBD` kopierte, wurde entfernt: Das reale Gerät blieb
+damit nach dem sichtbaren Bildaufbau in `BUSY_N` hängen. Die OTP-Prüfung liest
+nur noch die Checkcodes und Graustufen-Markierungen wiederholt; Rohdaten der
+Panel-Wellenformen werden weder übernommen, protokolliert noch in der Firmware
+gebündelt.
 Für den bidirektionalen OTP-Lesevorgang gibt der Treiber den dedizierten
 SPI2-Bus vollständig frei und initialisiert Bus und SPI-Gerät danach mit der
 E1001-Konfiguration neu. Nach `POWER ON` und `DISPLAY REFRESH` wartet er gemäß
@@ -452,8 +456,8 @@ Symbol folgt ihm in Zehn-Prozent-Stufen.
   Erfolg, ein nachweislich unverändertes Bild und begrenzte Fehlerzustände.
   **E-paper phase**, **E-paper error**, **E-paper waveform** und
   **E-paper border mode** zeigen neutral, in welcher Controllerphase ein
-  Vollrefresh steht und ob die Randelektrode über Panel-OTP, die validierte
-  `LUTBD` oder den sicheren hochohmigen Rückfall angesteuert wurde. Diese
+  Vollrefresh steht und ob die Randelektrode über den weißen `LUTKW`-Pfad oder
+  während Teilrefresh/Ausschalten hochohmig angesteuert wurde. Diese
   Entitäten enthalten keine Gast-, Türcode- oder WLAN-Daten.
 - **E-paper Hardwaretest** führt den Test nur bei bestätigter externer
   Versorgung aus. Er zeigt kurz ein neutrales Vier-Grau-Testbild, verändert danach
@@ -533,6 +537,25 @@ ESPHome Device Builder sichtbar.
 Die kompakte, fortlaufende Änderungshistorie steht in
 [`CHANGELOG.md`](CHANGELOG.md). Die folgenden Hinweise erklären zusätzlich die
 Firmwareanforderungen älterer Installationen.
+
+Version **0.3.44** wertet das reale 0.3.43-Protokoll
+aus: Der korrekte, unveränderte Willkommens-Framebuffer wurde nicht wegen eines
+Zeitintervalls wiederholt, sondern weil der zusätzliche `R25/LUTBD`-Randpfad
+mit dem anschließenden `BUSY_N`-Stillstand korrelierte und jede Zustellung als
+`panel_error` endete. Der Treiber behält Seeeds
+`R50h=0x10,0x07`-Auswahl, ergänzt aber erstmals den datenblattdefinierten
+fließenden Rand-Endzustand `R52h.BDEND=11`. Renderrevision 29 baut das Bild
+einmal neu auf, und Runtime plus Firmware unterdrücken identische
+Wiederholungen nach einem bestätigten Hardwarefehler. Der flüchtige
+WLAN-QR-Wert wird außerdem direkt nach dem Framebuffer-Aufbau neutralisiert,
+damit ESPHome ihn nicht in einer späteren Konfigurationsausgabe protokolliert.
+Die genaue Diagnose steht in
+[`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
+Für diese Korrektur sind ein HACS-/Integrationsupdate und die Display-Firmware
+0.3.44 erforderlich. Bestehende 4-MB-Geräte können sie normal per OTA
+installieren; das Flashlayout bleibt unverändert. Die Softwarepfade und beide
+Firmwareprofile sind vollständig geprüft, die Randwirkung muss jedoch noch auf
+dem realen E1001 bestätigt werden.
 
 Version **0.3.43** behebt den im Gerätelog sichtbaren Stillstand zwischen der
 v10-Bestätigung `received` und dem noch ausbleibenden `rendering`: Der
@@ -729,18 +752,15 @@ beschränkt. Ein Display-Firmwareupdate auf 0.3.37 ist erforderlich. 258 Tests,
 mit ESPHome 2026.8.1 waren erfolgreich; die Wirkung auf dem realen E1001 wird
 nach der Installation bestätigt.
 
-Version **0.3.36** korrigierte die eigentliche
-Ursache des dunklen Außenrandes. Die separate UC8179-Randelektrode verwendete
-bislang die Pixel-Wellenform `LUTKW`; deren letzte Phase konnte den Rand erst am
-Ende des sichtbaren Bildaufbaus dunkel färben. Der neue Vollrefresh wählt mit
-`BDV=00` die dedizierte `LUTBD`. Im OTP-Modus kommt sie direkt aus dem Panel;
-im Registermodus werden ihre 42 Bytes aus der gültigen OTP-Bank zweimal gelesen
-und nur bei vollständiger Übereinstimmung nach `R25h` geladen. Renderrevision 27
-erzwingt nach dem Firmwareupdate einmalig einen Vollrefresh. Ein
-Display-Firmwareupdate auf 0.3.36 war erforderlich. 257 Tests, 90,79 %
-Branch-Abdeckung und der vollständige Build mit ESPHome 2026.7.4 sind
-erfolgreich; die optische Wirkung muss anschließend noch auf einem realen E1001
-bestätigt werden.
+Version **0.3.36** versuchte den dunklen Außenrand über die dedizierte `LUTBD`
+zu korrigieren. Im Registermodus wurden ihre 42 Bytes aus der gültigen OTP-Bank
+zweimal gelesen und bei Übereinstimmung nach `R25h` geladen. Diese Maßnahme war
+nur statisch und per Firmware-Build geprüft. Der spätere reale 0.3.43-Test hat
+die damalige Ursachenannahme widerlegt: Genau dieser Pfad ließ `BUSY_N` nach dem
+sichtbaren Bildaufbau aktiv und löste die identische Refresh-Schleife aus. Die
+Version 0.3.44 entfernt den `R25/LUTBD`-Hostpfad, behält
+Seeeds E1001-Auswahl `R50h=0x10,0x07` und gibt die Randelektrode nach der
+Wellenform mit `R52h.BDEND=11` frei.
 
 Version **0.3.35** korrigierte zuvor die
 Rand-Endspannung während des vollständigen Bildaufbaus. Im Custom-LUT-Pfad

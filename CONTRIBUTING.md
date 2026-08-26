@@ -105,7 +105,7 @@ werden; das erneute Anlegen nur des SPI-Geräts genügt nicht. `POWER ON` und
 `DISPLAY REFRESH` behalten Seeeds feste 100-ms-Wartezeit und warten danach auf
 den inaktiven `BUSY_N`-Pegel. Jede sichtbare Treiberänderung erhöht erwartete
 und gespeicherte Renderrevision gemeinsam; der aktuelle Stand verwendet
-Revision 28.
+Revision 29.
 
 ## Veröffentlichungen und Distribution
 
@@ -129,6 +129,17 @@ Home-Assistant-Baselines und den ESPHome-Bau. Alle Prüfzweige starten sofort
 parallel; Abhängigkeiten, der stabile ESPHome-Werkzeugsatz und nicht produktive
 inkrementelle Firmware-Builddaten werden getrennt gecacht. Tag-Pushes lösen
 keinen zweiten identischen Testlauf aus.
+
+Version 0.3.44 beendet Wiederholungsversuche nach einem bestätigten
+`panel_error` oder `panel_timeout` und unterdrückt auf der Firmwareseite
+weitere physische Aufträge für denselben in diesem Start bereits
+fehlgeschlagenen Inhaltsfingerabdruck. Die Randansteuerung verwendet keinen
+`R25/LUTBD`-Hostpfad mehr und setzt nach Seeeds `R50h=0x10,0x07` den
+datenblattdefinierten fließenden Endzustand `R52h.BDEND=11`. Sie benötigt
+gemeinsam ein Integrations- und Display-Firmwareupdate. Bis Randwirkung,
+unveränderte Inhaltsunterdrückung und vollständiger Panelabschluss auf einem
+realen E1001 geprüft sind, muss die Veröffentlichung den Hardwarestatus
+ausdrücklich als nicht getestet ausweisen.
 
 Version 0.3.43 benötigt wegen der korrigierten QR-Erzeugung, der vergrößerten
 ESPHome-Loop-Stackreserve und der vom Home-Assistant-Bootstrap getrennten

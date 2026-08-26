@@ -16,10 +16,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_current_repository_release_metadata_is_consistent() -> None:
-    metadata = validate_release(ROOT, expected_version="0.3.43")
+    metadata = validate_release(ROOT, expected_version="0.3.44")
 
-    assert metadata.version == "0.3.43"
-    assert "Willkommensbild und Home-Assistant-Start" in (metadata.changelog_body)
+    assert metadata.version == "0.3.44"
+    assert "Identische Refresh-Schleife und dunkler Panelrand" in (
+        metadata.changelog_body
+    )
 
 
 @pytest.mark.parametrize("hardware_status", ["passed", "not_tested"])

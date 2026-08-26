@@ -4,6 +4,91 @@ Dieses Dokument hält wiederverwendbare Diagnosewege und bestätigte
 Fehlerursachen fest. Es darf keine Gastnamen, Reservierungs-IDs, Türcodes,
 WLAN-Zugangsdaten oder Home-Assistant-/ESPHome-Schlüssel enthalten.
 
+## Störung 2026-08-26: identischer Vollrefresh wiederholt sich und Rand bleibt dunkel
+
+### Bestätigte Diagnose
+
+Das reale Gerät mit Firmware 0.3.43 nahm den korrekten Willkommens-Payload an.
+Jeder Auftrag erreichte `received` und `rendering`; der Renderer meldete bei
+aufeinanderfolgenden Versuchen exakt dieselbe Verteilung der vier
+Framebufferstufen. Erst der physische Controllerpfad scheiterte:
+
+1. Reset und `POWER ON` wurden bestätigt.
+2. Der Custom-LUT-Pfad meldete für den Rand `validated_lutbd`.
+3. Nach `DISPLAY REFRESH` blieb das aktive-low Signal `BUSY_N` 45 Sekunden
+   aktiv, obwohl das sichtbare Bild bereits aufgebaut war.
+4. Auch `POWER OFF` erreichte innerhalb weiterer zehn Sekunden keinen
+   Ruhezustand; v10 meldete deshalb korrekt `panel_error`.
+5. Die Home-Assistant-Wiederholungsfolge übertrug unmittelbar danach denselben
+   Payload mit neuem Transporttoken. Dadurch entstand etwa alle 56 bis 57
+   Sekunden ein weiterer physischer Bildaufbau.
+
+Die sichtbare Wiederholung wurde also weder vom 15-Sekunden-Stromprüfintervall
+noch von Wetter, Guesty-Polling oder einem wechselnden Inhaltsfingerabdruck
+verursacht. Der erfolgreiche Fingerabdruck durfte nach dem Panel-Fehler
+absichtlich nicht gespeichert werden; die Runtime unterschied den bestätigten
+Hardwarefehler jedoch noch nicht von einer kurzzeitig fehlenden ESPHome-Aktion.
+
+### Ursache und Korrektur
+
+Der nachträglich ergänzte Randpfad wich von beiden festgehaltenen Seeed-
+Referenzen ab: Er las die gemeinsame OTP-`LUTBD`, schrieb sie im Registermodus
+nach `R25h` und wählte sie mit einem zusätzlichen `R50h=0x00,0x07` aus. Die
+UC8179-Dokumentation beschreibt `R25h` als separate White-to-White-Randtabelle;
+auf dem realen E1001 korrelierte dieser Host-Kopierpfad jedoch mit einer nicht
+beendeten Vollrefresh-Transaktion. Das Protokoll allein ist kein isolierter
+A/B-Nachweis für den Registerpfad; seine Entfernung beseitigt aber die
+undokumentierte Abweichung und ermöglicht einen sauberen Vergleich mit Seeeds
+Basisfolge. Die frühere Annahme, dieser Pfad habe den dunklen Rand behoben, war
+ohne Realgerätetest getroffen worden und ist durch das neue Protokoll
+widerlegt.
+
+Der Treiber verwendet deshalb eine begrenzte, nachvollziehbare Kombination aus
+Seeeds Basisfolge und dem offiziellen UC8179-Datenblatt:
+
+- OTP und Register-LUT verwenden einmalig `R50h=0x10,0x07`. Mit `PSR` im
+  KW-Modus und `DDX=00` wählt `BDV=01` die Schwarz-zu-Weiß-`LUTKW` für die
+  separate Randelektrode.
+- Nach OTP `RE5h=0x5F` folgt kein zweites `R50h` mehr; `R25h` wird nicht
+  beschrieben.
+- Die unveränderte Seeed-Endspannung `R52h=0x00` aus 0.3.33 hatte den Rand auf
+  dem realen Gerät nicht beseitigt. Beide Vollrefresh-Modi verwenden nun
+  `R52h=0x03`: `VCEND` bleibt auf `VCOM_DC`, während `BDEND=11` die
+  Randelektrode direkt nach ihrer Weiß-Wellenform freigibt.
+- Vor `POWER OFF` wird `R50h` nicht erneut verändert. Laut Datenblatt gibt der
+  Ausschaltbefehl Source, Gate, Border und VCOM selbst hochohmig frei; die in
+  0.3.34 bis 0.3.43 getesteten späten `R50h`-Varianten hatten den bistabilen
+  dunklen Rand nicht aufgehellt.
+- Die RTC-Auswahl erhält eine neue Versionskennung und wird einmal neu geprüft;
+  Renderrevision 29 erzwingt genau einen korrigierten Vollrefresh.
+
+Zwei unabhängige Schleifensicherungen verhindern unnötige E-Paper-Belastung:
+Home Assistant wiederholt einen bestätigten `panel_error`/`panel_timeout` nicht
+sofort, und die Firmware hält den fehlgeschlagenen Inhaltsfingerabdruck bis zum
+Neustart nur im RAM. Ein wirklich geänderter Payload oder ein ausdrücklich
+erzwungener Refresh bleibt möglich.
+
+Die Schleifensperre und ihre bestätigte Ursache sind damit vollständig
+softwareseitig testbar. Ob der neue fließende Rand-Endzustand den sichtbaren
+Pigmentrand tatsächlich aufhellt, kann dagegen nur der nächste Vollrefresh auf
+dem realen E1001 entscheiden; bis dahin ist diese Teilkorrektur ausdrücklich
+nicht als hardwarebestätigt dokumentiert.
+
+### Nebenbefund: WLAN-QR in ESPHome-Diagnose
+
+Das Protokoll zeigte außerdem, dass ESPHomes `qr_code.dump_config()` den
+aktuellen QR-Rohwert ausgibt. Ein Willkommensauftrag konnte vor der späteren
+Konfigurationsausgabe bereits den echten WLAN-QR gesetzt haben. Ein neutraler
+Startwert allein reicht daher nicht. Der QR-Inhalt wird nun nur für den
+synchronen Framebuffer-Aufbau gesetzt und unmittelbar nach
+`component.update` wieder auf `GuestyTerminal` zurückgesetzt. Auch die
+Wiederherstellung nach dem Hardwaretest benutzt dieses kurze Zeitfenster.
+
+Künftige Logprüfungen müssen zusätzlich sicherstellen, dass keine Zeile mit
+einem `WIFI:T:`-Payload erscheint. Wurde ein solches Protokoll außerhalb einer
+vertraulichen Umgebung weitergegeben, ist das betroffene WLAN-Passwort zu
+ändern.
+
 ## Störung 2026-08-25/26: Willkommensbild bleibt aus
 
 ### Ergebnis und Geltungsbereich

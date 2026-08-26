@@ -233,6 +233,7 @@ api:
                   id(guesty_delivery_handler_busy) = true;
                   id(guesty_delivery_result) = false;
                   id(guesty_delivery_unchanged) = false;
+                  id(guesty_failed_content_suppressed) = false;
                   id(guesty_delivery_error).clear();
                   const std::string state =
                       "__guesty_delivery_received__:"
@@ -261,7 +262,7 @@ api:
                   else:
                     - lambda: |-
                         const bool renderer_current =
-                            id(guesty_render_revision) == 28;
+                            id(guesty_render_revision) == 29;
                         int battery_percent = -1;
                         if (id(guesty_battery_level).has_state()
                             && std::isfinite(id(guesty_battery_level).state)) {
@@ -281,6 +282,11 @@ api:
                             || content_id != id(guesty_content_id)
                             || !renderer_current
                             || battery_changed;
+                        id(guesty_failed_content_suppressed) =
+                            id(guesty_content_changed)
+                            && !force_redraw
+                            && !content_id.empty()
+                            && content_id == id(guesty_failed_content_id);
                         id(guesty_delivery_unchanged) =
                             !id(guesty_content_changed);
                         id(guesty_weather_only_changed) =
@@ -389,7 +395,9 @@ api:
                                 - display.page.show: guesty_idle_page
                     - if:
                         condition:
-                          lambda: return id(guesty_content_changed);
+                          lambda: |-
+                            return id(guesty_content_changed)
+                                && !id(guesty_failed_content_suppressed);
                         then:
                           - lambda: |-
                               if (id(guesty_weather_only_changed)
@@ -397,6 +405,12 @@ api:
                                 id(guesty_epaper).request_partial_update();
                               }
                           - component.update: guesty_epaper
+                          # update() builds the framebuffer synchronously before
+                          # the hardware worker starts. Remove the credential-
+                          # bearing QR payload immediately so a later ESPHome
+                          # dump_config() can never print it.
+                          - lambda: |-
+                              id(guesty_wifi_qr).set_value("GuestyTerminal");
                           - wait_until:
                               condition:
                                 lambda: |-
@@ -409,6 +423,7 @@ api:
                               then:
                                 - lambda: |-
                                     id(guesty_delivery_error) = "panel_timeout";
+                                    id(guesty_failed_content_id) = content_id;
                               else:
                                 - if:
                                     condition:
@@ -419,7 +434,8 @@ api:
                                           id(guesty_content_id) = content_id;
                                           id(guesty_base_content_id) =
                                               base_content_id;
-                                          id(guesty_render_revision) = 28;
+                                          id(guesty_render_revision) = 29;
+                                          id(guesty_failed_content_id).clear();
                                           id(guesty_screen_sensitive) =
                                               mode != "idle";
                                           id(guesty_valid_until_epoch) =
@@ -444,23 +460,46 @@ api:
                                       - lambda: |-
                                           id(guesty_delivery_error) =
                                               "panel_error";
+                                          id(guesty_failed_content_id) =
+                                              content_id;
                                       - logger.log:
                                           level: WARN
                                           format: "E-paper refresh failed; booking confirmation was not published"
                         else:
-                          # The matching retained fingerprint proves this page
-                          # was written by an earlier successful refresh.
-                          - text_sensor.template.publish:
-                              id: guesty_last_booking
-                              state: !lambda return booking_summary;
-                          - lambda: |-
-                              id(guesty_screen_sensitive) = mode != "idle";
-                              id(guesty_valid_until_epoch) =
-                                  mode == "idle" ? 0 : valid_until_epoch;
-                              id(guesty_privacy_clear_pending) = false;
-                              id(guesty_update_received_this_boot) = true;
-                              id(guesty_delivery_result) = true;
-                          - delay: 1200ms
+                          - if:
+                              condition:
+                                lambda: |-
+                                  return id(guesty_failed_content_suppressed);
+                              then:
+                                # The same visible framebuffer already reached
+                                # a deterministic physical panel error during
+                                # this boot. Report the failure without flashing
+                                # it again. A changed payload, forced refresh or
+                                # reboot can start a fresh hardware attempt.
+                                - lambda: |-
+                                    id(guesty_delivery_unchanged) = false;
+                                    id(guesty_delivery_error) = "panel_error";
+                                    id(guesty_wifi_qr).set_value(
+                                        "GuestyTerminal");
+                                - logger.log:
+                                    level: WARN
+                                    format: "Unchanged payload suppressed after the previous E-paper panel error"
+                              else:
+                                # The matching retained fingerprint proves this
+                                # page was written by an earlier successful
+                                # refresh.
+                                - text_sensor.template.publish:
+                                    id: guesty_last_booking
+                                    state: !lambda return booking_summary;
+                                - lambda: |-
+                                    id(guesty_screen_sensitive) =
+                                        mode != "idle";
+                                    id(guesty_valid_until_epoch) =
+                                        mode == "idle" ? 0 : valid_until_epoch;
+                                    id(guesty_privacy_clear_pending) = false;
+                                    id(guesty_update_received_this_boot) = true;
+                                    id(guesty_delivery_result) = true;
+                                - delay: 1200ms
               # Publish the final result before restoring the callable endpoint
               # name. The random token never contains reservation information.
               - component.update: guesty_panel_phase
@@ -574,7 +613,7 @@ api:
                     && !id(guesty_epaper).update_in_progress();
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            const bool renderer_current = id(guesty_render_revision) == 28;
+            const bool renderer_current = id(guesty_render_revision) == 29;
             int battery_percent = -1;
             if (id(guesty_battery_level).has_state()
                 && std::isfinite(id(guesty_battery_level).state)) {
@@ -688,6 +727,8 @@ api:
                     id(guesty_epaper).request_partial_update();
                   }
               - component.update: guesty_epaper
+              - lambda: |-
+                  id(guesty_wifi_qr).set_value("GuestyTerminal");
               - wait_until:
                   condition:
                     lambda: return !id(guesty_epaper).update_in_progress();
@@ -701,7 +742,7 @@ api:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
-                        id(guesty_render_revision) = 28;
+                        id(guesty_render_revision) = 29;
                         id(guesty_screen_sensitive) = mode != "idle";
                         id(guesty_valid_until_epoch) =
                             mode == "idle" ? 0 : valid_until_epoch;
@@ -886,6 +927,16 @@ globals:
   - id: guesty_content_changed
     type: bool
     initial_value: "true"
+  # A failed physical refresh is not a delivery success, but retrying the same
+  # already rendered framebuffer in a tight loop only wears and flashes the
+  # E-paper. Keep one volatile attempted fingerprint until content changes, a
+  # forced refresh is requested or the device reboots.
+  - id: guesty_failed_content_id
+    type: std::string
+    initial_value: '""'
+  - id: guesty_failed_content_suppressed
+    type: bool
+    initial_value: "false"
   - id: guesty_weather_only_changed
     type: bool
     initial_value: "false"
@@ -1101,6 +1152,37 @@ script:
                      "UART0 restore failed; API logging remains available");
           }
 
+  # Keep credentials inside the QR component only for the synchronous
+  # framebuffer build. ESPHome's component diagnostics print its current value,
+  # so every caller resets it to the neutral placeholder immediately after
+  # component.update has returned.
+  - id: guesty_prepare_wifi_qr
+    mode: restart
+    then:
+      - lambda: |-
+          if (id(guesty_mode) != "welcome" || !id(guesty_has_wifi)) {
+            id(guesty_wifi_qr).set_value("GuestyTerminal");
+            return;
+          }
+          const auto escape_wifi = [](const std::string &input) {
+            std::string escaped;
+            escaped.reserve(input.size() + 8);
+            for (const char character : input) {
+              if (character == '\\' || character == ';'
+                  || character == ',' || character == ':') {
+                escaped.push_back('\\');
+              }
+              escaped.push_back(character);
+            }
+            return escaped;
+          };
+          const std::string security = id(guesty_wifi_password).empty()
+              ? "nopass" : "WPA";
+          id(guesty_wifi_qr).set_value(
+              "WIFI:T:" + security
+              + ";S:" + escape_wifi(id(guesty_wifi_name))
+              + ";P:" + escape_wifi(id(guesty_wifi_password)) + ";;");
+
   # Page selection is volatile. Use one shared helper after the neutral panel
   # self-test so a welcome, checkout or empty-room payload is restored exactly
   # as it was before the diagnostic pattern.
@@ -1197,7 +1279,11 @@ script:
                   - text_sensor.template.publish:
                       id: guesty_self_test_status
                       state: "restoring"
+                  - script.execute: guesty_prepare_wifi_qr
+                  - script.wait: guesty_prepare_wifi_qr
                   - component.update: guesty_epaper
+                  - lambda: |-
+                      id(guesty_wifi_qr).set_value("GuestyTerminal");
                   - wait_until:
                       condition:
                         lambda: return !id(guesty_epaper).update_in_progress();

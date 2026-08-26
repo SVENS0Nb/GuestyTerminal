@@ -74,6 +74,7 @@ _DELIVERY_ERROR_CODES = {
     "panel_timeout",
     "preparation_timeout",
 }
+_NON_RETRYABLE_PANEL_STATUSES = frozenset({"panel_error", "panel_timeout"})
 
 
 @dataclass(slots=True)
@@ -674,6 +675,21 @@ class GuestyTerminalRuntime:
                 )
                 if delivered:
                     return True
+                if (
+                    self.delivery_diagnostic(endpoint).status
+                    in _NON_RETRYABLE_PANEL_STATUSES
+                ):
+                    # The device accepted and rendered this payload, then the
+                    # physical controller failed. Repeating the same image in
+                    # this reconnect sequence only flashes the panel again;
+                    # a changed payload, explicit refresh or device restart
+                    # remains able to start a fresh attempt.
+                    _LOGGER.warning(
+                        "ESPHome display %s reported a physical panel error; "
+                        "the unchanged payload will not be retried immediately",
+                        endpoint,
+                    )
+                    return False
             _LOGGER.warning(
                 "ESPHome display %s did not confirm the display update",
                 endpoint,
