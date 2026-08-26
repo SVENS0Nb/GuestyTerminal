@@ -1566,12 +1566,16 @@ script:
 
   # GPIO38 powers the PDM microphone only after a physical cable has been
   # confirmed. Wait for ESPHome's I2S task to report RUNNING so a failed start
-  # no longer looks identical to a merely quiet 60-second measurement window.
+  # no longer looks identical to a merely quiet 30-second measurement window.
   - id: guesty_start_microphone
     mode: restart
     then:
       - script.stop: guesty_verify_microphone_window
-      - lambda: id(guesty_microphone_status_value) = "starting";
+      - lambda: |-
+          id(guesty_microphone_status_value) = "starting";
+          // A reconnect must prove a new complete window instead of reusing
+          // the last finite value from the previous cable session.
+          id(guesty_sound_level_30_seconds).publish_state(NAN);
       - component.update: guesty_microphone_status
       - output.turn_on: guesty_microphone_power
       - delay: 200ms
@@ -1622,7 +1626,7 @@ script:
   - id: guesty_verify_microphone_window
     mode: restart
     then:
-      - delay: 70s
+      - delay: 40s
       - if:
           condition:
             lambda: |-
@@ -1632,13 +1636,13 @@ script:
           then:
             - lambda: |-
                 const bool valid_rms =
-                    id(guesty_sound_level_1_minute).has_state()
-                    && std::isfinite(id(guesty_sound_level_1_minute).state);
+                    id(guesty_sound_level_30_seconds).has_state()
+                    && std::isfinite(id(guesty_sound_level_30_seconds).state);
                 id(guesty_microphone_status_value) = valid_rms
                     ? "running" : "no_valid_rms_value";
                 if (!valid_rms) {
                   ESP_LOGW("guesty_microphone",
-                           "PDM capture produced no finite 60-second RMS value");
+                           "PDM capture produced no finite 30-second RMS value");
                 }
             - component.update: guesty_microphone_status
 
@@ -2224,19 +2228,20 @@ sensor:
       name: Relative humidity
       entity_category: diagnostic
     update_interval: never
-  # ESPHome computes RMS from every sample in one complete 60-second window.
+  # ESPHome computes RMS from every sample in one complete 30-second window
+  # and publishes one result immediately before starting the next window.
   # The result is relative dB (0 dB is the microphone's digital full scale),
   # not an uncalibrated claim of absolute dB(A). Passive mode also guarantees
   # that no microphone capture is started independently from the power gate.
   - platform: sound_level
     id: guesty_sound_level
     passive: true
-    measurement_duration: 60s
+    measurement_duration: 30s
     microphone:
       microphone: guesty_microphone
     rms:
-      id: guesty_sound_level_1_minute
-      name: Relativer Schallpegel (1 Minute)
+      id: guesty_sound_level_30_seconds
+      name: Relativer Schallpegel (30 Sekunden)
       icon: mdi:volume-high
       on_value:
         then:
@@ -2435,7 +2440,7 @@ binary_sensor:
     device_class: power
     entity_category: diagnostic
     # Only a confirmed physical cable may start the guarded microphone script.
-    # A fresh cable connection always starts a new complete 60-second window.
+    # A fresh cable connection always starts a new complete 30-second window.
     on_press:
       then:
         - script.execute: guesty_start_microphone

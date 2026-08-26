@@ -142,7 +142,7 @@
       },
       "firmware": {
         "title": "Créer le firmware E1001",
-        "description": "Crée une configuration ESPHome sécurisée dans /config/esphome. Le mode Automatique détecte l’alimentation USB sur les révisions matérielles E1001 v1.0 et v1.2, met l’écran en veille sur batterie et le maintient en ligne sur alimentation externe. Le voyant d’état et le buzzer restent désactivés. Le microphone n’est actif que lorsque l’alimentation externe est confirmée et ne publie qu’un niveau sonore relatif calculé localement sur 60 secondes ; aucun son n’est transmis. Le voyant de charge est également désactivé sur la v1.2.",
+        "description": "Crée une configuration ESPHome sécurisée dans /config/esphome. Le mode Automatique détecte l’alimentation USB sur les révisions matérielles E1001 v1.0 et v1.2, met l’écran en veille sur batterie et le maintient en ligne sur alimentation externe. Le voyant d’état et le buzzer restent désactivés. Le microphone n’est actif que lorsque l’alimentation externe est confirmée et ne publie qu’un niveau sonore relatif calculé localement pour chaque fenêtre complète de 30 secondes ; aucun son n’est transmis. Le voyant de charge est également désactivé sur la v1.2.",
         "data": {
           "firmware_device_name": "Nom de l’appareil",
           "firmware_friendly_name": "Nom affiché",

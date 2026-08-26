@@ -29,8 +29,10 @@ abweichenden Standard.
 
 Firmware 0.3.49 setzt deshalb ausdrücklich `channel: left`. Zusätzlich prüft
 der externe-Strom-Trigger, ob ESPHomes I²S-Task innerhalb von fünf Sekunden
-wirklich läuft. Nach 70 Sekunden kontrolliert ein separater neutraler Pfad, ob
-das erste vollständige RMS-Fenster einen endlichen Wert geliefert hat. Die
+wirklich läuft. Sie veröffentlicht danach alle 30 Sekunden einen RMS-Wert aus
+dem jeweils unmittelbar vorhergehenden vollständigen 30-Sekunden-Fenster. Nach
+40 Sekunden kontrolliert ein separater neutraler Pfad, ob das erste Fenster
+einen endlichen Wert geliefert hat. Die
 erweiterte Entität **Microphone status** unterscheidet damit
 `initialization_failed`, `capture_start_timeout` und `no_valid_rms_value`, ohne
 Samples oder Lautstärkedetails offenzulegen.
@@ -38,8 +40,9 @@ Samples oder Lautstärkedetails offenzulegen.
 Diese Ursache ist durch den Abgleich der fest gepinnten Quellstände und die
 fehlende Kanalkonfiguration belegt. Ob der linke Slot am konkreten Gerät danach
 einen plausiblen endlichen Wert liefert, muss der Realgerätetest von 0.3.49
-bestätigen. Dafür bei angeschlossenem Strom nach dem Neustart mindestens 70
-Sekunden warten. Der RMS-Sensor muss dann endlich sein; beim Abziehen des
+bestätigen. Dafür bei angeschlossenem Strom nach dem Neustart mindestens 40
+Sekunden warten. Der ab 0.3.49 als **Relativer Schallpegel (30 Sekunden)**
+bezeichnete RMS-Sensor muss dann endlich sein; beim Abziehen des
 Kabels müssen Aufnahme und GPIO38 enden, und auf Akku muss der Sensor nicht
 verfügbar bleiben.
 

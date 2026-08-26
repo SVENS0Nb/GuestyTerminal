@@ -406,7 +406,7 @@ incomplete change.
 - Preserve the diagnostic values `Battery voltage`, `Battery level`, `Battery
   charging status`, `Wake-up reason`, and `Awake duration`, plus `External
   power` and `Power detection method`. The default everyday entity profile
-  exposes battery level, charging status, external power, the one-minute
+  exposes battery level, charging status, external power, the 30-second
   relative sound level, and the panel self-test button plus all three physical
   button binary sensors, while
   advanced hardware-only values remain local through
@@ -432,7 +432,7 @@ incomplete change.
   200 ms, and capture GPIO41 with GPIO42 as the PDM clock explicitly through
   the left PDM slot, matching Seeed's working E1001 mono receiver. ESPHome's
   omitted-channel default is right and is incompatible with that reference
-  path. Capture only for the local 60-second RMS sound-level sensor. Verify
+  path. Capture only for the local 30-second RMS sound-level sensor. Verify
   that the I2S task reaches its running state and expose only a neutral,
   advanced lifecycle diagnostic for start timeout, initialization failure or
   a non-finite first measurement window.
@@ -583,7 +583,7 @@ Use the smallest applicable row, then inspect all named layers:
 | Panel/LUT/partial-refresh code | component Python schema, C++/header, SPI2 teardown/reinitialization, 100-ms/BUSY timing, render revision, package geometry, compile, hardware full/partial/deep-sleep tests |
 | Power/deep-sleep behavior | boot/action/interval paths, privacy fallback, external-power detection, README, firmware tests, battery and USB hardware checks |
 | Battery estimate, charge state, VBUS detection, or power diagnostics | 16-sample ADC path, exact piecewise curve, sticky `REG0B`/`REG0A.BUS_GD` v1.2 path, three matching `REG08`/`REG09` snapshots, completion-only 100% endpoint, UART0 GPIO43/GPIO44 anti-backfeed v1.0 path, sleep script, diagnostic entities, firmware contract tests, battery/charge/USB hardware checks on both revisions |
-| Microphone or sound-level behavior | official E1001 GPIO38/GPIO42/GPIO41 path, confirmed-physical-power gate, 200-ms startup, 60-second RMS semantics, unavailable battery state, sleep shutdown order, audio privacy, package compile, mains/unplug/battery hardware checks |
+| Microphone or sound-level behavior | official E1001 GPIO38/GPIO42/GPIO41 path, confirmed-physical-power gate, 200-ms startup, consecutive 30-second RMS semantics, unavailable battery state, sleep shutdown order, audio privacy, package compile, mains/unplug/battery hardware checks |
 | Home Assistant entity/service | platform forwarding, entity IDs/unique IDs, strings/translations, tests, README |
 | Firmware generation/update | managed header, exact template structure, credential preservation, atomic writes, updater parser, tests |
 
@@ -730,7 +730,8 @@ Hardware-affecting releases also require checks of:
 - status LED and buzzer remaining off, charging-indicator behavior matching the
   board revision, and microphone capture remaining off on battery;
 - mains-only sound level starting after confirmed external power, publishing
-  one relative 60-second RMS value without raw audio, stopping after unplug,
+  one relative RMS value for every complete 30-second window without raw audio,
+  stopping after unplug,
   and remaining unavailable across battery/deep-sleep cycles.
 
 Update `THIRD_PARTY_NOTICES.md` whenever a bundled or downloaded asset family,

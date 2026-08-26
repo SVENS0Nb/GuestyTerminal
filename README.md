@@ -424,8 +424,9 @@ Symbol folgt ihm in Zehn-Prozent-Stufen.
 - GPIO-Status-LED und Buzzer bleiben auf beiden Hardwareständen deaktiviert.
   Die Mikrofon-Stromversorgung bleibt beim Start und im Akkubetrieb ebenfalls
   aus. Erst nach bestätigter externer Versorgung wird sie eingeschaltet; das
-  E1001 berechnet dann lokal einen relativen RMS-Schallpegel über jeweils 60
-  Sekunden. Beim Abziehen des Kabels werden Aufnahme und Versorgung wieder
+  E1001 berechnet dann lokal alle 30 Sekunden einen relativen RMS-Schallpegel
+  aus dem jeweils unmittelbar vorhergehenden vollständigen 30-Sekunden-Fenster.
+  Beim Abziehen des Kabels werden Aufnahme und Versorgung wieder
   gestoppt. Auf v1.2 schaltet die Firmware zusätzlich den Lade-LED-Ausgang des
   SY6974B ab. Der ETA6003 von v1.0 bietet dafür keinen entsprechenden
   Software-Schalter; dort kann die rote, hardwaregesteuerte Lade-LED während
@@ -465,7 +466,7 @@ Symbol folgt ihm in Zehn-Prozent-Stufen.
   aktualisieren**, **E-paper Hardwaretest** und **Neustart** sowie die drei
   physischen Tasten **Green button**, **Middle button** und **Left button** als
   Binärsensoren. Bei bestätigter externer Versorgung steht zusätzlich
-  **Relativer Schallpegel (1 Minute)** zur Verfügung. Der für die Integration
+  **Relativer Schallpegel (30 Sekunden)** zur Verfügung. Der für die Integration
   benötigte **GuestyTerminal Endpoint** bleibt als Diagnose-Entität sichtbar.
   Der Aktualisieren-Button stößt zuerst einen sofortigen Guesty-Abgleich an,
   übernimmt den danach ermittelten Seitenmodus und zeichnet anschließend genau
@@ -587,14 +588,25 @@ Seeeds funktionierendes E1001-Mikrofonbeispiel empfängt den Mono-PDM-Datenstrom
 Standard-Slot unbeabsichtigt übernommen. Die Firmware setzt deshalb nun
 ausdrücklich `channel: left`, wartet nach dem Einschalten auf den tatsächlich
 laufenden I²S-Task und prüft nach einem vollständigen Messfenster, ob ein
-endlicher RMS-Wert vorliegt.
+endlicher RMS-Wert vorliegt. Die Firmware veröffentlicht nun lückenlos alle
+30 Sekunden den relativen RMS-Durchschnitt der unmittelbar vorhergehenden
+30 Sekunden.
 
 Mit `advanced_diagnostics_internal: "false"` zeigt die zusätzliche neutrale
 Entität **Microphone status**, ob die Aufnahme startet, läuft, ihr Start
-fehlschlägt oder nach 60 Sekunden noch kein gültiger Messwert vorliegt. Sie
-enthält keine Samples oder Audioinformationen und bleibt im normalen
-Alltagsprofil intern. Die Mikrofonversorgung ist weiterhin ausschließlich bei
-bestätigter externer Versorgung aktiv.
+fehlschlägt oder nach 30 Sekunden noch kein gültiger Messwert vorliegt. Die
+Prüfung erhält zehn Sekunden Sicherheitsmarge und meldet den Fehler daher nach
+40 Sekunden. Bei jedem neuen Kabelzyklus wird der vorherige RMS-Zustand
+verworfen, damit nur ein vollständig neues Fenster als erfolgreicher Start
+gilt. Die Diagnose enthält keine Samples oder Audioinformationen und bleibt im
+normalen Alltagsprofil intern. Die Mikrofonversorgung ist weiterhin
+ausschließlich bei bestätigter externer Versorgung aktiv.
+
+Der Sensor heißt ab 0.3.49 **Relativer Schallpegel (30 Sekunden)**. Da ESPHome
+den Entity-Schlüssel aus dem Namen ableitet, kann Home Assistant den alten
+1-Minuten-Eintrag einmalig als nicht verfügbar weiterführen. Nach erfolgreichem
+Firmwareupdate und sobald der neue Sensor Werte liefert, kann der alte Eintrag
+aus der Entity Registry entfernt werden.
 
 Version 0.3.49 benötigt ein gemeinsames HACS-/Integrations- und
 Display-Firmwareupdate. Bestehende 4-MB-Geräte können sie normal per OTA
@@ -1054,9 +1066,10 @@ noch Tür- oder WiFi-Codes. In den Attributen steht lediglich, ob der aktuelle
 Bildschirm solche Daten enthält. Fehlerprotokolle geben ebenfalls keine
 Zugangsdaten aus.
 
-Der Display-Sensor **Relativer Schallpegel (1 Minute)** verarbeitet die
+Der Display-Sensor **Relativer Schallpegel (30 Sekunden)** verarbeitet die
 PDM-Samples ausschließlich im flüchtigen Speicher des ESP32 und veröffentlicht
-nur den relativen 60-Sekunden-RMS-Wert. Es werden weder Audiodaten noch einzelne
+alle 30 Sekunden nur den relativen RMS-Wert des unmittelbar vorhergehenden
+vollständigen 30-Sekunden-Fensters. Es werden weder Audiodaten noch einzelne
 Messproben an Home Assistant übertragen, aufgezeichnet oder dauerhaft
 gespeichert. `0 dB` bezeichnet dabei den digitalen Vollpegel des eingebauten
 Mikrofons; ohne individuelle akustische Kalibrierung ist der Wert bewusst kein

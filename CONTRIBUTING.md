@@ -130,7 +130,8 @@ Mono-PDM-Slot, während ESPHome 2026.8.1 ohne ausdrückliche Konfiguration den
 rechten Slot wählt. Firmwareänderungen an diesem Pfad müssen deshalb
 `channel: left`, die bestätigte externe Versorgung, mindestens 200 ms
 Anlaufzeit, den nachgewiesenen I²S-Laufzustand, ein endliches vollständiges
-60-Sekunden-RMS-Fenster und das Abschalten vor GPIO38 testen. Die neutrale
+30-Sekunden-RMS-Fenster, die lückenlose Veröffentlichung alle 30 Sekunden und
+das Abschalten vor GPIO38 testen. Die neutrale
 erweiterte Laufzeitdiagnose darf weder Rohsamples noch daraus abgeleitete
 Detailwerte enthalten. Die Version benötigt ein gemeinsames Integrations- und
 Firmwareupdate; 4-MB-Geräte bleiben OTA-kompatibel. Bis zur vollständigen

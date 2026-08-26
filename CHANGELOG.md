@@ -13,9 +13,20 @@ Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
   Abweichung konnte in 0.3.48 zu einem nicht endlichen RMS-Ergebnis führen, das
   Home Assistant dauerhaft als **Unbekannt** darstellte.
 - GPIO38 bleibt ausschließlich bei bestätigter externer Versorgung aktiv.
-  GPIO42 bleibt der PDM-Takt und GPIO41 der Dateneingang. Messfenster, relative
+  GPIO42 bleibt der PDM-Takt und GPIO41 der Dateneingang. Relative
   0-dBFS-Semantik und die Verarbeitung ausschließlich im flüchtigen Speicher
-  ändern sich nicht.
+  bleiben unverändert.
+
+### Schallpegel alle 30 Sekunden
+
+- Statt eines 60-Sekunden-Fensters berechnet und veröffentlicht die Firmware
+  nun lückenlos alle 30 Sekunden einen relativen RMS-Wert aus genau den
+  unmittelbar vorhergehenden 30 Sekunden. Es werden weiterhin weder
+  Audiosamples noch Aufnahmen übertragen oder gespeichert.
+- Die Entität heißt passend **Relativer Schallpegel (30 Sekunden)**. Durch die
+  korrigierte ESPHome-Entity-ID kann Home Assistant den alten, nicht mehr
+  bereitgestellten 1-Minuten-Eintrag einmalig als nicht verfügbar anzeigen; er
+  kann anschließend aus der Entity Registry entfernt werden.
 
 ### Neutrale Mikrofon-Laufzeitdiagnose
 
@@ -26,7 +37,7 @@ Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
 - Die nur in der erweiterten Diagnose sichtbare Entität **Microphone status**
   unterscheidet Warten auf Versorgung, Start, laufende Aufnahme,
   Startzeitüberschreitung und ein weiterhin ungültiges erstes
-  60-Sekunden-Fenster. Sie enthält weder Samples noch Lautstärkewerte.
+  30-Sekunden-Fenster. Sie enthält weder Samples noch Lautstärkewerte.
 - Abziehen des Kabels und jeder gemeinsame Batterieschlafpfad beenden sowohl
   Start- und Prüfskripte als auch die I²S-Aufnahme, bevor GPIO38 abgeschaltet
   wird.
@@ -41,7 +52,7 @@ Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
   kompiliert sowohl das sichere 4-MB-Profil mit 16 % freier App-Partition als
   auch das experimentelle 32-MB-Profil mit 91 % freier App-Partition.
 - Die Korrektur ist gegen Seeeds offizielle E1001-Referenz und ESPHome 2026.8.1
-  abgeglichen. Die reale Ausgabe eines endlichen 60-Sekunden-RMS-Werts sowie
+  abgeglichen. Die reale Ausgabe eines endlichen 30-Sekunden-RMS-Werts sowie
   Kabel-ab-/anstecken und Akkubetrieb sind vor diesem Release noch nicht auf
   einem realen E1001 nachgeprüft und werden deshalb als `not_tested`
   veröffentlicht.

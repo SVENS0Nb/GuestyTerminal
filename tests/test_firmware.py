@@ -529,7 +529,7 @@ def test_default_entity_profile_exposes_only_everyday_entities() -> None:
         assert "internal:" not in entity_block(entity_id)
 
 
-def test_sound_level_is_a_private_mains_only_sixty_second_rms() -> None:
+def test_sound_level_is_a_private_mains_only_thirty_second_rms() -> None:
     """Measure locally only while confirmed external power is present."""
     package = PACKAGE_FILE.read_text(encoding="utf-8")
 
@@ -546,10 +546,10 @@ def test_sound_level_is_a_private_mains_only_sixty_second_rms() -> None:
     sound_level_end = package.index("\ntext_sensor:\n", sound_level_start)
     sound_level = package[sound_level_start:sound_level_end]
     assert "passive: true" in sound_level
-    assert "measurement_duration: 60s" in sound_level
+    assert "measurement_duration: 30s" in sound_level
     assert "microphone: guesty_microphone" in sound_level
-    assert "id: guesty_sound_level_1_minute" in sound_level
-    assert "name: Relativer Schallpegel (1 Minute)" in sound_level
+    assert "id: guesty_sound_level_30_seconds" in sound_level
+    assert "name: Relativer Schallpegel (30 Sekunden)" in sound_level
     assert "internal:" not in sound_level
     assert "peak:" not in sound_level
     assert "std::isfinite(x)" in sound_level
@@ -572,6 +572,7 @@ def test_sound_level_is_a_private_mains_only_sixty_second_rms() -> None:
     start_script_end = package.index("  # A running I2S task alone", start_script_start)
     start_script = package[start_script_start:start_script_end]
     assert "output.turn_on: guesty_microphone_power" in start_script
+    assert "id(guesty_sound_level_30_seconds).publish_state(NAN);" in start_script
     assert "delay: 200ms" in start_script
     assert "binary_sensor.is_on: guesty_external_power" in start_script
     assert "microphone.capture: guesty_microphone" in start_script
@@ -587,9 +588,9 @@ def test_sound_level_is_a_private_mains_only_sixty_second_rms() -> None:
         "  # Keep every battery sleep entry", verify_script_start
     )
     verify_script = package[verify_script_start:verify_script_end]
-    assert "delay: 70s" in verify_script
-    assert "id(guesty_sound_level_1_minute).has_state()" in verify_script
-    assert "std::isfinite(id(guesty_sound_level_1_minute).state)" in verify_script
+    assert "delay: 40s" in verify_script
+    assert "id(guesty_sound_level_30_seconds).has_state()" in verify_script
+    assert "std::isfinite(id(guesty_sound_level_30_seconds).state)" in verify_script
     assert '"no_valid_rms_value"' in verify_script
 
     assert "id: guesty_microphone_status" in package
