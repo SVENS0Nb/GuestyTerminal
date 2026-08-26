@@ -3,6 +3,33 @@
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt. Einträge
 unter „Unveröffentlicht“ gehören noch zu keinem freigegebenen Tag.
 
+## Unveröffentlicht
+
+### Pixelkontrast und Panelrand getrennt
+
+- Der reale A/B-Test mit 0.3.44 belegt, dass `auto/otp` den besseren
+  Schriftkontrast liefert, den separaten Rand aber dunkler ansteuert; `custom`
+  hellt den Rand sichtbar auf, macht zugleich jedoch das gesamte Pixelbild
+  heller. Renderer, Framebuffer und Farbumrechnung sind damit nicht die Ursache
+  dieser letzten Randabweichung.
+- Normale Vollrefreshs lassen die Randelektrode jetzt über `R50h.BDZ=1`
+  hochohmig. Die OTP-/Register-Auswahl steuert nur noch die Pixelwellenform und
+  kann den Rand bei späteren Buchungs- oder Wetterwechseln nicht wieder
+  abdunkeln. Auch der differentielle Teilrefresh behält diesen hochohmigen
+  Zustand bei.
+- Bei der ersten Renderrevision-30-Zustellung auf bestätigter externer
+  Versorgung läuft genau eine begrenzte Randkonditionierung: Seeeds bereits
+  lizenzierte Custom-`LUTKW` bewegt den Rand in Richtung Weiß; anschließend wird
+  derselbe Framebuffer sofort mit der gewählten Pixelwellenform und hochohmigem
+  Rand neu aufgebaut. Für kontrollierte Wiederholungen gibt es die Diagnose
+  **E-paper Randkorrektur** mit neutralem Ergebnisstatus. Auf Akku läuft diese
+  zusätzliche Doppelaktualisierung nicht automatisch.
+- Der frühere `R25/LUTBD`-Pfad bleibt entfernt. Es wurden keine neuen
+  Wellenformtabellen, OTP-Rohdaten oder Quellen übernommen. Renderrevision 30
+  erzwingt den notwendigen korrigierten Vollrefresh. Konfiguration und
+  Softwaretests sind erfolgreich; die sichtbare Restwirkung der neuen
+  Zwei-Pass-Korrektur bleibt bis zur Installation auf dem realen E1001 offen.
+
 ## 0.3.44 – 2026-08-26
 
 ### Identische Refresh-Schleife und dunkler Panelrand

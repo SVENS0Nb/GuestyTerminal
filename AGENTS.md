@@ -289,14 +289,18 @@ incomplete change.
   guard and then wait until active-low `BUSY_N` is inactive/high. Do not require
   witnessing a low assertion edge that may already have completed during the
   guard period.
-- Establish the UC8179 border's visible white state with Seeed's supported
-  E1001 `R50h=0x10,0x07` full-refresh selection; in KW mode with `DDX=00`,
-  `BDV=01` selects the active black-to-white `LUTKW` for the separate border
-  electrode. In both OTP and register-LUT modes use the independently
-  datasheet-derived `R52h=0x03`: `VCEND=0` retains `VCOM_DC`, while
-  `BDEND=11` releases the border after its LUT completes. Do not add a second
-  `R50h` write after OTP
-  `RE5h=0x5F`, and do not copy panel OTP bytes into `R25h`: the previously added
+- Keep the UC8179 pixel waveform and its separate border electrode decoupled.
+  Every normal OTP or register-LUT full refresh uses `R50h=0x90,0x07`, whose
+  documented `BDZ=1` leaves the border high-impedance without changing either
+  DTM pixel plane. Differential partial refreshes must preserve the same
+  `R50h=0x90,0x07` state rather than reselecting a border pixel LUT. A bounded
+  border recovery may run only on confirmed external
+  power: first render the same framebuffer once with Seeed's supported custom
+  `R50h=0x10,0x07` black-to-white `LUTKW` plus the independently
+  datasheet-derived `R52h=0x03`, power the panel down, then redraw the identical
+  framebuffer with the selected OTP/register pixel waveform and high-Z border.
+  Never turn this recovery into a periodic refresh or let it change content
+  fingerprints. Do not copy panel OTP bytes into `R25h`: the previously added
   `R25/LUTBD` path left `BUSY_N` asserted after the visible frame settled on
   the real E1001 and produced repeated identical redraw attempts. The `auto`
   probe may read check codes and grayscale markers twice, with bank 0 priority,

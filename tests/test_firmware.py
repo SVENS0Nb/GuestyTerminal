@@ -104,7 +104,7 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     stored_revision = re.search(r"id\(guesty_render_revision\) = (\d+);", package)
     assert expected_revision is not None
     assert stored_revision is not None
-    assert expected_revision.group(1) == "29"
+    assert expected_revision.group(1) == "30"
     assert expected_revision.group(1) == stored_revision.group(1)
     assert "guesty_terminal_update_display_v10" in package
     assert (
@@ -358,7 +358,7 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert "wait_after_controller_command_" in driver
     assert "const bool successful = this->display_()" in driver
     assert "this->last_update_successful_.store(successful)" in driver
-    assert "bool GuestyEPaperGray4::perform_full_refresh_(bool reset_panel)" in driver
+    assert "bool GuestyEPaperGray4::perform_full_refresh_(bool reset_panel," in driver
     assert "bool GuestyEPaperGray4::recover_for_custom_fallback_()" in driver
     assert "const bool initialized = this->active_lut_mode_" in driver
     assert "return this->refresh_();" in driver
@@ -374,12 +374,14 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
     assert power_off < wait_for_power_off < deep_sleep
     assert "this->command_(0x50)" not in sleep[:power_off]
     custom_init = driver[
-        driver.index("bool GuestyEPaperGray4::init_custom_gray_mode_()") : driver.index(
+        driver.index("bool GuestyEPaperGray4::init_custom_gray_mode_(") : driver.index(
             "bool GuestyEPaperGray4::init_otp_gray_mode_()"
         )
     ]
     border_register = custom_init.index("this->command_(0x50)")
-    border_select = custom_init.index("this->data_(0x10)", border_register)
+    border_select = custom_init.index(
+        "drive_border_white ? 0x10 : 0x90", border_register
+    )
     border_interval = custom_init.index("this->data_(0x07)", border_select)
     end_voltage = custom_init.index("this->command_(0x52)", border_interval)
     end_value = custom_init.index("this->data_(0x03)", end_voltage)
@@ -439,7 +441,7 @@ def test_panel_self_test_is_neutral_serialized_and_restores_payload() -> None:
     package = PACKAGE_FILE.read_text(encoding="utf-8")
 
     script_start = package.index("  - id: guesty_run_panel_self_test\n")
-    script_end = package.index("  # Keep every battery sleep entry", script_start)
+    script_end = package.index("  # A real-device A/B test proved", script_start)
     self_test = package[script_start:script_end]
     assert "id: guesty_self_test_page" in package
     assert '"Vier Graustufen · weißer Außenbereich · Teilrefresh"' in package
@@ -459,6 +461,29 @@ def test_panel_self_test_is_neutral_serialized_and_restores_payload() -> None:
     assert "|| id(guesty_self_test_active);" in package
     assert "name: E-paper Hardwaretest" in package
     assert "name: E-paper self-test" in package
+
+
+def test_border_recovery_is_bounded_external_power_only_and_keeps_proofs() -> None:
+    """Condition the border once without coupling it to normal pixel refreshes."""
+    package = PACKAGE_FILE.read_text(encoding="utf-8")
+    script_start = package.index("  - id: guesty_run_border_recovery\n")
+    script_end = package.index("  # Keep every battery sleep entry", script_start)
+    recovery = package[script_start:script_end]
+
+    assert "id(guesty_epaper).request_border_recovery()" in recovery
+    assert "script.execute: guesty_restore_payload_page" in recovery
+    assert "script.execute: guesty_prepare_wifi_qr" in recovery
+    assert 'id(guesty_wifi_qr).set_value("GuestyTerminal")' in recovery
+    assert "id(guesty_external_power).state" in recovery
+    assert '"requires_external_power"' in recovery
+    assert "timeout: 120s" in recovery
+    assert "id(guesty_content_id).clear()" not in recovery
+    assert "id(guesty_base_content_id).clear()" not in recovery
+    assert "id(guesty_render_revision)" not in recovery
+    assert "name: E-paper Randkorrektur" in package
+    assert "name: E-paper border recovery" in package
+    assert package.count("request_border_recovery()") == 3
+    assert package.count("id(guesty_render_revision) != 30") == 2
 
 
 def test_firmware_flash_layout_requires_explicit_usb_migration(tmp_path) -> None:
@@ -585,8 +610,10 @@ def test_panel_diagnostics_are_neutral_and_thread_safe() -> None:
     assert "std::atomic<uint8_t> last_error_" in header
     assert "std::atomic<uint8_t> active_lut_diagnostic_" in header
     assert "std::atomic<uint8_t> border_mode_" in header
+    assert "std::atomic<bool> border_recovery_requested_" in header
     assert 'return "busy_timeout";' in driver
-    assert 'return "lutkw_floating_end";' in driver
+    assert 'return "conditioning_lutkw";' in driver
+    assert 'return "lutkw_floating_end";' not in driver
     assert 'return "validated_lutbd";' not in driver
     assert 'return "high_z";' in driver
     assert "this->update_phase_.store(UPDATE_PHASE_TRANSFER)" in driver
@@ -596,56 +623,48 @@ def test_panel_diagnostics_are_neutral_and_thread_safe() -> None:
     assert "this->border_mode_.store(BORDER_MODE_UNKNOWN)" in driver
 
 
-def test_uc8179_full_modes_use_lutkw_with_floating_border_end() -> None:
-    """Drive the border white, then release it after the LUT completes."""
+def test_uc8179_decouples_normal_border_and_restores_selected_pixel_waveform() -> None:
+    """Condition the border separately, then leave it high-Z for normal frames."""
     driver = DRIVER_FILE.read_text(encoding="utf-8")
-    custom_start = driver.index("bool GuestyEPaperGray4::init_custom_gray_mode_()")
+    custom_start = driver.index("bool GuestyEPaperGray4::init_custom_gray_mode_(")
     otp_start = driver.index("bool GuestyEPaperGray4::init_otp_gray_mode_()")
     partial_start = driver.index("bool GuestyEPaperGray4::init_partial_mode_()")
     custom = driver[custom_start:otp_start]
     otp = driver[otp_start:partial_start]
 
     border_register = custom.index("this->command_(0x50)")
-    border_select = custom.index("this->data_(0x10)", border_register)
+    border_select = custom.index("drive_border_white ? 0x10 : 0x90", border_register)
     border_interval = custom.index("this->data_(0x07)", border_select)
     end_voltage = custom.index("this->command_(0x52)", border_interval)
     end_value = custom.index("this->data_(0x03)", end_voltage)
     pixel_lut_start = custom.index("this->write_lut_(0x20", end_value)
     assert border_register < border_select < border_interval
     assert border_interval < end_voltage < end_value < pixel_lut_start
-    assert (
-        "this->command_(0x50);  // VCOM AND DATA INTERVAL\n"
-        "  this->data_(0x10);     // BDZ=0, BDV=01 selects LUTKW, DDX=00\n"
-        "  this->data_(0x07);"
-    ) in custom
+    assert "this->data_(drive_border_white ? 0x10 : 0x90);" in custom
+    assert "BORDER_MODE_CONDITIONING_LUTKW" in custom
+    assert "BORDER_MODE_HIGH_Z" in custom
+    assert "this->data_(0x03);" in custom
+    assert "this->data_(0x00);" in custom
     assert "this->write_lut_(0x25" not in custom
     assert "this->data_(0x80)" not in custom
 
     otp_waveform = otp.index("this->data_(0x5F)")
     otp_prepare_register = otp.index("this->command_(0x50)")
-    otp_prepare_value = otp.index("this->data_(0x10)", otp_prepare_register)
+    otp_prepare_value = otp.index("this->data_(0x90)", otp_prepare_register)
     otp_interval = otp.index("this->data_(0x07)", otp_prepare_value)
-    otp_end_voltage = otp.index("this->command_(0x52)", otp_interval)
-    otp_end_value = otp.index("this->data_(0x03)", otp_end_voltage)
-    assert (
-        otp_prepare_register
-        < otp_prepare_value
-        < otp_interval
-        < otp_end_voltage
-        < otp_end_value
-        < otp_waveform
-    )
+    assert otp_prepare_register < otp_prepare_value < otp_interval < otp_waveform
     assert (
         "this->command_(0x50);  // VCOM AND DATA INTERVAL\n"
-        "  this->data_(0x10);     // BDZ=0, BDV=01 selects LUTKW, DDX=00\n"
+        "  this->data_(0x90);     // BDZ=1, BDV ignored, DDX=00\n"
         "  this->data_(0x07);"
     ) in otp
     assert otp.count("this->command_(0x50)") == 1
+    assert "this->command_(0x52)" not in otp
     assert "this->write_lut_(0x25" not in otp
 
     full_refresh = driver[
         driver.index(
-            "bool GuestyEPaperGray4::perform_full_refresh_(bool reset_panel)"
+            "bool GuestyEPaperGray4::perform_full_refresh_(bool reset_panel,"
         ) : driver.index("bool GuestyEPaperGray4::recover_for_custom_fallback_()")
     ]
     reset = full_refresh.index("this->reset_panel_()")
@@ -660,14 +679,18 @@ def test_uc8179_full_modes_use_lutkw_with_floating_border_end() -> None:
         )
     ]
     mode_selection = display.index("this->select_lut_mode_()")
-    full_attempt = display.index("this->perform_full_refresh_()")
+    conditioning = display.index("this->perform_full_refresh_(true, true)")
+    conditioning_shutdown = display.index("this->deep_sleep_panel_()", conditioning)
+    selected_restore = display.index("this->active_lut_mode_ = selected_lut_mode")
+    full_attempt = display.index("this->perform_full_refresh_()", selected_restore)
     fallback = display.index("this->recover_for_custom_fallback_()", full_attempt)
     retry = display.index("this->perform_full_refresh_(false)", fallback)
     retained_fallback = display.index(
         "retained_lut_selection.mode = LUT_MODE_CUSTOM", retry
     )
     shutdown = display.index("this->deep_sleep_panel_()", retained_fallback)
-    assert mode_selection < full_attempt
+    assert mode_selection < conditioning < conditioning_shutdown
+    assert conditioning_shutdown < selected_restore < full_attempt
     assert "ensure_custom_border_lut_" not in display
     assert full_attempt < fallback < retry < retained_fallback < shutdown
     assert "this->configured_lut_mode_ == LUT_MODE_AUTO" in display
@@ -784,6 +807,17 @@ def test_uc8179_partial_refresh_and_shutdown_do_not_override_full_border() -> No
             "bool GuestyEPaperGray4::display_partial_("
         )
     ]
+    partial_init = driver[
+        driver.index("bool GuestyEPaperGray4::init_partial_mode_()") : driver.index(
+            "void GuestyEPaperGray4::write_plane_("
+        )
+    ]
+    assert "this->border_mode_.store(BORDER_MODE_HIGH_Z)" in partial_init
+    assert (
+        "this->command_(0x50);  // N2OCP copies the new plane after refresh\n"
+        "  this->data_(0x90);"
+    ) in partial_init
+    assert "this->data_(0x10);" not in partial_init
     assert "this->data_(0xA9);\n  this->data_(0x07);" in partial_area
     partial_setup = partial_refresh.index("this->set_partial_ram_area_()")
     partial_command = partial_refresh.index("this->command_(0x12)")

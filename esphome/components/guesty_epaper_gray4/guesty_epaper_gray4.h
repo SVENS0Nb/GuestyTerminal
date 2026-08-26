@@ -66,6 +66,9 @@ class GuestyEPaperGray4
     this->max_partial_updates_ = updates;
   }
   void request_partial_update() { this->partial_update_requested_ = true; }
+  void request_border_recovery() {
+    this->border_recovery_requested_.store(true);
+  }
   bool update_in_progress() const { return this->update_in_progress_.load(); }
   bool last_update_successful() const {
     return this->last_update_successful_.load();
@@ -111,7 +114,7 @@ class GuestyEPaperGray4
   };
   enum BorderMode : uint8_t {
     BORDER_MODE_UNKNOWN = 0,
-    BORDER_MODE_LUTKW_FLOATING_END,
+    BORDER_MODE_CONDITIONING_LUTKW,
     BORDER_MODE_HIGH_Z,
   };
 
@@ -138,7 +141,7 @@ class GuestyEPaperGray4
                       uint8_t *marker);
   bool read_otp_profile_(bool *grayscale_supported);
   bool select_lut_mode_();
-  bool init_custom_gray_mode_();
+  bool init_custom_gray_mode_(bool drive_border_white = false);
   bool init_otp_gray_mode_();
   bool init_partial_mode_();
   void write_lut_(uint8_t command, const uint8_t *lut, size_t length);
@@ -161,7 +164,8 @@ class GuestyEPaperGray4
   static void update_task_(void *parameter);
 #endif
   bool refresh_();
-  bool perform_full_refresh_(bool reset_panel = true);
+  bool perform_full_refresh_(bool reset_panel = true,
+                             bool drive_border_white = false);
   bool recover_for_custom_fallback_();
   bool display_();
   void deep_sleep_panel_();
@@ -181,8 +185,10 @@ class GuestyEPaperGray4
   std::atomic<uint8_t> last_error_{UPDATE_ERROR_NONE};
   std::atomic<uint8_t> active_lut_diagnostic_{LUT_MODE_AUTO};
   std::atomic<uint8_t> border_mode_{BORDER_MODE_UNKNOWN};
+  std::atomic<bool> border_recovery_requested_{false};
   bool prepared_partial_available_{false};
   bool prepared_partial_requested_{false};
+  bool prepared_border_recovery_requested_{false};
   bool partial_refresh_configured_{false};
   bool partial_update_requested_{false};
   uint16_t partial_x_{0};

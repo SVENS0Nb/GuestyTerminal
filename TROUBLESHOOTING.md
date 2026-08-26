@@ -74,6 +74,36 @@ Pigmentrand tatsächlich aufhellt, kann dagegen nur der nächste Vollrefresh auf
 dem realen E1001 entscheiden; bis dahin ist diese Teilkorrektur ausdrücklich
 nicht als hardwarebestätigt dokumentiert.
 
+### Realgerät-Nachtest 0.3.44 und Folgerung
+
+Der anschließende Test mit Firmware 0.3.44 bestätigte zunächst die
+Transaktionskorrektur: Im OTP-Modus endete der Vollrefresh nach rund 3,5
+Sekunden erfolgreich, `POWER OFF` nach rund 33 Millisekunden, und ein danach
+identisch zugestellter Payload wurde ohne weitere Panelaktivität unterdrückt.
+Die frühere Refresh-Schleife war damit behoben.
+
+Der sichtbare Rand blieb jedoch grau. Ein kontrollierter Wechsel nur der
+vorhandenen Einstellung `gray_lut_mode` ergab:
+
+- `auto/otp`: Schrift und Bild sind dunkler und kontrastreicher, der separate
+  Rand ist ebenfalls dunkler.
+- `custom`: Der Rand wird sichtbar heller, aber zugleich wird auch das gesamte
+  Pixelbild einschließlich der Schrift heller.
+
+Damit ist der 800×480-Renderer als Ursache ausgeschlossen. Pixelbild und Rand
+verwenden zwar getrennte UC8179-Ausgänge, wurden aber weiterhin von derselben
+ausgewählten Schwarz-zu-Weiß-Wellenform beeinflusst. Die nachhaltige Korrektur
+trennt deshalb beide Aufgaben: Normale Vollrefreshs lassen die Randelektrode
+mit `R50h.BDZ=1` hochohmig. Eine nur auf bestätigter externer Versorgung
+zulässige Randkorrektur führt einmal Seeeds bereits vorhandene Custom-`LUTKW`
+aus, schaltet das Panel sauber aus und zeichnet denselben Framebuffer danach
+mit der zuvor gewählten Pixelwellenform und weiterhin hochohmigem Rand neu.
+Renderrevision 30 fordert diesen Ablauf beim Upgrade einmalig an; der
+Diagnosebutton **E-paper Randkorrektur** erlaubt eine kontrollierte,
+serialisierte Wiederholung. Inhaltsfingerabdrücke und Gastdaten werden dabei
+nicht verändert. Die Architektur ist statisch und per Firmwarebau prüfbar;
+die endgültige Weißwirkung benötigt weiterhin den Realgerätetest.
+
 ### Nebenbefund: WLAN-QR in ESPHome-Diagnose
 
 Das Protokoll zeigte außerdem, dass ESPHomes `qr_code.dump_config()` den

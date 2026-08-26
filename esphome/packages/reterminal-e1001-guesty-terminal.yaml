@@ -106,6 +106,7 @@ esphome:
         - component.update: guesty_delivery_status
         - component.update: guesty_flash_layout
         - component.update: guesty_self_test_status
+        - component.update: guesty_border_recovery_status
         - delay: 500ms
         - component.update: guesty_terminal_endpoint
 
@@ -267,7 +268,7 @@ api:
                   else:
                     - lambda: |-
                         const bool renderer_current =
-                            id(guesty_render_revision) == 29;
+                            id(guesty_render_revision) == 30;
                         int battery_percent = -1;
                         if (id(guesty_battery_level).has_state()
                             && std::isfinite(id(guesty_battery_level).state)) {
@@ -405,8 +406,16 @@ api:
                                 && !id(guesty_failed_content_suppressed);
                         then:
                           - lambda: |-
-                              if (id(guesty_weather_only_changed)
-                                  || id(guesty_battery_only_changed)) {
+                              const bool renderer_upgrade =
+                                  id(guesty_render_revision) != 30;
+                              const bool confirmed_external_power =
+                                  id(guesty_external_power).has_state()
+                                  && id(guesty_external_power).state;
+                              if (renderer_upgrade
+                                  && confirmed_external_power) {
+                                id(guesty_epaper).request_border_recovery();
+                              } else if (id(guesty_weather_only_changed)
+                                         || id(guesty_battery_only_changed)) {
                                 id(guesty_epaper).request_partial_update();
                               }
                           - component.update: guesty_epaper
@@ -439,7 +448,7 @@ api:
                                           id(guesty_content_id) = content_id;
                                           id(guesty_base_content_id) =
                                               base_content_id;
-                                          id(guesty_render_revision) = 29;
+                                          id(guesty_render_revision) = 30;
                                           id(guesty_failed_content_id).clear();
                                           id(guesty_screen_sensitive) =
                                               mode != "idle";
@@ -618,7 +627,7 @@ api:
                     && !id(guesty_epaper).update_in_progress();
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            const bool renderer_current = id(guesty_render_revision) == 29;
+            const bool renderer_current = id(guesty_render_revision) == 30;
             int battery_percent = -1;
             if (id(guesty_battery_level).has_state()
                 && std::isfinite(id(guesty_battery_level).state)) {
@@ -727,8 +736,15 @@ api:
               lambda: return id(guesty_content_changed);
             then:
               - lambda: |-
-                  if (id(guesty_weather_only_changed)
-                      || id(guesty_battery_only_changed)) {
+                  const bool renderer_upgrade =
+                      id(guesty_render_revision) != 30;
+                  const bool confirmed_external_power =
+                      id(guesty_external_power).has_state()
+                      && id(guesty_external_power).state;
+                  if (renderer_upgrade && confirmed_external_power) {
+                    id(guesty_epaper).request_border_recovery();
+                  } else if (id(guesty_weather_only_changed)
+                             || id(guesty_battery_only_changed)) {
                     id(guesty_epaper).request_partial_update();
                   }
               - component.update: guesty_epaper
@@ -747,7 +763,7 @@ api:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
-                        id(guesty_render_revision) = 29;
+                        id(guesty_render_revision) = 30;
                         id(guesty_screen_sensitive) = mode != "idle";
                         id(guesty_valid_until_epoch) =
                             mode == "idle" ? 0 : valid_until_epoch;
@@ -1068,6 +1084,9 @@ globals:
   - id: guesty_self_test_result
     type: std::string
     initial_value: '"idle"'
+  - id: guesty_border_recovery_result
+    type: std::string
+    initial_value: '"idle"'
   - id: guesty_self_test_saved_content_id
     type: std::string
     initial_value: '""'
@@ -1226,6 +1245,7 @@ script:
                   && id(guesty_external_power).state;
               return external_power
                   && !id(guesty_delivery_handler_busy)
+                  && !id(guesty_self_test_active)
                   && !id(guesty_epaper).update_in_progress();
           then:
             - lambda: |-
@@ -1325,6 +1345,69 @@ script:
           else:
             - text_sensor.template.publish:
                 id: guesty_self_test_status
+                state: !lambda |-
+                  const bool external_power =
+                      id(guesty_external_power).has_state()
+                      && id(guesty_external_power).state;
+                  return external_power ? "busy" : "requires_external_power";
+
+  # A real-device A/B test proved that the OTP pixel waveform gives the best
+  # text contrast while the Seeed register LUTKW moves the separate border
+  # closer to white. Run exactly one conditioning pass and immediately redraw
+  # the same payload with the selected pixel waveform and a high-Z border.
+  # This diagnostic is external-power-only and never changes content proofs.
+  - id: guesty_run_border_recovery
+    mode: single
+    then:
+      - script.execute: guesty_read_external_power
+      - script.wait: guesty_read_external_power
+      - if:
+          condition:
+            lambda: |-
+              const bool external_power =
+                  id(guesty_external_power).has_state()
+                  && id(guesty_external_power).state;
+              return external_power
+                  && !id(guesty_delivery_handler_busy)
+                  && !id(guesty_self_test_active)
+                  && !id(guesty_epaper).update_in_progress();
+          then:
+            - lambda: |-
+                id(guesty_self_test_active) = true;
+                id(guesty_border_recovery_result) = "running";
+            - text_sensor.template.publish:
+                id: guesty_border_recovery_status
+                state: "running"
+            - script.execute: guesty_restore_payload_page
+            - script.wait: guesty_restore_payload_page
+            - script.execute: guesty_prepare_wifi_qr
+            - script.wait: guesty_prepare_wifi_qr
+            - lambda: id(guesty_epaper).request_border_recovery();
+            - component.update: guesty_epaper
+            - lambda: id(guesty_wifi_qr).set_value("GuestyTerminal");
+            - wait_until:
+                condition:
+                  lambda: return !id(guesty_epaper).update_in_progress();
+                timeout: 120s
+            - lambda: |-
+                if (id(guesty_epaper).update_in_progress()) {
+                  id(guesty_border_recovery_result) = "hardware_timeout";
+                } else if (id(guesty_epaper).last_update_successful()) {
+                  id(guesty_border_recovery_result) = "success";
+                } else {
+                  id(guesty_border_recovery_result) = "failed";
+                }
+                id(guesty_self_test_active) = false;
+            - text_sensor.template.publish:
+                id: guesty_border_recovery_status
+                state: !lambda return id(guesty_border_recovery_result);
+            - component.update: guesty_panel_phase
+            - component.update: guesty_panel_error
+            - component.update: guesty_waveform_mode
+            - component.update: guesty_border_mode
+          else:
+            - text_sensor.template.publish:
+                id: guesty_border_recovery_status
                 state: !lambda |-
                   const bool external_power =
                       id(guesty_external_power).has_state()
@@ -1890,6 +1973,13 @@ text_sensor:
     entity_category: diagnostic
     update_interval: never
     lambda: return {id(guesty_self_test_result)};
+  - platform: template
+    id: guesty_border_recovery_status
+    name: E-paper border recovery
+    icon: mdi:border-outside
+    entity_category: diagnostic
+    update_interval: never
+    lambda: return {id(guesty_border_recovery_result)};
   # The Home Assistant integration discovers this entity. Its state is the
   # exact ESPHome action name to call while this device is awake.
   - platform: template
@@ -1974,6 +2064,13 @@ button:
     entity_category: diagnostic
     on_press:
       - script.execute: guesty_run_panel_self_test
+  - platform: template
+    id: guesty_border_recovery
+    name: E-paper Randkorrektur
+    icon: mdi:border-outside
+    entity_category: diagnostic
+    on_press:
+      - script.execute: guesty_run_border_recovery
 
 time:
   - platform: pcf8563

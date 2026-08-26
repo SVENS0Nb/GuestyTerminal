@@ -51,11 +51,13 @@ part of the pixel data:
 - Datasheet: <https://files.seeedstudio.com/wiki/Other_Display/750-epaper/IC%20Driver%20UC8179.pdf>
 - Relevant command: `R25h/LUTBD`, the dedicated 42-byte, seven-group border
   waveform table; GuestyTerminal documents it but does not write it
-- Relevant fields: in KW mode with `DDX=00`, `R50h.BDV=01` selects the
-  black-to-white `LUTKW` for the separate border electrode
+- Relevant fields: `R50h.BDZ=1` leaves the border electrode high-impedance;
+  during the explicit recovery pass, KW mode with `DDX=00` and `BDV=01`
+  selects the black-to-white `LUTKW` for that separate electrode
 - Relevant field: `R00h.PSR.REG`, which selects panel OTP or register LUTs
 - Relevant field: `R52h.BDEND`; GuestyTerminal independently uses the
-  datasheet-defined value `11` to release the border after its LUT completes
+  datasheet-defined value `11` to release the border after the bounded recovery
+  LUT completes
 - Relevant power-off behavior: `R02h` releases Source, Gate, Border, and VCOM
   to floating, so GuestyTerminal does not add a late `R50h` override
 - Relevant OTP mapping: bank check codes at `0x0000`/`0x0C00` and the common
@@ -64,8 +66,10 @@ part of the pixel data:
 GuestyTerminal reads only the selected banks' check codes and grayscale support
 markers, twice, for its retained auto-mode decision. It does not retain or
 replay the panel-resident LUTBD and never writes R25. Raw OTP waveform bytes are
-not logged, bundled, committed, or redistributed. No datasheet content is
-bundled in this repository.
+not logged, bundled, committed, or redistributed. Normal full refreshes leave
+the border high-impedance; the optional recovery reuses only Seeed's already
+licensed register `LUTKW` and then restores the selected pixel waveform. No
+datasheet content is bundled in this repository.
 
 ## Seeed_GFX UC8179 support
 

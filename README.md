@@ -212,14 +212,17 @@ andernfalls greift der Treiber auf Seeeds MIT-lizenzierte Register-LUTs zurück.
 Die erkannte Auswahl bleibt über den Tiefschlaf erhalten, damit der
 30-Minuten-Akkuzyklus nicht durch eine erneute Modusprüfung bei jedem Aufwachen
 belastet wird. Der sichtbare schmale Panelrand liegt außerhalb des
-800×480-Bildspeichers und besitzt eine eigene Elektrode. Für OTP- und
-Register-LUT-Vollrefreshs behält der Treiber Seeeds E1001-Auswahl
-`R50h=0x10,0x07`. Im aktiven Schwarz-Weiß-Modus wählt sie für den Rand die
-Schwarz-zu-Weiß-Wellenform `LUTKW`. Da Seeeds ursprüngliche Endspannung den
-realen dunklen Rand nicht beseitigte, geben jetzt beide Modi die Elektrode nach
-der Wellenform über das datenblattdefinierte `R52h.BDEND=11` frei. Ein spätes
-`R50h` vor `POWER OFF` entfällt; der Ausschaltbefehl selbst schaltet laut
-Datenblatt alle Panel-Ausgänge hochohmig. Der zuvor ergänzte Laufzeitpfad, der
+800×480-Bildspeichers und besitzt eine eigene Elektrode. Normale OTP- und
+Register-LUT-Vollrefreshs lassen diese Elektrode über das dokumentierte
+`R50h.BDZ=1` hochohmig, damit die für Text und Bild gewählte Pixelwellenform den
+Rand nicht erneut verfärbt. Auch Teilrefreshs behalten diesen Zustand bei. Eine
+begrenzte Randkorrektur auf bestätigter
+externer Versorgung führt denselben Framebuffer zuerst einmal mit Seeeds
+Custom-Schwarz-zu-Weiß-`LUTKW` aus und zeichnet ihn anschließend mit der
+gewählten Pixelwellenform sowie hochohmigem Rand neu. So bleibt der bessere
+OTP-Textkontrast erhalten. Ein spätes `R50h` vor `POWER OFF` entfällt; der
+Ausschaltbefehl selbst schaltet laut Datenblatt alle Panel-Ausgänge
+hochohmig. Der zuvor ergänzte Laufzeitpfad, der
 42 OTP-Bytes nach `R25h/LUTBD` kopierte, wurde entfernt: Das reale Gerät blieb
 damit nach dem sichtbaren Bildaufbau in `BUSY_N` hängen. Die OTP-Prüfung liest
 nur noch die Checkcodes und Graustufen-Markierungen wiederholt; Rohdaten der
@@ -456,9 +459,14 @@ Symbol folgt ihm in Zehn-Prozent-Stufen.
   Erfolg, ein nachweislich unverändertes Bild und begrenzte Fehlerzustände.
   **E-paper phase**, **E-paper error**, **E-paper waveform** und
   **E-paper border mode** zeigen neutral, in welcher Controllerphase ein
-  Vollrefresh steht und ob die Randelektrode über den weißen `LUTKW`-Pfad oder
-  während Teilrefresh/Ausschalten hochohmig angesteuert wurde. Diese
+  Vollrefresh steht und ob die Randelektrode gerade einmalig über den weißen
+  `LUTKW`-Pfad konditioniert oder für den normalen Bildaufbau hochohmig ist. Diese
   Entitäten enthalten keine Gast-, Türcode- oder WLAN-Daten.
+- **E-paper Randkorrektur** wiederholt die begrenzte Zwei-Pass-Korrektur nur bei
+  bestätigter externer Versorgung. **E-paper border recovery** meldet
+  `success`, `failed`, `hardware_timeout`, `busy` oder
+  `requires_external_power`. Der sichtbare Payload und seine gespeicherten
+  Inhaltsnachweise bleiben dabei unverändert.
 - **E-paper Hardwaretest** führt den Test nur bei bestätigter externer
   Versorgung aus. Er zeigt kurz ein neutrales Vier-Grau-Testbild, verändert danach
   ausschließlich das 136×64-Pixel-Statusfenster per Teilrefresh und stellt die

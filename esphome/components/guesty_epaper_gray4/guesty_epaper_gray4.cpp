@@ -18,10 +18,9 @@ namespace esphome::guesty_epaper_gray4 {
 
 static const char *const TAG = "guesty_epaper_gray4";
 static constexpr uint32_t RETAINED_PARTIAL_MAGIC = 0x47545031UL;
-// Version 4 invalidates the earlier selection once. The previous custom path
-// copied the panel's common LUTBD into R25 and could leave BUSY_N asserted on
-// the real E1001. Re-probe after restoring Seeed's supported R50 sequence and
-// applying the datasheet-defined floating border end state.
+// Version 4 invalidated the earlier selection once after removing the failed
+// host-copied LUTBD experiment. Border treatment is independent of the OTP
+// capability decision, so the proven selection remains valid here.
 static constexpr uint32_t RETAINED_LUT_SELECTION_MAGIC = 0x47544C34UL;
 
 struct RetainedPartialFrame {
@@ -136,8 +135,8 @@ const char *GuestyEPaperGray4::active_lut_mode_name() const {
 
 const char *GuestyEPaperGray4::border_mode_name() const {
   switch (this->border_mode_.load()) {
-    case BORDER_MODE_LUTKW_FLOATING_END:
-      return "lutkw_floating_end";
+    case BORDER_MODE_CONDITIONING_LUTKW:
+      return "conditioning_lutkw";
     case BORDER_MODE_HIGH_Z:
       return "high_z";
     default:
@@ -173,7 +172,10 @@ void GuestyEPaperGray4::update() {
   this->last_update_successful_.store(false);
   this->last_update_was_partial_.store(false);
 
-  const bool partial_requested = this->partial_update_requested_;
+  const bool border_recovery_requested =
+      this->border_recovery_requested_.exchange(false);
+  const bool partial_requested =
+      this->partial_update_requested_ && !border_recovery_requested;
   const bool partial_available =
       partial_requested && this->retained_partial_frame_valid_() &&
       retained_partial_frame.partial_count < this->max_partial_updates_;
@@ -193,6 +195,7 @@ void GuestyEPaperGray4::update() {
 
   this->prepared_partial_available_ = partial_available;
   this->prepared_partial_requested_ = partial_requested;
+  this->prepared_border_recovery_requested_ = border_recovery_requested;
 
 #ifdef USE_ESP32
   // OTP inspection, plane transfer and a physical E-paper refresh can take
@@ -718,8 +721,7 @@ void GuestyEPaperGray4::write_lut_(uint8_t command, const uint8_t *lut, size_t l
   this->end_data_();
 }
 
-bool GuestyEPaperGray4::init_custom_gray_mode_() {
-  this->border_mode_.store(BORDER_MODE_LUTKW_FLOATING_END);
+bool GuestyEPaperGray4::init_custom_gray_mode_(bool drive_border_white) {
   this->command_(0x01);  // POWER SETTING
   this->data_(0x07);
   this->data_(0x17);
@@ -750,17 +752,27 @@ bool GuestyEPaperGray4::init_custom_gray_mode_() {
   this->command_(0xE3);  // POWER SAVING
   this->data_(0x88);
 
-  // Keep Seeed's E1001 R50 selection. With PSR=0x3F the first byte selects the
-  // register LUTKW black-to-white waveform for the separate border electrode.
-  // The shipped R52=0x00 end state was already proven to leave a dark border
-  // on the real panel. UC8179 R52.BDEND=11 releases the border after the LUT
-  // finishes, so the completed white transition is not held at 0 V.
+  // Pixel and border waveforms are independent UC8179 outputs. Normal frames
+  // leave the border high-impedance so changing the selected pixel waveform
+  // cannot darken it again. A bounded, explicitly requested conditioning pass
+  // uses Seeed's already licensed register LUTKW once to move a dark border
+  // towards white, then the caller redraws the same frame with the selected
+  // pixel waveform and a high-impedance border.
   this->command_(0x50);  // VCOM AND DATA INTERVAL
-  this->data_(0x10);     // BDZ=0, BDV=01 selects LUTKW, DDX=00
+  this->data_(drive_border_white ? 0x10 : 0x90);
   this->data_(0x07);
 
-  this->command_(0x52);  // END VOLTAGE SETTING
-  this->data_(0x03);     // VCEND=VCOM_DC, BDEND=floating (datasheet)
+  if (drive_border_white) {
+    this->border_mode_.store(BORDER_MODE_CONDITIONING_LUTKW);
+    this->command_(0x52);  // END VOLTAGE SETTING
+    this->data_(0x03);     // VCEND=VCOM_DC, BDEND=floating (datasheet)
+  } else {
+    this->border_mode_.store(BORDER_MODE_HIGH_Z);
+    // Keep Seeed's original register-LUT end setting for the pixel waveform.
+    // BDEND is inert while R50.BDZ keeps the border high-impedance.
+    this->command_(0x52);
+    this->data_(0x00);
+  }
 
   this->command_(0x61);  // 800x480 resolution
   this->data_(WIDTH >> 8);
@@ -777,7 +789,7 @@ bool GuestyEPaperGray4::init_custom_gray_mode_() {
 }
 
 bool GuestyEPaperGray4::init_otp_gray_mode_() {
-  this->border_mode_.store(BORDER_MODE_LUTKW_FLOATING_END);
+  this->border_mode_.store(BORDER_MODE_HIGH_Z);
   this->command_(0x01);  // POWER SETTING
   this->data_(0x07);
   this->data_(0x07);
@@ -804,19 +816,12 @@ bool GuestyEPaperGray4::init_otp_gray_mode_() {
   this->data_(HEIGHT >> 8);
   this->data_(HEIGHT & 0xFF);
 
-  // Keep Seeed_GFX's complete OTP preparation sequence unchanged. In KW mode
-  // R50=0x10 selects the OTP bank's black-to-white LUT for the border. Do not
-  // override it with LUTBD after E5: that unverified addition left BUSY_N
-  // active on the real E1001 after the visible image had already settled.
+  // Keep Seeed_GFX's OTP pixel preparation, but decouple the separate border
+  // electrode from the selected pixel waveform. R50.BDZ=1 is the controller's
+  // documented high-impedance state and does not alter the DTM pixel planes.
   this->command_(0x50);  // VCOM AND DATA INTERVAL
-  this->data_(0x10);     // BDZ=0, BDV=01 selects LUTKW, DDX=00
+  this->data_(0x90);     // BDZ=1, BDV ignored, DDX=00
   this->data_(0x07);
-
-  // Drive the border through the selected OTP LUTKW, then release it after
-  // the waveform completes. This changes no OTP waveform bytes and keeps the
-  // VCOM end-voltage selection at its safe default.
-  this->command_(0x52);  // END VOLTAGE SETTING
-  this->data_(0x03);     // VCEND=VCOM_DC, BDEND=floating (datasheet)
 
   this->command_(0xE0);  // CASCADE SETTING
   this->data_(0x02);
@@ -826,6 +831,7 @@ bool GuestyEPaperGray4::init_otp_gray_mode_() {
 }
 
 bool GuestyEPaperGray4::init_partial_mode_() {
+  this->border_mode_.store(BORDER_MODE_HIGH_Z);
   // Seeed's UC8179 OTP differential mode uses only black and white inside the
   // configured window; the rest of the panel keeps its four-gray image.
   this->command_(0x01);  // POWER SETTING
@@ -858,7 +864,7 @@ bool GuestyEPaperGray4::init_partial_mode_() {
   this->data_(0x00);
 
   this->command_(0x50);  // N2OCP copies the new plane after refresh
-  this->data_(0x10);
+  this->data_(0x90);     // Preserve N2OCP/DDX while BDZ keeps border high-Z
   this->data_(0x07);
 
   this->command_(0x60);  // TCON SETTING
@@ -1096,7 +1102,8 @@ bool GuestyEPaperGray4::refresh_() {
   return true;
 }
 
-bool GuestyEPaperGray4::perform_full_refresh_(bool reset_panel) {
+bool GuestyEPaperGray4::perform_full_refresh_(bool reset_panel,
+                                              bool drive_border_white) {
   if (reset_panel) {
     this->update_phase_.store(UPDATE_PHASE_RESET);
     if (!this->reset_panel_())
@@ -1104,7 +1111,8 @@ bool GuestyEPaperGray4::perform_full_refresh_(bool reset_panel) {
   }
   const bool initialized = this->active_lut_mode_ == LUT_MODE_OTP
                                ? this->init_otp_gray_mode_()
-                               : this->init_custom_gray_mode_();
+                               : this->init_custom_gray_mode_(
+                                     drive_border_white);
   if (!initialized)
     return false;
   this->log_frame_levels_();
@@ -1144,6 +1152,26 @@ bool GuestyEPaperGray4::display_() {
   if (!this->select_lut_mode_())
     return false;
 
+  const LutMode selected_lut_mode = this->active_lut_mode_;
+  if (this->prepared_border_recovery_requested_) {
+    ESP_LOGI(TAG,
+             "Running one bounded border-conditioning pass before the "
+             "selected grayscale refresh");
+    this->active_lut_mode_ = LUT_MODE_CUSTOM;
+    this->active_lut_diagnostic_.store(LUT_MODE_CUSTOM);
+    const bool conditioned = this->perform_full_refresh_(true, true);
+    this->deep_sleep_panel_();
+    if (!conditioned || this->last_error_.load() != UPDATE_ERROR_NONE)
+      return false;
+
+    // The conditioning pass intentionally changes only the physical border
+    // treatment. Redraw the exact same framebuffer with the configured/auto
+    // pixel waveform and high-impedance border so text contrast is unaffected.
+    this->active_lut_mode_ = selected_lut_mode;
+    this->active_lut_diagnostic_.store(selected_lut_mode);
+    this->border_mode_.store(BORDER_MODE_UNKNOWN);
+  }
+
   bool refreshed = this->perform_full_refresh_();
   const bool may_fallback =
       !refreshed && this->configured_lut_mode_ == LUT_MODE_AUTO &&
@@ -1171,10 +1199,10 @@ void GuestyEPaperGray4::deep_sleep_panel_() {
   if (this->panel_asleep_)
     return;
   this->update_phase_.store(UPDATE_PHASE_SHUTDOWN);
-  // R52.BDEND already released the border after the completed LUT. Do not
-  // rewrite R50 here: versions 0.3.34 through 0.3.43 proved that a late border
-  // override neither whitened the bistable pigment nor improved shutdown.
-  // UC8179 POWER OFF itself releases Source/Gate/Border/VCOM to floating.
+  // The final full-refresh initialization already left the border high-Z.
+  // Do not rewrite R50 here: versions 0.3.34 through 0.3.43 proved that a late
+  // border override neither whitened the bistable pigment nor improved
+  // shutdown. UC8179 POWER OFF itself releases all panel outputs to floating.
   this->command_(0x02);  // POWER OFF
   const bool powered_off =
       this->wait_until_idle_("after power off", POWER_OFF_IDLE_TIMEOUT_MS);
