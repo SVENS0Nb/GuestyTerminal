@@ -4,6 +4,45 @@ Dieses Dokument hält wiederverwendbare Diagnosewege und bestätigte
 Fehlerursachen fest. Es darf keine Gastnamen, Reservierungs-IDs, Türcodes,
 WLAN-Zugangsdaten oder Home-Assistant-/ESPHome-Schlüssel enthalten.
 
+## Störung 2026-08-26: Schallpegel bleibt dauerhaft „Unbekannt“
+
+### Beobachtung und sichere Aussage
+
+Mit Firmware 0.3.48 blieb **Relativer Schallpegel (1 Minute)** auch länger als
+ein vollständiges 60-Sekunden-Fenster auf **Unbekannt**, obwohl
+**External power** aktiv war. Das beweist, dass Home Assistant keinen endlichen
+RMS-Wert erhalten hat. Allein daraus lässt sich noch nicht unterscheiden, ob
+die I²S-Aufnahme gar nicht lief oder ob sie nur ungültige beziehungsweise
+vollständig nullgesetzte Samples lieferte.
+
+### Quellenabgleich und Korrektur
+
+Die Strom- und Datenpins waren richtig: GPIO38 schaltet das Mikrofon, GPIO42
+liefert den PDM-Takt und GPIO41 nimmt Daten entgegen. Der Empfangsslot wich
+jedoch von Seeeds funktionsfähiger Referenz ab. Deren
+[`MicRecordToSD.ino`](https://github.com/Seeed-Projects/OSHW-reTerminal-Series-E-D/blob/main/examples/base/MicRecordToSD/MicRecordToSD.ino)
+initialisiert `I2S_PDM_RX_SLOT_DEFAULT_CONFIG` im Mono-Modus; Espressifs
+zugehöriges IDF-Makro wählt dafür `I2S_PDM_SLOT_LEFT`. ESPHome 2026.8.1 setzt
+einen nicht angegebenen Mikrofonkanal dagegen standardmäßig auf `right`.
+GuestyTerminal 0.3.48 hatte keinen Kanal angegeben und übernahm dadurch diesen
+abweichenden Standard.
+
+Firmware 0.3.49 setzt deshalb ausdrücklich `channel: left`. Zusätzlich prüft
+der externe-Strom-Trigger, ob ESPHomes I²S-Task innerhalb von fünf Sekunden
+wirklich läuft. Nach 70 Sekunden kontrolliert ein separater neutraler Pfad, ob
+das erste vollständige RMS-Fenster einen endlichen Wert geliefert hat. Die
+erweiterte Entität **Microphone status** unterscheidet damit
+`initialization_failed`, `capture_start_timeout` und `no_valid_rms_value`, ohne
+Samples oder Lautstärkedetails offenzulegen.
+
+Diese Ursache ist durch den Abgleich der fest gepinnten Quellstände und die
+fehlende Kanalkonfiguration belegt. Ob der linke Slot am konkreten Gerät danach
+einen plausiblen endlichen Wert liefert, muss der Realgerätetest von 0.3.49
+bestätigen. Dafür bei angeschlossenem Strom nach dem Neustart mindestens 70
+Sekunden warten. Der RMS-Sensor muss dann endlich sein; beim Abziehen des
+Kabels müssen Aufnahme und GPIO38 enden, und auf Akku muss der Sensor nicht
+verfügbar bleiben.
+
 ## Störung 2026-08-26: identischer Vollrefresh wiederholt sich und Rand bleibt dunkel
 
 ### Bestätigte Diagnose

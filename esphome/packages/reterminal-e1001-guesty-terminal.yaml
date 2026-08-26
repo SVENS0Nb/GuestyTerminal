@@ -118,6 +118,18 @@ esphome:
         - component.update: guesty_self_test_status
         - component.update: guesty_border_recovery_status
         - component.update: guesty_charging_status
+        - component.update: guesty_microphone_status
+        # Anchor the first-window check after every component, including the
+        # passive sound-level consumer, has completed setup. The power event
+        # starts the same check for cable connections after boot.
+        - if:
+            condition:
+              lambda: |-
+                return id(guesty_external_power).has_state()
+                    && id(guesty_external_power).state
+                    && id(guesty_microphone).is_running();
+            then:
+              - script.execute: guesty_verify_microphone_window
         - delay: 500ms
         - component.update: guesty_terminal_endpoint
 
@@ -1167,6 +1179,12 @@ globals:
   - id: guesty_battery_level_refresh_requested
     type: bool
     initial_value: "false"
+  # Keep only a neutral, volatile microphone lifecycle state. This makes a
+  # failed capture start distinguishable from a quiet room without retaining
+  # samples or exposing any audio-derived detail.
+  - id: guesty_microphone_status_value
+    type: std::string
+    initial_value: '"waiting_for_power_detection"'
   # E1001 v1.0 has no readable charger status. Its CH340C bridge is powered
   # only by TYPEC_5V. Three sampled windows distinguish that driven TXD signal
   # from the pulled-down line of an unpowered bridge.
@@ -1546,6 +1564,84 @@ script:
                       && id(guesty_external_power).state;
                   return external_power ? "busy" : "requires_external_power";
 
+  # GPIO38 powers the PDM microphone only after a physical cable has been
+  # confirmed. Wait for ESPHome's I2S task to report RUNNING so a failed start
+  # no longer looks identical to a merely quiet 60-second measurement window.
+  - id: guesty_start_microphone
+    mode: restart
+    then:
+      - script.stop: guesty_verify_microphone_window
+      - lambda: id(guesty_microphone_status_value) = "starting";
+      - component.update: guesty_microphone_status
+      - output.turn_on: guesty_microphone_power
+      - delay: 200ms
+      - if:
+          condition:
+            binary_sensor.is_on: guesty_external_power
+          then:
+            - microphone.capture: guesty_microphone
+            - wait_until:
+                condition:
+                  lambda: |-
+                    return id(guesty_microphone).is_running()
+                        || id(guesty_microphone).is_failed();
+                timeout: 5s
+            - if:
+                condition:
+                  lambda: return id(guesty_microphone).is_running();
+                then:
+                  - lambda: |-
+                      id(guesty_microphone_status_value) =
+                          "waiting_for_first_window";
+                  - component.update: guesty_microphone_status
+                  - script.execute: guesty_verify_microphone_window
+                else:
+                  - microphone.stop_capture: guesty_microphone
+                  - wait_until:
+                      condition:
+                        lambda: return id(guesty_microphone).is_stopped();
+                      timeout: 500ms
+                  - output.turn_off: guesty_microphone_power
+                  - lambda: |-
+                      id(guesty_microphone_status_value) =
+                          id(guesty_microphone).is_failed()
+                              ? "initialization_failed"
+                              : "capture_start_timeout";
+                      ESP_LOGW("guesty_microphone",
+                               "PDM capture did not reach the running state");
+                  - component.update: guesty_microphone_status
+          else:
+            - output.turn_off: guesty_microphone_power
+            - lambda: id(guesty_microphone_status_value) = "off_on_battery";
+            - component.update: guesty_microphone_status
+
+  # A running I2S task alone does not prove that the selected PDM slot yields
+  # usable samples. After one complete window plus margin, report a neutral
+  # diagnostic if the RMS value is still non-finite. A later valid value
+  # automatically changes the state to running through the sensor callback.
+  - id: guesty_verify_microphone_window
+    mode: restart
+    then:
+      - delay: 70s
+      - if:
+          condition:
+            lambda: |-
+              return id(guesty_external_power).has_state()
+                  && id(guesty_external_power).state
+                  && id(guesty_microphone).is_running();
+          then:
+            - lambda: |-
+                const bool valid_rms =
+                    id(guesty_sound_level_1_minute).has_state()
+                    && std::isfinite(id(guesty_sound_level_1_minute).state);
+                id(guesty_microphone_status_value) = valid_rms
+                    ? "running" : "no_valid_rms_value";
+                if (!valid_rms) {
+                  ESP_LOGW("guesty_microphone",
+                           "PDM capture produced no finite 60-second RMS value");
+                }
+            - component.update: guesty_microphone_status
+
   # Keep every battery sleep entry identical. Publishing the actual awake time
   # before shutdown makes failed delivery, wake loops and exhausted timeout
   # windows visible in Home Assistant without retaining another flash value.
@@ -1555,12 +1651,16 @@ script:
       - output.turn_off: guesty_battery_enable
       - output.turn_off: guesty_status_led
       - output.turn_off: guesty_buzzer
+      - script.stop: guesty_start_microphone
+      - script.stop: guesty_verify_microphone_window
       - microphone.stop_capture: guesty_microphone
       - wait_until:
           condition:
             lambda: return id(guesty_microphone).is_stopped();
           timeout: 500ms
       - output.turn_off: guesty_microphone_power
+      - lambda: id(guesty_microphone_status_value) = "off_on_battery";
+      - component.update: guesty_microphone_status
       - output.turn_off: guesty_sd_power
       - component.update: guesty_awake_duration
       - delay: 300ms
@@ -2021,6 +2121,11 @@ microphone:
     adc_type: external
     pdm: true
     i2s_din_pin: GPIO41
+    # Seeed's working E1001 reference initializes its mono PDM receiver with
+    # I2S_PDM_SLOT_LEFT. ESPHome otherwise defaults an omitted channel to the
+    # right slot, which does not match this board's reference path and can
+    # leave the RMS result non-finite.
+    channel: left
     correct_dc_offset: true
 
 output:
@@ -2133,6 +2238,18 @@ sensor:
       id: guesty_sound_level_1_minute
       name: Relativer Schallpegel (1 Minute)
       icon: mdi:volume-high
+      on_value:
+        then:
+          - if:
+              condition:
+                lambda: |-
+                  return id(guesty_external_power).has_state()
+                      && id(guesty_external_power).state
+                      && id(guesty_microphone).is_running()
+                      && std::isfinite(x);
+              then:
+                - lambda: id(guesty_microphone_status_value) = "running";
+                - component.update: guesty_microphone_status
 
 text_sensor:
   # This state is evaluated once per boot and lets Home Assistant distinguish
@@ -2289,6 +2406,14 @@ text_sensor:
     entity_category: diagnostic
     update_interval: never
     lambda: return {id(guesty_border_recovery_result)};
+  - platform: template
+    id: guesty_microphone_status
+    name: Microphone status
+    internal: ${advanced_diagnostics_internal}
+    icon: mdi:microphone-message
+    entity_category: diagnostic
+    update_interval: never
+    lambda: return {id(guesty_microphone_status_value)};
   # The Home Assistant integration discovers this entity. Its state is the
   # exact ESPHome action name to call while this device is awake.
   - platform: template
@@ -2309,27 +2434,23 @@ binary_sensor:
     name: External power
     device_class: power
     entity_category: diagnostic
-    # Only a confirmed physical cable may power and start the microphone.
-    # Stopping capture first ensures the I2S task releases the source before
-    # GPIO38 removes power. A fresh cable connection always starts a new,
-    # complete 60-second RMS window.
+    # Only a confirmed physical cable may start the guarded microphone script.
+    # A fresh cable connection always starts a new complete 60-second window.
     on_press:
       then:
-        - output.turn_on: guesty_microphone_power
-        - delay: 200ms
-        - if:
-            condition:
-              binary_sensor.is_on: guesty_external_power
-            then:
-              - microphone.capture: guesty_microphone
+        - script.execute: guesty_start_microphone
     on_release:
       then:
+        - script.stop: guesty_start_microphone
+        - script.stop: guesty_verify_microphone_window
         - microphone.stop_capture: guesty_microphone
         - wait_until:
             condition:
               lambda: return id(guesty_microphone).is_stopped();
             timeout: 500ms
         - output.turn_off: guesty_microphone_power
+        - lambda: id(guesty_microphone_status_value) = "off_on_battery";
+        - component.update: guesty_microphone_status
   - platform: gpio
     id: guesty_button_green
     name: Green button

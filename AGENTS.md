@@ -429,7 +429,13 @@ incomplete change.
 - Keep the status LED and buzzer disabled. Keep microphone power and I2S
   capture disabled during startup and whenever confirmed physical external
   power is absent. On confirmed external power, enable GPIO38, wait at least
-  200 ms, and capture only for the local 60-second RMS sound-level sensor.
+  200 ms, and capture GPIO41 with GPIO42 as the PDM clock explicitly through
+  the left PDM slot, matching Seeed's working E1001 mono receiver. ESPHome's
+  omitted-channel default is right and is incompatible with that reference
+  path. Capture only for the local 60-second RMS sound-level sensor. Verify
+  that the I2S task reaches its running state and expose only a neutral,
+  advanced lifecycle diagnostic for start timeout, initialization failure or
+  a non-finite first measurement window.
   Publish only relative dB where 0 dB is digital full scale; never expose raw
   samples, audio streams, recordings, or an uncalibrated absolute dB(A) claim.
   Stop capture before removing microphone power and before every battery sleep

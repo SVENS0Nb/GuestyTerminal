@@ -2,6 +2,50 @@
 
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
 
+## 0.3.49 – 2026-08-26
+
+### Korrigierter E1001-PDM-Kanal
+
+- Der eingebaute E1001-PDM-Sensor wird nun ausdrücklich über den linken
+  Empfangsslot gelesen. Seeeds funktionsfähiges Mikrofonbeispiel initialisiert
+  den Mono-PDM-Pfad ebenfalls links; ESPHome 2026.8.1 verwendet bei
+  weggelassener `channel`-Angabe dagegen standardmäßig den rechten Slot. Diese
+  Abweichung konnte in 0.3.48 zu einem nicht endlichen RMS-Ergebnis führen, das
+  Home Assistant dauerhaft als **Unbekannt** darstellte.
+- GPIO38 bleibt ausschließlich bei bestätigter externer Versorgung aktiv.
+  GPIO42 bleibt der PDM-Takt und GPIO41 der Dateneingang. Messfenster, relative
+  0-dBFS-Semantik und die Verarbeitung ausschließlich im flüchtigen Speicher
+  ändern sich nicht.
+
+### Neutrale Mikrofon-Laufzeitdiagnose
+
+- Ein gemeinsamer Startpfad wartet nach den unveränderten 200 Millisekunden
+  Anlaufzeit darauf, dass ESPHomes I²S-Aufnahmetask tatsächlich läuft. Bei
+  Initialisierungsfehler oder Zeitüberschreitung wird die Mikrofonversorgung
+  wieder ausgeschaltet.
+- Die nur in der erweiterten Diagnose sichtbare Entität **Microphone status**
+  unterscheidet Warten auf Versorgung, Start, laufende Aufnahme,
+  Startzeitüberschreitung und ein weiterhin ungültiges erstes
+  60-Sekunden-Fenster. Sie enthält weder Samples noch Lautstärkewerte.
+- Abziehen des Kabels und jeder gemeinsame Batterieschlafpfad beenden sowohl
+  Start- und Prüfskripte als auch die I²S-Aufnahme, bevor GPIO38 abgeschaltet
+  wird.
+
+### Veröffentlichung
+
+- Version 0.3.49 benötigt gemeinsam ein HACS-/Integrationsupdate und ein
+  Display-Firmwareupdate. Bestehende 4-MB-Geräte bleiben OTA-kompatibel; weder
+  Flashlayout noch Rendererrevision ändern sich.
+- Die vollständige Suite umfasst 302 bestandene Tests gegen Home Assistant
+  2025.12.0 und 2026.2.3 bei 90,72 % Branch-Abdeckung. ESPHome 2026.8.1
+  kompiliert sowohl das sichere 4-MB-Profil mit 16 % freier App-Partition als
+  auch das experimentelle 32-MB-Profil mit 91 % freier App-Partition.
+- Die Korrektur ist gegen Seeeds offizielle E1001-Referenz und ESPHome 2026.8.1
+  abgeglichen. Die reale Ausgabe eines endlichen 60-Sekunden-RMS-Werts sowie
+  Kabel-ab-/anstecken und Akkubetrieb sind vor diesem Release noch nicht auf
+  einem realen E1001 nachgeprüft und werden deshalb als `not_tested`
+  veröffentlicht.
+
 ## 0.3.48 – 2026-08-26
 
 ### Ladestatus und effektiver Batteriestand

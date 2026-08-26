@@ -581,6 +581,31 @@ Die kompakte, fortlaufende Änderungshistorie steht in
 [`CHANGELOG.md`](CHANGELOG.md). Die folgenden Hinweise erklären zusätzlich die
 Firmwareanforderungen älterer Installationen.
 
+Version **0.3.49** korrigiert den in 0.3.48 hinzugefügten Schallpegelsensor.
+Seeeds funktionierendes E1001-Mikrofonbeispiel empfängt den Mono-PDM-Datenstrom
+über den linken Slot; GuestyTerminal hatte ESPHomes abweichenden rechten
+Standard-Slot unbeabsichtigt übernommen. Die Firmware setzt deshalb nun
+ausdrücklich `channel: left`, wartet nach dem Einschalten auf den tatsächlich
+laufenden I²S-Task und prüft nach einem vollständigen Messfenster, ob ein
+endlicher RMS-Wert vorliegt.
+
+Mit `advanced_diagnostics_internal: "false"` zeigt die zusätzliche neutrale
+Entität **Microphone status**, ob die Aufnahme startet, läuft, ihr Start
+fehlschlägt oder nach 60 Sekunden noch kein gültiger Messwert vorliegt. Sie
+enthält keine Samples oder Audioinformationen und bleibt im normalen
+Alltagsprofil intern. Die Mikrofonversorgung ist weiterhin ausschließlich bei
+bestätigter externer Versorgung aktiv.
+
+Version 0.3.49 benötigt ein gemeinsames HACS-/Integrations- und
+Display-Firmwareupdate. Bestehende 4-MB-Geräte können sie normal per OTA
+installieren; Flashlayout, E-Paper-Renderer und sichtbarer Bildinhalt ändern
+sich nicht. 302 Tests gegen Home Assistant 2025.12.0 und 2026.2.3 bestehen bei
+90,72 % Branch-Abdeckung. ESPHome 2026.8.1 kompiliert das sichere 4-MB-Profil
+mit 16 % und das experimentelle 32-MB-Profil mit 91 % freier App-Partition.
+Die vollständige Mikrofonmatrix auf einem realen E1001 ist vor dem Release
+noch nicht abgeschlossen und wird deshalb als nicht hardwaregetestet
+ausgewiesen.
+
 Version **0.3.48** kombiniert beim E1001 v1.2 die vorhandene
 Batteriespannungsschätzung mit dem digitalen Ladestatus des eindeutig
 identifizierten SY6974B. Drei gleiche `REG08`-/`REG09`-Messungen bestätigen
@@ -1035,7 +1060,9 @@ nur den relativen 60-Sekunden-RMS-Wert. Es werden weder Audiodaten noch einzelne
 Messproben an Home Assistant übertragen, aufgezeichnet oder dauerhaft
 gespeichert. `0 dB` bezeichnet dabei den digitalen Vollpegel des eingebauten
 Mikrofons; ohne individuelle akustische Kalibrierung ist der Wert bewusst kein
-geeichter dB(A)-Raumpegel. Auf Akku ist der Sensor nicht aktiv.
+geeichter dB(A)-Raumpegel. Auf Akku ist der Sensor nicht aktiv. Die optionale
+erweiterte Entität **Microphone status** enthält ausschließlich neutrale
+Laufzeitzustände und niemals einen Sample- oder Lautstärkewert.
 
 Über Home Assistants Download-Diagnose kann zusätzlich ein strikt
 erlaubnisbasiertes Abbild mit Listingnamen, Entity-IDs, Protokollversionen,

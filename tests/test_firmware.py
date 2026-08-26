@@ -79,7 +79,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
     assert 'gray_gamma: "1.35"' in rendered
-    assert rendered.count("ref: v0.3.48") == 2
+    assert rendered.count("ref: v0.3.49") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
@@ -506,6 +506,7 @@ def test_default_entity_profile_exposes_only_everyday_entities() -> None:
         "guesty_border_mode",
         "guesty_self_test_status",
         "guesty_border_recovery_status",
+        "guesty_microphone_status",
         "guesty_border_recovery",
     )
     for entity_id in advanced_entities:
@@ -535,6 +536,7 @@ def test_sound_level_is_a_private_mains_only_sixty_second_rms() -> None:
     assert "id: guesty_microphone_i2s\n    i2s_lrclk_pin: GPIO42" in package
     assert "id: guesty_microphone\n    i2s_audio_id: guesty_microphone_i2s" in package
     assert "pdm: true\n    i2s_din_pin: GPIO41" in package
+    assert "    channel: left\n" in package
     assert "correct_dc_offset: true" in package
     microphone_start = package.index("microphone:\n")
     microphone_end = package.index("\noutput:\n", microphone_start)
@@ -550,20 +552,49 @@ def test_sound_level_is_a_private_mains_only_sixty_second_rms() -> None:
     assert "name: Relativer Schallpegel (1 Minute)" in sound_level
     assert "internal:" not in sound_level
     assert "peak:" not in sound_level
+    assert "std::isfinite(x)" in sound_level
+    assert 'id(guesty_microphone_status_value) = "running"' in sound_level
 
     external_power_start = package.index("    id: guesty_external_power\n")
     external_power_end = package.index("  - platform: gpio\n", external_power_start)
     external_power = package[external_power_start:external_power_end]
     assert "on_press:" in external_power
-    assert "output.turn_on: guesty_microphone_power" in external_power
-    assert "delay: 200ms" in external_power
-    assert "binary_sensor.is_on: guesty_external_power" in external_power
-    assert "microphone.capture: guesty_microphone" in external_power
+    assert "script.execute: guesty_start_microphone" in external_power
     assert "on_release:" in external_power
+    assert "script.stop: guesty_start_microphone" in external_power
+    assert "script.stop: guesty_verify_microphone_window" in external_power
     assert "microphone.stop_capture: guesty_microphone" in external_power
     assert "return id(guesty_microphone).is_stopped();" in external_power
     assert "timeout: 500ms" in external_power
     assert "output.turn_off: guesty_microphone_power" in external_power
+
+    start_script_start = package.index("  - id: guesty_start_microphone\n")
+    start_script_end = package.index("  # A running I2S task alone", start_script_start)
+    start_script = package[start_script_start:start_script_end]
+    assert "output.turn_on: guesty_microphone_power" in start_script
+    assert "delay: 200ms" in start_script
+    assert "binary_sensor.is_on: guesty_external_power" in start_script
+    assert "microphone.capture: guesty_microphone" in start_script
+    assert "id(guesty_microphone).is_running()" in start_script
+    assert "id(guesty_microphone).is_failed()" in start_script
+    assert "timeout: 5s" in start_script
+    assert '"capture_start_timeout"' in start_script
+    assert '"initialization_failed"' in start_script
+    assert "script.execute: guesty_verify_microphone_window" in start_script
+
+    verify_script_start = package.index("  - id: guesty_verify_microphone_window\n")
+    verify_script_end = package.index(
+        "  # Keep every battery sleep entry", verify_script_start
+    )
+    verify_script = package[verify_script_start:verify_script_end]
+    assert "delay: 70s" in verify_script
+    assert "id(guesty_sound_level_1_minute).has_state()" in verify_script
+    assert "std::isfinite(id(guesty_sound_level_1_minute).state)" in verify_script
+    assert '"no_valid_rms_value"' in verify_script
+
+    assert "id: guesty_microphone_status" in package
+    assert "name: Microphone status" in package
+    assert "lambda: return {id(guesty_microphone_status_value)};" in package
 
     sleep_start = package.index("  - id: guesty_enter_battery_sleep\n")
     sleep_end = package.index("  - id: guesty_read_external_power\n", sleep_start)
@@ -572,6 +603,15 @@ def test_sound_level_is_a_private_mains_only_sixty_second_rms() -> None:
     stopped_position = sleep_script.index("return id(guesty_microphone).is_stopped();")
     power_off_position = sleep_script.index("output.turn_off: guesty_microphone_power")
     assert stop_position < stopped_position < power_off_position
+    assert "script.stop: guesty_start_microphone" in sleep_script
+    assert "script.stop: guesty_verify_microphone_window" in sleep_script
+
+    late_boot_start = package.index("    - priority: -100\n")
+    late_boot_end = package.index("\napi:\n", late_boot_start)
+    late_boot = package[late_boot_start:late_boot_end]
+    assert "component.update: guesty_microphone_status" in late_boot
+    assert "id(guesty_microphone).is_running()" in late_boot
+    assert "script.execute: guesty_verify_microphone_window" in late_boot
 
 
 def test_border_recovery_is_bounded_external_power_only_and_keeps_proofs() -> None:
@@ -1578,7 +1618,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.48", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.49", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -1590,8 +1630,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.48") == 2
-    assert 'version: "0.3.48"' in updated
+    assert updated.count("ref: v0.3.49") == 2
+    assert 'version: "0.3.49"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -1622,7 +1662,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
 def test_update_managed_firmware_configs_rejects_invalid_credentials(
     tmp_path, broken_line
 ) -> None:
-    valid = render_firmware_config(_options()).replace("0.3.48", "0.3.10")
+    valid = render_firmware_config(_options()).replace("0.3.49", "0.3.10")
     if "key:" in broken_line:
         invalid = valid.replace(
             next(line for line in valid.splitlines() if "key:" in line), broken_line
@@ -1659,14 +1699,14 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.48", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.49", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     future.chmod(0o600)
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.48", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.49", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")
