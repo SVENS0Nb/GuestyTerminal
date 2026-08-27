@@ -119,17 +119,27 @@ esphome:
         - component.update: guesty_border_recovery_status
         - component.update: guesty_charging_status
         - component.update: guesty_microphone_status
-        # Anchor the first-window check after every component, including the
-        # passive sound-level consumer, has completed setup. The power event
-        # starts the same check for cable connections after boot.
+        # Only now allow microphone capture. The passive sound-level component
+        # registers its data callback at a later setup priority than the first
+        # power probe, so starting from that early on_press event can leave the
+        # I2S task without its consumer. Cable events after boot use the same
+        # guarded start path below.
+        - lambda: |-
+            id(guesty_component_setup_complete) = true;
+            id(guesty_microphone_start_attempts) = 0;
         - if:
             condition:
               lambda: |-
                 return id(guesty_external_power).has_state()
-                    && id(guesty_external_power).state
-                    && id(guesty_microphone).is_running();
+                    && id(guesty_external_power).state;
             then:
-              - script.execute: guesty_verify_microphone_window
+              - if:
+                  condition:
+                    lambda: return id(guesty_microphone).is_running();
+                  then:
+                    - script.execute: guesty_verify_microphone_window
+                  else:
+                    - script.execute: guesty_start_microphone
         - delay: 500ms
         - component.update: guesty_terminal_endpoint
 
@@ -1185,6 +1195,16 @@ globals:
   - id: guesty_microphone_status_value
     type: std::string
     initial_value: '"waiting_for_power_detection"'
+  # The initial power probe runs before the passive sound-level consumer has
+  # registered its callback. Gate capture until the final on_boot stage and
+  # bound automatic recovery attempts so a hardware fault cannot cause an
+  # endless start loop while the device remains on external power.
+  - id: guesty_component_setup_complete
+    type: bool
+    initial_value: "false"
+  - id: guesty_microphone_start_attempts
+    type: uint8_t
+    initial_value: "0"
   # E1001 v1.0 has no readable charger status. Its CH340C bridge is powered
   # only by TYPEC_5V. Three sampled windows distinguish that driven TXD signal
   # from the pulled-down line of an unpowered bridge.
@@ -1572,10 +1592,16 @@ script:
     then:
       - script.stop: guesty_verify_microphone_window
       - lambda: |-
+          if (id(guesty_microphone_start_attempts) < 255) {
+            id(guesty_microphone_start_attempts)++;
+          }
           id(guesty_microphone_status_value) = "starting";
           // A reconnect must prove a new complete window instead of reusing
           // the last finite value from the previous cable session.
           id(guesty_sound_level_30_seconds).publish_state(NAN);
+          ESP_LOGI("guesty_microphone",
+                   "Starting PDM capture after component setup (attempt %u/3)",
+                   static_cast<unsigned>(id(guesty_microphone_start_attempts)));
       - component.update: guesty_microphone_status
       - output.turn_on: guesty_microphone_power
       - delay: 200ms
@@ -1597,6 +1623,8 @@ script:
                   - lambda: |-
                       id(guesty_microphone_status_value) =
                           "waiting_for_first_window";
+                      ESP_LOGI("guesty_microphone",
+                               "PDM capture reached the running state");
                   - component.update: guesty_microphone_status
                   - script.execute: guesty_verify_microphone_window
                 else:
@@ -1643,6 +1671,9 @@ script:
                 if (!valid_rms) {
                   ESP_LOGW("guesty_microphone",
                            "PDM capture produced no finite 30-second RMS value");
+                } else {
+                  ESP_LOGI("guesty_microphone",
+                           "PDM capture produced its first finite RMS value");
                 }
             - component.update: guesty_microphone_status
 
@@ -2440,10 +2471,17 @@ binary_sensor:
     device_class: power
     entity_category: diagnostic
     # Only a confirmed physical cable may start the guarded microphone script.
-    # A fresh cable connection always starts a new complete 30-second window.
+    # A fresh cable connection after component setup always starts a new
+    # complete 30-second window. The initial boot-time press is deliberately
+    # ignored and handled by the final on_boot stage instead.
     on_press:
       then:
-        - script.execute: guesty_start_microphone
+        - if:
+            condition:
+              lambda: return id(guesty_component_setup_complete);
+            then:
+              - lambda: id(guesty_microphone_start_attempts) = 0;
+              - script.execute: guesty_start_microphone
     on_release:
       then:
         - script.stop: guesty_start_microphone
@@ -2454,7 +2492,9 @@ binary_sensor:
               lambda: return id(guesty_microphone).is_stopped();
             timeout: 500ms
         - output.turn_off: guesty_microphone_power
-        - lambda: id(guesty_microphone_status_value) = "off_on_battery";
+        - lambda: |-
+            id(guesty_microphone_start_attempts) = 0;
+            id(guesty_microphone_status_value) = "off_on_battery";
         - component.update: guesty_microphone_status
   - platform: gpio
     id: guesty_button_green
@@ -3140,6 +3180,21 @@ interval:
     then:
       - script.execute: guesty_read_external_power
       - script.wait: guesty_read_external_power
+      # Recover a failed or missed I2S start only after every audio consumer is
+      # configured. Three attempts per cable session are sufficient to bridge
+      # transient resource contention without creating an endless retry loop.
+      - if:
+          condition:
+            lambda: |-
+              return id(guesty_component_setup_complete)
+                  && id(guesty_external_power).has_state()
+                  && id(guesty_external_power).state
+                  && !id(guesty_microphone).is_running()
+                  && !id(guesty_start_microphone).is_running()
+                  && id(guesty_microphone_start_attempts) > 0
+                  && id(guesty_microphone_start_attempts) < 3;
+          then:
+            - script.execute: guesty_start_microphone
       # On battery, give WiFi/Home Assistant a bounded window to deliver data.
       # If no payload arrives, clear any retained credentials before sleeping.
       - if:

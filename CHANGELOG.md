@@ -2,6 +2,51 @@
 
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
 
+## 0.3.50 – 2026-08-27
+
+### Verzögerter Mikrofonstart
+
+- Der erste PDM-Aufnahmestart erfolgt nicht mehr aus dem frühen
+  Netzstrom-Ereignis. Dieses Ereignis kann eintreten, bevor ESPHomes passiver
+  Schallpegel-Sensor seinen Daten-Callback registriert hat. Stattdessen gibt
+  erst die abschließende `on_boot`-Stufe die Aufnahme frei und startet sie bei
+  bestätigter externer Versorgung.
+- Auch ein während des Bootens bereits als eingeschaltet veröffentlichter
+  Netzstatus wird in dieser späten Stufe ausdrücklich verarbeitet. Ein später
+  angestecktes Kabel verwendet denselben gemeinsamen Startpfad.
+
+### Begrenzte Startwiederholung
+
+- Falls der I²S-Aufnahmetask nach dem vollständigen Komponenten-Setup nicht
+  läuft, versucht die 15-Sekunden-Hardwareprüfung den gemeinsamen Startpfad
+  erneut. Pro Kabelverbindung sind höchstens drei Versuche erlaubt; Abziehen
+  und erneutes Anschließen setzt den Zähler zurück.
+- Neutrale INFO-Meldungen bestätigen künftig Startversuch, laufenden I²S-Task
+  und den ersten endlichen 30-Sekunden-RMS-Wert. Es werden weiterhin keine
+  Audiosamples, Aufnahmen oder abgeleiteten Lautstärkewerte geloggt.
+
+### Diagnosebeleg und Kompatibilität
+
+- Ein Realgerätelog von 0.3.49 bestätigte ESPHome 2026.8.1, die korrekte
+  30-Sekunden-Sensorkonfiguration und verfügbares PSRAM. Über mehr als ein
+  vollständiges Messfenster erschienen jedoch weder ein RMS-Wert noch die für
+  einen laufenden, aber ungültigen PDM-Datenstrom vorgesehene Warnung. Damit
+  lag der belegte Fehler vor der Auswertung des fest gewählten PDM-Slots im
+  Start-/Verifikationslebenszyklus.
+- PDM-Pins, linker Empfangsslot, 30-Sekunden-Fenster, Datenschutzgrenzen,
+  Flashlayout und Renderrevision 33 bleiben unverändert. Die reale Ausgabe
+  eines endlichen Werts muss nach Installation von 0.3.50 noch am Gerät
+  bestätigt werden und bleibt bis dahin `not_tested`.
+
+### Validierung
+
+- 302 Tests bestehen gegen Home Assistant 2025.12.0 und 2026.2.3 bei
+  90,72 % Branch-Abdeckung. Statische Analyse, Typprüfung, Python-Kompilierung
+  und Release-Preflight sind erfolgreich.
+- ESPHome 2026.8.1 validiert und kompiliert beide Firmwareprofile. Das sichere
+  4-MB-Profil belegt 84,3 % seiner App-Partition und behält 16 % Reserve; das
+  experimentelle 32-MB-Profil behält 91 % Reserve.
+
 ## 0.3.49 – 2026-08-26
 
 ### Korrigierter E1001-PDM-Kanal

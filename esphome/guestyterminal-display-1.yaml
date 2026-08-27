@@ -27,7 +27,7 @@ esphome:
   friendly_name: ${friendly_name}
   project:
     name: guestyterminal.reterminal-e1001
-    version: "0.3.49"
+    version: "0.3.50"
 
 esp32:
   board: esp32-s3-devkitc-1

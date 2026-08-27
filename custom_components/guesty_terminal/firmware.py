@@ -11,7 +11,7 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
-FIRMWARE_VERSION = "0.3.49"
+FIRMWARE_VERSION = "0.3.50"
 FIRMWARE_HEADER = "# Managed by the GuestyTerminal firmware assistant."
 POWER_MODES = ("auto", "battery", "mains")
 FLASH_LAYOUT_LEGACY = "legacy_4mb"

@@ -438,6 +438,14 @@ incomplete change.
   a non-finite first measurement window.
   Publish only relative dB where 0 dB is digital full scale; never expose raw
   samples, audio streams, recordings, or an uncalibrated absolute dB(A) claim.
+  The initial physical-power event may occur before the passive sound-level
+  consumer registers its callback. Gate the first capture until the final
+  component setup stage, explicitly start it there when external power is
+  already confirmed, and bound recovery to at most three attempts per cable
+  session. A cable disconnect resets that neutral volatile attempt counter.
+  Keep neutral INFO logs for the attempt, running task, and first finite window
+  so a future lifecycle failure remains distinguishable without logging samples
+  or derived sound values.
   Stop capture before removing microphone power and before every battery sleep
   entry. On v1.2 the charging LED's STAT output is disabled over the charger's
   dedicated I2C bus; GPIO-only changes are insufficient. The v1.0 ETA6003 has

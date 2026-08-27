@@ -16,11 +16,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_current_repository_release_metadata_is_consistent() -> None:
-    metadata = validate_release(ROOT, expected_version="0.3.49")
+    metadata = validate_release(ROOT, expected_version="0.3.50")
 
-    assert metadata.version == "0.3.49"
-    assert "Korrigierter E1001-PDM-Kanal" in metadata.changelog_body
-    assert "Neutrale Mikrofon-Laufzeitdiagnose" in metadata.changelog_body
+    assert metadata.version == "0.3.50"
+    assert "Verzögerter Mikrofonstart" in metadata.changelog_body
+    assert "Begrenzte Startwiederholung" in metadata.changelog_body
 
 
 @pytest.mark.parametrize("hardware_status", ["passed", "not_tested"])

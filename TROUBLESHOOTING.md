@@ -4,6 +4,48 @@ Dieses Dokument hält wiederverwendbare Diagnosewege und bestätigte
 Fehlerursachen fest. Es darf keine Gastnamen, Reservierungs-IDs, Türcodes,
 WLAN-Zugangsdaten oder Home-Assistant-/ESPHome-Schlüssel enthalten.
 
+## Störung 2026-08-27: Schallpegel bleibt auch mit 0.3.49 „Unbekannt“
+
+### Realgerätelog und belastbare Abgrenzung
+
+Ein über die ESPHome-API aufgezeichneter Realgerätelog bestätigte Firmware
+0.3.49 auf ESPHome 2026.8.1, das PDM-Mikrofon an GPIO41, aktivierte
+DC-Korrektur, verfügbares PSRAM und den 30.000-ms-RMS-Sensor. Der Log lief nach
+dem Konfigurationsdump noch länger als ein vollständiges Messfenster. In dieser
+Zeit erschien weder ein Sensorwert noch die nach 40 Sekunden vorgesehene
+Warnung `PDM capture produced no finite 30-second RMS value`.
+
+Diese Kombination belegt nicht, welcher Empfangsslot ein verwertbares Signal
+liefert. Sie belegt aber, dass der laufende Fehler vor der Slot-Auswertung lag:
+Entweder lief der I²S-Task nicht oder die Verifikationsroutine wurde wegen des
+nicht laufenden Tasks übersprungen. Ein falscher Slot bei laufendem Task hätte
+die 40-Sekunden-Prüfung erreicht und die Warnung erzeugt.
+
+### Ursache im Boot-Lebenszyklus
+
+Die erste bestätigte Netzstrommeldung wurde in 0.3.49 bereits aus einer frühen
+`on_boot`-Stufe verarbeitet. Deren `on_press`-Automation konnte die
+I²S-Aufnahme starten, bevor der passive ESPHome-Schallpegel-Sensor in seiner
+späteren Setup-Stufe den Daten-Callback registriert hatte. Die abschließende
+Boot-Stufe prüfte nur einen bereits laufenden Task; sie startete einen fehlenden
+Task nicht neu. Dadurch konnte der Sensor dauerhaft **Unbekannt** bleiben, ohne
+dass die neu hinzugefügte Fensterdiagnose eine Aussage veröffentlichte.
+
+### Korrektur und Regression
+
+Ab 0.3.50 blockiert ein flüchtiges Setup-Gate den frühen Start. Erst die
+abschließende Boot-Stufe gibt die Aufnahme frei und startet sie bei bestätigter
+externer Versorgung. Kabelereignisse nach dem Boot verwenden denselben Pfad.
+Ein stillstehender Task wird im 15-Sekunden-Hardwarezyklus höchstens zweimal
+neu gestartet, sodass insgesamt maximal drei Versuche pro Kabelverbindung
+stattfinden. Abziehen setzt den Zähler zurück.
+
+Der Log muss künftig mindestens die neutralen Stationen `Starting PDM capture
+after component setup` und `PDM capture reached the running state` enthalten.
+Nach dem ersten vollständigen Fenster folgt entweder ein endlicher Sensorwert
+mit einer Erfolgsmeldung oder die eindeutige Warnung für ungültige Samples.
+Keine dieser Meldungen enthält Audio- oder Gastdaten.
+
 ## Störung 2026-08-26: Schallpegel bleibt dauerhaft „Unbekannt“
 
 ### Beobachtung und sichere Aussage
