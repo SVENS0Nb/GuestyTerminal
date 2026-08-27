@@ -2,6 +2,33 @@
 
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
 
+## 0.3.51 – 2026-08-28
+
+### Mikrofonstart bei bereits angeschlossenem Netzteil
+
+- Nach der ersten vollständigen Stromprüfung darf nun auch Startversuch null
+  die PDM-Aufnahme beginnen. ESPHome löst beim erstmaligen Veröffentlichen des
+  Zustands eines Template-Binärsensors absichtlich kein `on_press` aus. Die
+  bisherige Wiederholungsbedingung `Versuche > 0` machte den Start deshalb
+  unmöglich, wenn das Gerät mit bereits angeschlossenem Netzteil bootete.
+- Ein später angestecktes Netzteil nutzt weiterhin den unmittelbaren
+  Zustandswechsel. Beide Wege verwenden denselben begrenzten Startpfad mit
+  höchstens drei Versuchen pro Kabelverbindung.
+- Ein Firmware-Vertragstest sichert den Bootfall ausdrücklich ab: Nach der
+  abgeschlossenen Stromprüfung muss Versuch null zulässig sein.
+
+### Validierung und Installation
+
+- 302 Tests bestehen gegen Home Assistant 2025.12.0 und 2026.2.3 bei
+  90,72 % Branch-Abdeckung. Statische Analyse, Typprüfung, Python-Kompilierung
+  und Release-Preflight sind erfolgreich.
+- ESPHome 2026.8.1 validiert und kompiliert sowohl das sichere 4-MB- als auch
+  das experimentelle 32-MB-Profil. Die Firmwareänderung wurde noch nicht auf
+  einem realen E1001 geprüft und wird deshalb als `not_tested` veröffentlicht.
+- Die Korrektur benötigt sowohl das aktualisierte GuestyTerminal-Paket in Home
+  Assistant als auch die Display-Firmware 0.3.51. Bestehende 4-MB-Geräte können
+  sie ohne Änderung ihres Flashlayouts per OTA installieren.
+
 ## 0.3.50 – 2026-08-27
 
 ### Verzögerter Mikrofonstart

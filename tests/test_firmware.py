@@ -79,7 +79,7 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
     assert 'gray_gamma: "1.35"' in rendered
-    assert rendered.count("ref: v0.3.50") == 2
+    assert rendered.count("ref: v0.3.51") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
@@ -628,7 +628,10 @@ def test_sound_level_is_a_private_mains_only_thirty_second_rms() -> None:
     assert "id(guesty_component_setup_complete)" in interval_block
     assert "!id(guesty_microphone).is_running()" in interval_block
     assert "!id(guesty_start_microphone).is_running()" in interval_block
-    assert "id(guesty_microphone_start_attempts) > 0" in interval_block
+    # A template binary sensor does not fire on_press for its first published
+    # state. Attempt zero must therefore be eligible after the first completed
+    # power observation when a unit boots with USB already connected.
+    assert "id(guesty_microphone_start_attempts) > 0" not in interval_block
     assert "id(guesty_microphone_start_attempts) < 3" in interval_block
     assert "script.execute: guesty_start_microphone" in interval_block
 
@@ -1637,7 +1640,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.50", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.51", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -1649,8 +1652,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.50") == 2
-    assert 'version: "0.3.50"' in updated
+    assert updated.count("ref: v0.3.51") == 2
+    assert 'version: "0.3.51"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -1681,7 +1684,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
 def test_update_managed_firmware_configs_rejects_invalid_credentials(
     tmp_path, broken_line
 ) -> None:
-    valid = render_firmware_config(_options()).replace("0.3.50", "0.3.10")
+    valid = render_firmware_config(_options()).replace("0.3.51", "0.3.10")
     if "key:" in broken_line:
         invalid = valid.replace(
             next(line for line in valid.splitlines() if "key:" in line), broken_line
@@ -1718,14 +1721,14 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.50", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.51", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     future.chmod(0o600)
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.50", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.51", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")

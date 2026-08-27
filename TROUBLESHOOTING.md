@@ -88,6 +88,22 @@ bezeichnete RMS-Sensor muss dann endlich sein; beim Abziehen des
 Kabels müssen Aufnahme und GPIO38 enden, und auf Akku muss der Sensor nicht
 verfügbar bleiben.
 
+### Ergänzung 2026-08-28: Boot mit bereits angeschlossenem Netzteil
+
+Der verbleibende Zustand **Unbekannt** unter 0.3.50 hatte einen eigenständigen,
+reproduzierbaren Ablaufgrund. Die erste Stromprüfung enthält Wartezeiten und
+war beim abschließenden `on_boot`-Schritt noch nicht beendet. Sobald sie danach
+erstmals **External power = Ein** veröffentlichte, erzeugte ESPHomes
+Template-Binärsensor absichtlich kein initiales `on_press`-Ereignis. Der
+15-Sekunden-Wiederherstellungspfad verlangte zugleich bereits mindestens einen
+vorherigen Mikrofonstart. Damit konnte Startversuch null nie stattfinden; erst
+ein echter Kabelwechsel erzeugte den fehlenden Zustandswechsel.
+
+Der korrigierte Pfad entscheidet erst nach der abgeschlossenen Stromprüfung
+und lässt dort auch Versuch null zu. Boot mit schon angeschlossenem Netzteil
+und späteres Anstecken führen dadurch in denselben, auf drei Versuche begrenzten
+Mikrofonstart. Ein Ab- und Anstecken ist keine Betriebsanforderung.
+
 ## Störung 2026-08-26: identischer Vollrefresh wiederholt sich und Rand bleibt dunkel
 
 ### Bestätigte Diagnose

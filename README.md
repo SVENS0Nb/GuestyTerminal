@@ -582,13 +582,18 @@ Die kompakte, fortlaufende Änderungshistorie steht in
 [`CHANGELOG.md`](CHANGELOG.md). Die folgenden Hinweise erklären zusätzlich die
 Firmwareanforderungen älterer Installationen.
 
-Version **0.3.50** korrigiert zusätzlich den Boot-Lebenszyklus des in 0.3.48
-hinzugefügten Schallpegelsensors. Die frühe Netzstromerkennung darf die
-I²S-Aufnahme nicht mehr starten, bevor der passive Schallpegel-Sensor seinen
-Daten-Callback registriert hat. Der erste Start erfolgt deshalb erst nach dem
-vollständigen Komponenten-Setup. Falls der I²S-Task nicht läuft, folgen pro
-Kabelverbindung höchstens zwei kontrollierte Wiederholungen im bestehenden
-15-Sekunden-Hardwarezyklus. Neutrale Logmeldungen machen Start, laufenden Task
+Version **0.3.51** schließt den in 0.3.50 verbliebenen Bootfall des
+Schallpegelsensors. War das Netzteil bereits angeschlossen, endete die
+zeitversetzte Stromprüfung erst nach dem abschließenden `on_boot`-Schritt. Die
+erste Veröffentlichung von **External power = Ein** erzeugt bei ESPHomes
+Template-Binärsensor keinen `on_press`-Zustandswechsel; zugleich verlangte der
+Wiederherstellungspfad bereits einen vorherigen Startversuch.
+
+Nach jeder abgeschlossenen Stromprüfung ist deshalb nun auch Startversuch null
+zulässig. Damit funktionieren sowohl der Start mit bereits angeschlossenem
+Netzteil als auch späteres Anstecken ohne manuellen Kabelwechsel. Falls der
+I²S-Task nicht läuft, bleiben die Wiederholungen auf insgesamt drei Versuche
+pro Kabelverbindung begrenzt. Neutrale Logmeldungen machen Start, laufenden Task
 und ersten gültigen Messwert nachvollziehbar, ohne Samples oder Audioinhalte zu
 protokollieren.
 
@@ -619,7 +624,7 @@ den Entity-Schlüssel aus dem Namen ableitet, kann Home Assistant den alten
 Firmwareupdate und sobald der neue Sensor Werte liefert, kann der alte Eintrag
 aus der Entity Registry entfernt werden.
 
-Version 0.3.50 benötigt ein gemeinsames HACS-/Integrations- und
+Version 0.3.51 benötigt ein gemeinsames HACS-/Integrations- und
 Display-Firmwareupdate. Bestehende 4-MB-Geräte können sie normal per OTA
 installieren; Flashlayout, E-Paper-Renderer und sichtbarer Bildinhalt ändern
 sich nicht. 302 Tests gegen Home Assistant 2025.12.0 und 2026.2.3 bestehen bei

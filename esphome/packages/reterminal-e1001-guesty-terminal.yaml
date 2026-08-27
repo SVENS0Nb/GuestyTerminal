@@ -3180,9 +3180,12 @@ interval:
     then:
       - script.execute: guesty_read_external_power
       - script.wait: guesty_read_external_power
-      # Recover a failed or missed I2S start only after every audio consumer is
-      # configured. Three attempts per cable session are sufficient to bridge
-      # transient resource contention without creating an endless retry loop.
+      # Start or recover I2S only after the completed power observation and
+      # after every audio consumer is configured. The initial template-binary-
+      # sensor publication deliberately emits no on_press event, so attempt 0
+      # must be eligible here when the device boots with USB already attached.
+      # Three attempts per cable session are sufficient to bridge transient
+      # resource contention without creating an endless retry loop.
       - if:
           condition:
             lambda: |-
@@ -3191,7 +3194,6 @@ interval:
                   && id(guesty_external_power).state
                   && !id(guesty_microphone).is_running()
                   && !id(guesty_start_microphone).is_running()
-                  && id(guesty_microphone_start_attempts) > 0
                   && id(guesty_microphone_start_attempts) < 3;
           then:
             - script.execute: guesty_start_microphone
