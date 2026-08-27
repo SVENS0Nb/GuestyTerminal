@@ -46,6 +46,9 @@ Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
 - ESPHome 2026.8.1 validiert und kompiliert beide Firmwareprofile. Das sichere
   4-MB-Profil belegt 84,3 % seiner App-Partition und behält 16 % Reserve; das
   experimentelle 32-MB-Profil behält 91 % Reserve.
+- Die Korrektur benötigt sowohl das aktualisierte GuestyTerminal-Paket in Home
+  Assistant als auch die Display-Firmware 0.3.50. Bestehende 4-MB-Geräte können
+  das Firmwareupdate ohne Änderung ihres Flashlayouts per OTA installieren.
 
 ## 0.3.49 – 2026-08-26
 
