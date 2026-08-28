@@ -480,6 +480,18 @@ Symbol folgt ihm in Zehn-Prozent-Stufen.
   Fehlerklassen. Nur ein zusammen mit externer Versorgung bestätigter
   Ladeabschluss setzt den effektiven Wert auf 100 %. E1001 v1.0 melden diesen
   digitalen Ladestatus als nicht unterstützt.
+- Der eingebaute SHT40 misst Temperatur und relative Luftfeuchte mit seiner
+  werkseitigen Kalibrierung und ausdrücklich deaktiviertem Kondensationsheizer.
+  Pro Aufwachzyklus wird mindestens ein Messwert veröffentlicht. Bei
+  bestätigter externer Versorgung folgt alle fünf Minuten ein neuer Messwert;
+  beide Entitäten zeigen einen gleitenden Mittelwert aus bis zu drei Messungen.
+  Auf Akku entsteht dadurch kein zusätzlicher periodischer Wachbetrieb.
+  Gerätespezifische Vergleichsmessungen können in den YAML-`substitutions` mit
+  `environment_temperature_offset: "0.0"` und
+  `environment_humidity_offset: "0.0"` additiv korrigiert werden. Die
+  Standardwerte verändern die Werkskalibrierung nicht. Ein Offset sollte erst
+  nach einem stabilen Vergleich mit einem ausreichend genauen, direkt daneben
+  platzierten Referenzsensor eingetragen werden.
 - Erweiterte Hardwarediagnosen bleiben vollständig in der Firmware erhalten,
   werden standardmäßig aber nicht an Home Assistant veröffentlicht. Dazu
   gehören Batteriespannung, Wach-/Resetgrund, Wachzeit, Stromerkennungsmethode,
@@ -581,6 +593,23 @@ ESPHome Device Builder sichtbar.
 Die kompakte, fortlaufende Änderungshistorie steht in
 [`CHANGELOG.md`](CHANGELOG.md). Die folgenden Hinweise erklären zusätzlich die
 Firmwareanforderungen älterer Installationen.
+
+Version **0.3.52** macht die bislang einmalige Bootmessung des eingebauten
+SHT40 zu einer stabilen Umgebungsmessung. Bei bestätigter externer Versorgung
+werden Temperatur und relative Feuchte alle fünf Minuten neu gelesen und über
+bis zu drei Messungen geglättet. Akkuzyklen behalten genau ihre einzelne
+Bootmessung. Der Sensor arbeitet ausdrücklich mit hoher Präzision und
+ausgeschaltetem Kondensationsheizer; zwei neutrale Null-Substitutionen erlauben
+später eine belegte gerätespezifische Vergleichskorrektur.
+
+Die Version benötigt ein Display-Firmwareupdate auf 0.3.52. Bestehende
+4-MB-Geräte bleiben normal OTA-kompatibel; Flashlayout, E-Paper-Renderer und
+sichtbarer Buchungsinhalt ändern sich nicht. 303 Tests gegen Home Assistant
+2025.12.0 und 2026.2.3 bestehen bei 90,72 % Branch-Abdeckung. ESPHome 2026.8.1
+validiert und kompiliert das 4-MB- und das 32-MB-Profil. Die Messgenauigkeit des
+eingebauten Gesamtsystems wurde für diesen Release noch nicht auf einem realen
+E1001 gegen einen Referenzsensor bestätigt und ist deshalb als
+`not_tested` ausgewiesen.
 
 Version **0.3.51** schließt den in 0.3.50 verbliebenen Bootfall des
 Schallpegelsensors. War das Netzteil bereits angeschlossen, endete die

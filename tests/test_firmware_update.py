@@ -169,7 +169,7 @@ def test_update_all_managed_firmware_prepares_files_and_queues_jobs(
     esphome_dir = tmp_path / "esphome"
     esphome_dir.mkdir()
     (esphome_dir / "one.yaml").write_text(
-        _config("display-one").replace("0.3.51", "0.3.12"), encoding="utf-8"
+        _config("display-one").replace("0.3.52", "0.3.12"), encoding="utf-8"
     )
     (esphome_dir / "two.yaml").write_text(_config("display-two"), encoding="utf-8")
     (esphome_dir / "one.yaml").chmod(0o600)
@@ -197,9 +197,9 @@ def test_update_all_managed_firmware_prepares_files_and_queues_jobs(
     assert result.managed_configurations == 2
     assert result.updated_configurations == 1
     assert result.queued_jobs == 2
-    assert result.firmware_version == "0.3.51"
+    assert result.firmware_version == "0.3.52"
     assert queued == [("session", "http://builder:6052", ["one.yaml", "two.yaml"])]
-    assert "0.3.51" in (esphome_dir / "one.yaml").read_text(encoding="utf-8")
+    assert "0.3.52" in (esphome_dir / "one.yaml").read_text(encoding="utf-8")
 
 
 def test_update_all_managed_firmware_reports_missing_config_or_builder(

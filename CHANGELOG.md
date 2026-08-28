@@ -2,6 +2,34 @@
 
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
 
+## 0.3.52 – 2026-08-28
+
+### Stabile Temperatur- und Feuchtemessung
+
+- Der werkseitig kalibrierte SHT40 arbeitet nun ausdrücklich mit hoher
+  Messgenauigkeit und deaktiviertem Kondensationsheizer. Temperatur und
+  relative Feuchte werden aus bis zu drei Messungen gleitend gemittelt.
+- Jeder Aufwachzyklus behält seine einzelne Bootmessung. Nur bei bestätigter
+  externer Versorgung wird der Sensor zusätzlich alle fünf Minuten gelesen;
+  der Akkubetrieb erhält dadurch keinen weiteren periodischen Wachzyklus.
+- Zwei additive YAML-Substitutionen erlauben später eine gerätespezifische
+  Vergleichskalibrierung. Beide stehen standardmäßig auf null, sodass ohne
+  Referenzmessung keine unbelegte Korrektur angewendet wird.
+
+### Validierung und Installation
+
+- 303 Tests bestehen gegen Home Assistant 2025.12.0 und 2026.2.3 bei
+  90,72 % Branch-Abdeckung. Statische Analyse, Typprüfung, Python-Kompilierung
+  und Release-Preflight sind erfolgreich.
+- ESPHome 2026.8.1 validiert die neue Sensorkonfiguration und kompiliert das
+  sichere 4-MB-Profil mit 16 % freier App-Partition. Die vollständige CI
+  kompiliert zusätzlich das experimentelle 32-MB-Profil vor der Freigabe.
+- Die reale Temperatur-/Feuchtematrix wurde noch nicht auf einem E1001 gegen
+  einen Referenzsensor geprüft. Der Release wird deshalb als `not_tested`
+  gekennzeichnet.
+- Die Änderung benötigt die Display-Firmware 0.3.52. Bestehende 4-MB-Geräte
+  können sie ohne Änderung ihres Flashlayouts per OTA installieren.
+
 ## 0.3.51 – 2026-08-28
 
 ### Mikrofonstart bei bereits angeschlossenem Netzteil

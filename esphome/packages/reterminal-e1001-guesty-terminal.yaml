@@ -10,6 +10,11 @@ substitutions:
   # intermediate grays visibly lighter through deterministic 4x4 dithering.
   # Use 1.0 for the former, darker four-level quantization.
   gray_gamma: "1.35"
+  # The onboard SHT40 is factory-calibrated. Keep per-device corrections at
+  # zero until a stable comparison with a suitable room reference proves a
+  # repeatable installed-system offset.
+  environment_temperature_offset: "0.0"
+  environment_humidity_offset: "0.0"
   # Keep the normal Home Assistant device page focused on everyday controls.
   # Set this to "false" temporarily when advanced hardware diagnostics are
   # needed; the entities continue to exist locally in either mode.
@@ -2252,12 +2257,35 @@ sensor:
   - platform: sht4x
     id: guesty_environment
     i2c_id: guesty_i2c
+    # High precision is ESPHome's current default, but spelling it out keeps a
+    # future dependency update from silently changing the measurement mode.
+    # The on-chip heater is for condensation recovery only; normal indoor
+    # measurements must not warm the sensing element.
+    precision: High
+    heater_max_duty: 0.0
     temperature:
       name: Temperature
       entity_category: diagnostic
+      accuracy_decimals: 1
+      filters:
+        - offset: ${environment_temperature_offset}
+        - sliding_window_moving_average:
+            window_size: 3
+            send_every: 1
+            send_first_at: 1
     humidity:
       name: Relative humidity
       entity_category: diagnostic
+      accuracy_decimals: 1
+      filters:
+        - offset: ${environment_humidity_offset}
+        - sliding_window_moving_average:
+            window_size: 3
+            send_every: 1
+            send_first_at: 1
+        - clamp:
+            min_value: 0.0
+            max_value: 100.0
     update_interval: never
   # ESPHome computes RMS from every sample in one complete 30-second window
   # and publishes one result immediately before starting the next window.
@@ -3166,8 +3194,11 @@ deep_sleep:
   wakeup_pin_mode: INVERT_WAKEUP
 
 interval:
-  # On battery this runs once during boot before deep sleep. While USB power
-  # keeps the device online, refresh the battery entity every five minutes.
+  # On battery, battery and SHT40 values are captured once during boot before
+  # deep sleep. While confirmed USB power keeps the device online, refresh the
+  # battery entity and the three-sample environmental average every five
+  # minutes. A forced mains profile without a physical cable must not turn a
+  # battery cycle into continuous environmental polling.
   - interval: 5min
     then:
       - output.turn_on: guesty_battery_enable
@@ -3176,6 +3207,13 @@ interval:
       - delay: 20ms
       - component.update: guesty_battery_level
       - output.turn_off: guesty_battery_enable
+      - if:
+          condition:
+            lambda: |-
+              return id(guesty_external_power).has_state()
+                  && id(guesty_external_power).state;
+          then:
+            - component.update: guesty_environment
   - interval: 15s
     then:
       - script.execute: guesty_read_external_power

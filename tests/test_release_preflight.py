@@ -16,12 +16,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_current_repository_release_metadata_is_consistent() -> None:
-    metadata = validate_release(ROOT, expected_version="0.3.51")
+    metadata = validate_release(ROOT, expected_version="0.3.52")
 
-    assert metadata.version == "0.3.51"
-    assert "Mikrofonstart bei bereits angeschlossenem Netzteil" in (
-        metadata.changelog_body
-    )
+    assert metadata.version == "0.3.52"
+    assert "Stabile Temperatur- und Feuchtemessung" in metadata.changelog_body
     assert "Validierung und Installation" in metadata.changelog_body
 
 

@@ -124,6 +124,16 @@ Release-Notizen aus dem aktuellen Changelog. Erst danach legt er den annotierten
 Tag und das GitHub-Release an. Ein vorhandener Tag wird nur dann wiederverwendet,
 wenn er exakt auf denselben geprüften Commit zeigt.
 
+Version 0.3.52 behält Renderrevision 33 bei und ändert ausschließlich den
+SHT40-Messzyklus und seine nachgelagerten Sensorfilter. Der Kondensationsheizer
+muss deaktiviert und die hohe Präzision explizit bleiben. Jeder Boot liefert
+eine Messung; nur bestätigte physische Netzversorgung darf zusätzlich alle fünf
+Minuten messen. Temperatur und relative Feuchte verwenden jeweils höchstens
+drei flüchtige Beobachtungen, neutrale Null-Offsets und bei der Feuchte die
+Begrenzung auf 0 bis 100 %. Akkuzyklen dürfen dadurch nicht verlängert werden.
+Bis zum stabilen Vergleich mit einem direkt danebenliegenden Referenzsensor
+muss der Release als `not_tested` gekennzeichnet bleiben.
+
 Version 0.3.51 behält Renderrevision 33 bei und korrigiert ausschließlich den
 Boot- und Wiederanlauf des stromgebundenen Mikrofonpfads. Der frühe
 Netzstrom-Callback darf die Aufnahme nicht vor dem abschließenden

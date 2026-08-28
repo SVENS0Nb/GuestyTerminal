@@ -399,6 +399,15 @@ incomplete change.
   Convert voltage to percent with ESPHome's exact piecewise calibration points
   from 3.27 V/0% through 4.15 V/100%; do not replace them with a least-squares
   line. This remains a voltage estimate rather than a coulomb counter.
+- Keep the onboard factory-calibrated SHT40 in explicit high-precision mode
+  with its condensation heater disabled. Publish one boot measurement on every
+  power profile. Only confirmed physical external power may add a five-minute
+  refresh; battery wakes must not gain periodic environmental polling. Smooth
+  each value over up to three in-RAM observations, retain additive per-device
+  temperature and humidity substitutions with neutral zero defaults, and
+  clamp corrected relative humidity to 0–100 %. Do not describe the assembled
+  display as calibrated until a stable colocated reference comparison proves
+  its installed-system offsets.
 - The empty-room header keeps its five-percent battery quantization. While
   `pre_charge` or `fast_charging` is confirmed on v1.2, use the matching
   lightning battery glyph and include that flag in retained visible state so a
