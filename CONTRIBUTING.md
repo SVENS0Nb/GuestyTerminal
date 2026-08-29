@@ -124,6 +124,13 @@ Release-Notizen aus dem aktuellen Changelog. Erst danach legt er den annotierten
 Tag und das GitHub-Release an. Ein vorhandener Tag wird nur dann wiederverwendet,
 wenn er exakt auf denselben geprüften Commit zeigt.
 
+Version 0.3.54 verwendet Renderrevision 35. Alle Informationskarten müssen
+vollständig mit genau einer nativen Hellgraustufe gefüllt sein; eine weiße
+Innenfläche oder ein räumliches Dithermuster ist nicht zulässig. Die
+Schriftglättung, Randkonditionierung und Inhaltsunterdrückung aus 0.3.53 dürfen
+dabei nicht verändert werden. Bis die Flächenwirkung auf dem realen E1001
+bestätigt ist, muss die Version als `not_tested` gekennzeichnet bleiben.
+
 Version 0.3.53 verwendet Renderrevision 34. Der Renderer quantisiert Schrift
 und Flächen direkt auf die vier nativen Panelstufen; 2-Bit-Schriftkanten dürfen
 nicht zusätzlich gerastert werden. Karten verwenden weiße Innenflächen mit

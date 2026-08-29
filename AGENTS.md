@@ -259,9 +259,10 @@ incomplete change.
 - Preserve exact black and white endpoints in the configurable grayscale tone
   curve. Quantize every pixel directly to one of the four physical levels; the
   renderer's 2-bit fonts already provide panel-native antialias coverage and
-  must never be spatially dithered a second time. Large cards use paper white
-  with a narrow native-light-gray outline rather than a halftoned fill. The
-  default gamma remains 1.35 and shifts only the thresholds between native
+  must never be spatially dithered a second time. Large cards use a uniform
+  native-light-gray fill across their complete rounded area, never a white
+  interior, outline-only treatment, or halftoned fill. The default gamma
+  remains 1.35 and shifts only the thresholds between native
   levels. Do not apply ordered, random or error-diffusion patterns, change
   QR/code endpoints, or let the tone curve alter UC8179 waveform, polarity,
   border conditioning, or the retained monochrome partial baseline. Persist
@@ -352,7 +353,7 @@ incomplete change.
 - `guesty_render_revision` invalidates otherwise-identical images after a
   rendering or driver change. When a visible rendering change requires one
   repaint, increment the expected value and the stored-success value together,
-  and update their tests. The current source revision is 34.
+  and update their tests. The current source revision is 35.
 - Publish the displayed-booking confirmation only after a successful physical
   refresh, or when a restored matching fingerprint proves the same content was
   previously drawn.

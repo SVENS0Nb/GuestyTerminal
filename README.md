@@ -596,6 +596,14 @@ Die kompakte, fortlaufende Änderungshistorie steht in
 [`CHANGELOG.md`](CHANGELOG.md). Die folgenden Hinweise erklären zusätzlich die
 Firmwareanforderungen älterer Installationen.
 
+Version **0.3.54** füllt die grauen Informationskarten wieder vollständig mit
+der einheitlichen nativen Hellgraustufe. Version 0.3.53 hatte das störende
+4×4-Raster erfolgreich entfernt, dabei aber die Karten auf eine graue Kontur
+mit weißer Innenfläche reduziert. Renderrevision 35 zeichnet das beabsichtigte
+Flächenlayout einmal neu; Schriftglättung, Randkorrektur und die Unterdrückung
+identischer Bilder aus 0.3.53 bleiben erhalten. Die Version benötigt ein
+Display-Firmwareupdate.
+
 Version **0.3.53** entfernt das sichtbare 4×4-Raster aus Grauflächen und
 Schriftkanten. Die vorhandenen 2-Bit-Schriften werden direkt auf die vier
 nativen Panelstufen abgebildet; Karten erhalten eine weiße Innenfläche mit

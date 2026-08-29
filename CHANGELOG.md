@@ -2,6 +2,35 @@
 
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
 
+## 0.3.54 – 2026-08-29
+
+### Graukarten wieder vollständig füllen
+
+- Der Realgerätetest von 0.3.53 bestätigt, dass das sichtbare 4×4-Raster
+  entfernt ist. Die gleichzeitig eingeführte weiße Karteninnenfläche wich
+  jedoch unnötig vom vorgesehenen Layout ab und ließ nur eine graue Kontur
+  stehen.
+- Willkommen-, Checkout- und Reinigungskarten verwenden wieder ihre gesamte
+  Fläche. Jeder Kartenpixel erhält einheitlich die native hellgraue Panelstufe;
+  es gibt weiterhin weder Bayer-Raster noch Fehlerdiffusion oder zufälliges
+  Dithering.
+- Renderrevision 35 erzwingt nach dem Firmwareupdate genau einen Neuaufbau. Die
+  in 0.3.53 korrigierte Schriftglättung, Randkonditionierung und
+  Unterdrückung unveränderter Inhalte bleiben unverändert.
+
+### Prüfung und Installation
+
+- Die Änderung benötigt gemeinsam das GuestyTerminal-Update und die
+  Display-Firmware 0.3.54. Bestehende 4-MB-Geräte bleiben ohne Änderung des
+  Flashlayouts OTA-kompatibel.
+- Alle 303 automatisierten Tests bestehen mit 90,72 % Abdeckung. Ruff,
+  Formatprüfung, Mypy, Python-Kompilierung und Release-Preflight sind
+  erfolgreich. ESPHome 2026.8.1 kompiliert sowohl das bestehende
+  `legacy_4mb`-OTA-Profil als auch `expanded_32mb`; das 4-MB-Abbild belegt
+  1.547.595 von 1.835.008 Bytes (84,3 %). Die gleichmäßig gefüllte Karte ist
+  noch nicht auf dem realen E1001 geprüft und bleibt bis dahin ausdrücklich
+  `not_tested`.
+
 ## 0.3.53 – 2026-08-29
 
 ### Native Graustufen und saubere Schriftkanten

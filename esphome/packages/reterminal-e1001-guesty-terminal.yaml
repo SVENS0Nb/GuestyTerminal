@@ -306,7 +306,7 @@ api:
                   else:
                     - lambda: |-
                         const bool renderer_current =
-                            id(guesty_render_revision) == 34;
+                            id(guesty_render_revision) == 35;
                         const int configured_gray_gamma_x100 =
                             static_cast<int>(std::lround(
                                 ${gray_gamma} * 100.0f));
@@ -521,7 +521,7 @@ api:
                                           id(guesty_content_id) = content_id;
                                           id(guesty_base_content_id) =
                                               base_content_id;
-                                          id(guesty_render_revision) = 34;
+                                          id(guesty_render_revision) = 35;
                                           id(guesty_rendered_gray_gamma_x100) =
                                               static_cast<int>(std::lround(
                                                   ${gray_gamma} * 100.0f));
@@ -721,7 +721,7 @@ api:
                     && !id(guesty_epaper).update_in_progress();
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            const bool renderer_current = id(guesty_render_revision) == 34;
+            const bool renderer_current = id(guesty_render_revision) == 35;
             const int configured_gray_gamma_x100 =
                 static_cast<int>(std::lround(${gray_gamma} * 100.0f));
             const bool tone_curve_current =
@@ -885,7 +885,7 @@ api:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
-                        id(guesty_render_revision) = 34;
+                        id(guesty_render_revision) = 35;
                         id(guesty_rendered_gray_gamma_x100) =
                             static_cast<int>(std::lround(
                                 ${gray_gamma} * 100.0f));
@@ -2776,12 +2776,9 @@ display:
                                panel_y + panel_height - panel_radius - 1,
                                panel_radius, color);
             };
-            // Use native panel levels instead of halftoning a large light
-            // surface. A slim solid-gray shell with a white interior keeps the
-            // cards visually separate while leaving text on clean paper white.
+            // Fill the complete card with one native panel level. This keeps
+            // the intended gray surface without reintroducing a spatial raster.
             fill_rounded(x, y, width, height, radius, light_gray);
-            fill_rounded(x + 2, y + 2, width - 4, height - 4,
-                         std::max(1, radius - 2), COLOR_OFF);
           };
 
           const auto weather_icon = [](const std::string &condition) {
@@ -2822,7 +2819,7 @@ display:
           draw_lines(32, 142, id(guesty_welcome_text),
                      id(guesty_font_body), 28, 3);
 
-          // Two equal access panels with native-gray outlines and white fill.
+          // Two equal access panels with a uniform native light-gray fill.
           if (!id(guesty_door_code).empty()) {
             draw_rounded_panel(32, 242, 360, 136, 12);
             it.print(56, 260, id(guesty_font_label),
@@ -2945,8 +2942,6 @@ display:
                                panel_radius, color);
             };
             fill_rounded(x, y, width, height, radius, light_gray);
-            fill_rounded(x + 2, y + 2, width - 4, height - 4,
-                         std::max(1, radius - 2), COLOR_OFF);
           };
 
           const auto weather_icon = [](const std::string &condition) {
@@ -3074,8 +3069,6 @@ display:
                                panel_radius, color);
             };
             fill_rounded(x, y, width, height, radius, light_gray);
-            fill_rounded(x + 2, y + 2, width - 4, height - 4,
-                         std::max(1, radius - 2), COLOR_OFF);
           };
 
           int battery_percent = id(guesty_display_battery_percent);

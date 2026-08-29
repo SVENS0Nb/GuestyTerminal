@@ -258,9 +258,11 @@ Ist das Pixelbild insgesamt zu dunkel, wird die Helligkeit nicht über
 `gray_lut_mode` oder die Randkorrektur eingestellt. Die Substitution
 `gray_gamma` verschiebt ausschließlich die Schwellen zwischen den vier nativen
 Pixelstufen. Seit Renderrevision 34 gibt es kein räumliches Dithermuster mehr:
-Das 2-Bit-Schrift-Antialiasing bleibt nativ und große Kartenflächen verwenden
-Papierweiß mit einer schmalen einheitlichen Graukontur. Schwarz und Weiß bleiben
-unverändert.
+Das 2-Bit-Schrift-Antialiasing bleibt nativ. Die Realgeräteprüfung von 0.3.53
+zeigte, dass die dabei verwendete weiße Karteninnenfläche nur eine graue Kontur
+übrig ließ. Seit Renderrevision 35 verwenden große Kartenflächen deshalb wieder
+eine vollständig gefüllte, einheitliche native Hellgraustufe. Schwarz und Weiß
+bleiben unverändert.
 
 Diese Abgrenzung ist für künftige Änderungen verbindlich: Den Rand nicht über
 den Renderer, einen Pixelrahmen, die Custom-Graustufen-LUT oder eine späte

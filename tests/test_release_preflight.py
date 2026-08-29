@@ -16,11 +16,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_current_repository_release_metadata_is_consistent() -> None:
-    metadata = validate_release(ROOT, expected_version="0.3.53")
+    metadata = validate_release(ROOT, expected_version="0.3.54")
 
-    assert metadata.version == "0.3.53"
-    assert "Native Graustufen und saubere Schriftkanten" in metadata.changelog_body
-    assert "Wiederkehrenden Panelrand behandeln" in metadata.changelog_body
+    assert metadata.version == "0.3.54"
+    assert "Graukarten wieder vollständig füllen" in metadata.changelog_body
     assert "Prüfung und Installation" in metadata.changelog_body
 
 
