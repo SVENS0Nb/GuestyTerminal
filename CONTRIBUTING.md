@@ -105,7 +105,7 @@ werden; das erneute Anlegen nur des SPI-Geräts genügt nicht. `POWER ON` und
 `DISPLAY REFRESH` behalten Seeeds feste 100-ms-Wartezeit und warten danach auf
 den inaktiven `BUSY_N`-Pegel. Jede sichtbare Treiberänderung erhöht erwartete
 und gespeicherte Renderrevision gemeinsam; der aktuelle Stand verwendet
-Revision 34.
+Revision 36.
 
 ## Veröffentlichungen und Distribution
 
@@ -123,6 +123,16 @@ eine wahrheitsgemäße Angabe zur realen Hardwareprüfung und erzeugt die
 Release-Notizen aus dem aktuellen Changelog. Erst danach legt er den annotierten
 Tag und das GitHub-Release an. Ein vorhandener Tag wird nur dann wiederverwendet,
 wenn er exakt auf denselben geprüften Commit zeigt.
+
+Version 0.3.55 verwendet Renderrevision 36. Das experimentelle Profil
+`lighter` darf ausschließlich die native Hellgrau-Tabelle `LUTKW` verändern:
+Nur ihr Phasen-7-Selektor an Byte 36 wechselt von `0xA8` zu `0x28`; sämtliche
+anderen Seeed-Tabellen und Zeitwerte müssen bytegenau unverändert bleiben. Das
+Profil muss die Register-LUTs verwenden, weil OTP unveränderbar ist, während
+`standard` den bisherigen Auto-/Custom-/OTP-Pfad behält. Profilwechsel müssen
+genau einen Vollaufbau erzwingen und dürfen Inhaltsfingerabdruck,
+Randkonditionierung oder Teilrefresh-Wellenform nicht verändern. Bis der
+Hellgrauton auf dem realen E1001 bestätigt ist, bleibt der Stand `not_tested`.
 
 Version 0.3.54 verwendet Renderrevision 35. Alle Informationskarten müssen
 vollständig mit genau einer nativen Hellgraustufe gefüllt sein; eine weiße

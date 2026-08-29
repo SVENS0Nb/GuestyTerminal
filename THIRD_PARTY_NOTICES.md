@@ -42,6 +42,12 @@ sequence are adapted from Seeed's Open Source Hardware repository:
 
 The two-plane transfer retains the reference's explicit `3 - gray` conversion
 between the logical `0=black, 3=white` canvas and the UC8179 DTM wire polarity.
+The `standard` profile preserves all five referenced register tables
+byte-for-byte. The experimental `lighter` table is a one-byte derivative of
+Seeed's MIT-licensed `LUTKW`: its phase-7 selector changes from `0xA8` to
+`0x28`, the value used in the same position by Seeed's `LUTWW`; every duration
+and all other table bytes remain unchanged. This introduces no additional
+source or license.
 
 ## UC8179 controller documentation
 
@@ -57,6 +63,9 @@ part of the pixel data:
   `BDV=01` selects the panel's black-to-white OTP waveform for that separate
   electrode
 - Relevant field: `R00h.PSR.REG`, which selects panel OTP or register LUTs
+- Relevant commands: `R21h` through `R24h`, whose seven groups encode a
+  selector, four frame counts and a repeat count for the WW, KW, WK and KK
+  transitions
 - Relevant power-off behavior: `R02h` releases Source, Gate, Border, and VCOM
   to floating, so GuestyTerminal does not add a late `R50h` override
 - Relevant OTP mapping: bank check codes at `0x0000`/`0x0C00` and the common

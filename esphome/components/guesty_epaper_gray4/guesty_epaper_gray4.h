@@ -15,6 +15,11 @@ enum LutMode : uint8_t {
   LUT_MODE_OTP,
 };
 
+enum GrayWaveformProfile : uint8_t {
+  GRAY_WAVEFORM_PROFILE_STANDARD = 0,
+  GRAY_WAVEFORM_PROFILE_LIGHTER,
+};
+
 /**
  * Four-level grayscale driver for the Good Display GDEY075T7 panel used by
  * the Seeed Studio reTerminal E1001.
@@ -55,6 +60,12 @@ class GuestyEPaperGray4
   void set_data_pin(GPIOPin *data_pin) { this->data_pin_ = data_pin; }
   void set_gray_gamma(float gray_gamma) { this->gray_gamma_ = gray_gamma; }
   void set_lut_mode(LutMode lut_mode) { this->configured_lut_mode_ = lut_mode; }
+  void set_gray_waveform_profile(GrayWaveformProfile profile) {
+    this->gray_waveform_profile_ = profile;
+  }
+  uint8_t waveform_profile_id() const {
+    return static_cast<uint8_t>(this->gray_waveform_profile_);
+  }
   void set_reset_duration(uint32_t duration) { this->reset_duration_ = duration; }
   void set_partial_refresh_window(uint16_t x, uint16_t y, uint16_t width,
                                   uint16_t height) {
@@ -207,6 +218,8 @@ class GuestyEPaperGray4
   std::array<uint8_t, PARTIAL_BUFFER_CAPACITY> partial_current_{};
   LutMode configured_lut_mode_{LUT_MODE_AUTO};
   LutMode active_lut_mode_{LUT_MODE_CUSTOM};
+  GrayWaveformProfile gray_waveform_profile_{
+      GRAY_WAVEFORM_PROFILE_STANDARD};
 };
 
 }  // namespace esphome::guesty_epaper_gray4

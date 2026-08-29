@@ -292,7 +292,22 @@ incomplete change.
   the MIT-licensed Seeed E1001 register LUTs. Retain the non-sensitive result in
   RTC memory across deep sleep; a failed probe falls back safely without
   persisting an uncertain result. Keep explicit `custom` and `otp` modes for
-  existing configurations.
+  existing configurations. This selection applies to
+  `gray_waveform_profile: standard`. The package's experimental `lighter`
+  profile must use the bundled register-LUT path even when `lut_mode` is
+  `auto`, because panel OTP is immutable; reject an explicit `otp` plus
+  `lighter` configuration.
+- Keep the experimental `lighter` profile strictly isolated to `LUTKW`, which
+  maps to GuestyTerminal's native light-gray level after DTM polarity
+  conversion. It differs from Seeed's `LUT_KW_GRAY` only at byte 36: the
+  phase-7 selector changes from `0xA8` to `0x28`, replacing the first
+  two-frame VDL drive with GND while matching Seeed's same phase in `LUTWW`.
+  Preserve every duration byte and all standard VCOM, WW, KW, WK and KK tables
+  byte-for-byte. Do not let this profile alter gamma, framebuffer values,
+  border conditioning, monochrome partial refresh or endpoint colors. Persist
+  the selected non-sensitive profile separately and force one full refresh
+  after a profile change. `standard` remains the immediate rollback path until
+  the lighter waveform is proven on real hardware.
 - The E1001 `auto` OTP probe temporarily uses SDA/MOSI as a bidirectional GPIO.
   Tear down the SPI device, free the dedicated ESP32-S3 SPI2 host, perform the
   GPIO read, then initialize SPI2 with the same pins, MISO, transfer size,
@@ -353,7 +368,7 @@ incomplete change.
 - `guesty_render_revision` invalidates otherwise-identical images after a
   rendering or driver change. When a visible rendering change requires one
   repaint, increment the expected value and the stored-success value together,
-  and update their tests. The current source revision is 35.
+  and update their tests. The current source revision is 36.
 - Publish the displayed-booking confirmation only after a successful physical
   refresh, or when a restored matching fingerprint proves the same content was
   previously drawn.

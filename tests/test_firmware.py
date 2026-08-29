@@ -78,10 +78,11 @@ def test_render_firmware_config_is_secure_and_device_specific(monkeypatch) -> No
     assert "password: !secret wifi_password" in rendered
     assert "client_secret" not in rendered
     assert "gray_lut_mode: auto" in rendered
+    assert "gray_waveform_profile: lighter" in rendered
     assert 'gray_gamma: "1.35"' in rendered
     assert 'environment_temperature_offset: "0.0"' in rendered
     assert 'environment_humidity_offset: "0.0"' in rendered
-    assert rendered.count("ref: v0.3.54") == 2
+    assert rendered.count("ref: v0.3.55") == 2
     assert "external_components:" in rendered
     assert "components:\n      - guesty_epaper_gray4" in rendered
     assert "guesty_power_wake" not in rendered
@@ -104,12 +105,13 @@ def test_display_package_uses_revision_aware_four_gray_rendering() -> None:
 
     assert package.count("bpp: 2") == 12
     assert "lut_mode: ${gray_lut_mode}" in package
+    assert "gray_waveform_profile: ${gray_waveform_profile}" in package
     assert "gray_gamma: ${gray_gamma}" in package
     expected_revision = re.search(r"id\(guesty_render_revision\) == (\d+);", package)
     stored_revision = re.search(r"id\(guesty_render_revision\) = (\d+);", package)
     assert expected_revision is not None
     assert stored_revision is not None
-    assert expected_revision.group(1) == "35"
+    assert expected_revision.group(1) == "36"
     assert expected_revision.group(1) == stored_revision.group(1)
     assert "guesty_terminal_update_display_v10" in package
     assert (
@@ -732,10 +734,16 @@ def test_grayscale_tone_curve_uses_native_levels_without_spatial_dither() -> Non
     platform = DRIVER_FILE.with_name("display.py").read_text(encoding="utf-8")
 
     assert 'gray_gamma: "1.35"' in package
+    assert "gray_waveform_profile: lighter" in package
     assert "cv.Optional(CONF_GRAY_GAMMA, default=1.35)" in platform
     assert "min=1.0, max=2.2" in platform
     assert "var.set_gray_gamma(config[CONF_GRAY_GAMMA])" in platform
+    assert (
+        "var.set_gray_waveform_profile(config[CONF_GRAY_WAVEFORM_PROFILE])" in platform
+    )
     assert "float gray_gamma_{1.35f};" in header
+    assert "GRAY_WAVEFORM_PROFILE_STANDARD" in header
+    assert "GRAY_WAVEFORM_PROFILE_LIGHTER" in header
     assert "std::array<uint8_t, 256> tone_curve_{};" in header
     assert "std::pow(normalized, this->gray_gamma_)" in driver
     assert "static constexpr uint8_t BAYER_4X4[16]" not in driver
@@ -745,10 +753,17 @@ def test_grayscale_tone_curve_uses_native_levels_without_spatial_dither() -> Non
     assert "return 3U - ink_level;" in driver
     assert package.count("const bool tone_curve_current") == 2
     assert package.count("|| !tone_curve_current") == 2
+    assert package.count("const bool waveform_profile_current") == 2
+    assert package.count("|| !waveform_profile_current") == 2
+    assert package.count("&& waveform_profile_current") == 4
     assert package.count("id(guesty_rendered_gray_gamma_x100) =") == 2
+    assert package.count("id(guesty_rendered_waveform_profile) =") == 2
     gamma_state_start = package.index("  - id: guesty_rendered_gray_gamma_x100\n")
     gamma_state_end = package.index("\n  - id:", gamma_state_start + 1)
     assert "restore_value: true" in package[gamma_state_start:gamma_state_end]
+    profile_state_start = package.index("  - id: guesty_rendered_waveform_profile\n")
+    profile_state_end = package.index("\n  - id:", profile_state_start + 1)
+    assert "restore_value: true" in package[profile_state_start:profile_state_end]
 
     def rendered_level(coverage: int) -> int:
         return 3 - round(math.pow(coverage / 255, 1.35) * 3)
@@ -1282,6 +1297,46 @@ def test_four_gray_tables_match_the_licensed_seeed_reference() -> None:
         assert actual == expected_hex
 
 
+def test_lighter_profile_changes_only_the_final_light_gray_drive_selector() -> None:
+    """Keep the first hardware experiment isolated from every other waveform."""
+    driver = DRIVER_FILE.read_text(encoding="utf-8")
+    header = DRIVER_FILE.with_suffix(".h").read_text(encoding="utf-8")
+    platform = DRIVER_FILE.with_name("display.py").read_text(encoding="utf-8")
+
+    def lut(name: str) -> list[int]:
+        match = re.search(
+            rf"static constexpr uint8_t {name}\[42\] = \{{(.*?)\n\}};",
+            driver,
+            re.DOTALL,
+        )
+        assert match is not None
+        return [
+            int(value, 16) for value in re.findall(r"0x([0-9A-F]{2})", match.group(1))
+        ]
+
+    standard = lut("LUT_KW_GRAY")
+    lighter = lut("LUT_KW_GRAY_LIGHTER")
+    white = lut("LUT_WW_GRAY")
+    assert len(standard) == len(lighter) == 42
+    assert [
+        index
+        for index, pair in enumerate(zip(standard, lighter, strict=True))
+        if pair[0] != pair[1]
+    ] == [36]
+    assert standard[36] == 0xA8
+    assert lighter[36] == white[36] == 0x28
+    assert standard[37:] == lighter[37:]
+
+    assert "CONF_GRAY_WAVEFORM_PROFILE" in platform
+    assert '"lighter": GrayWaveformProfile.GRAY_WAVEFORM_PROFILE_LIGHTER' in platform
+    assert "requires lut_mode 'auto' or 'custom'" in platform
+    assert "void set_gray_waveform_profile(GrayWaveformProfile profile)" in header
+    assert "uint8_t waveform_profile_id() const" in header
+    assert "this->active_lut_mode_ = LUT_MODE_CUSTOM;" in driver
+    assert '"custom_lighter"' in driver
+    assert "? LUT_KW_GRAY_LIGHTER" in driver
+
+
 def test_auto_power_detection_supports_both_e1001_hardware_revisions() -> None:
     package = PACKAGE_FILE.read_text(encoding="utf-8")
 
@@ -1688,7 +1743,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
     tmp_path,
 ) -> None:
     managed = tmp_path / "display.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.54", "0.3.10")
+    old_content = render_firmware_config(_options()).replace("0.3.55", "0.3.10")
     managed.write_text(old_content, encoding="utf-8")
     managed.chmod(0o600)
     user_owned = tmp_path / "other.yaml"
@@ -1700,8 +1755,8 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
         ("display.yaml", True)
     ]
     updated = managed.read_text(encoding="utf-8")
-    assert updated.count("ref: v0.3.54") == 2
-    assert 'version: "0.3.54"' in updated
+    assert updated.count("ref: v0.3.55") == 2
+    assert 'version: "0.3.55"' in updated
     assert "guesty_power_wake" not in updated
     assert next(line for line in old_content.splitlines() if "key:" in line) in updated
     assert stat.S_IMODE(managed.stat().st_mode) == 0o600
@@ -1732,7 +1787,7 @@ def test_update_managed_firmware_configs_preserves_credentials_and_permissions(
 def test_update_managed_firmware_configs_rejects_invalid_credentials(
     tmp_path, broken_line
 ) -> None:
-    valid = render_firmware_config(_options()).replace("0.3.54", "0.3.10")
+    valid = render_firmware_config(_options()).replace("0.3.55", "0.3.10")
     if "key:" in broken_line:
         invalid = valid.replace(
             next(line for line in valid.splitlines() if "key:" in line), broken_line
@@ -1769,14 +1824,14 @@ def test_update_managed_firmware_configs_never_downgrades_or_partially_writes(
     tmp_path,
 ) -> None:
     future = tmp_path / "future.yaml"
-    future_content = render_firmware_config(_options()).replace("0.3.54", "0.4.0")
+    future_content = render_firmware_config(_options()).replace("0.3.55", "0.4.0")
     future.write_text(future_content, encoding="utf-8")
     future.chmod(0o600)
     assert update_managed_firmware_configs(tmp_path)[0].changed is False
     assert future.read_text(encoding="utf-8") == future_content
 
     old = tmp_path / "a-old.yaml"
-    old_content = render_firmware_config(_options()).replace("0.3.54", "0.3.9")
+    old_content = render_firmware_config(_options()).replace("0.3.55", "0.3.9")
     old.write_text(old_content, encoding="utf-8")
     malformed = tmp_path / "z-malformed.yaml"
     malformed.write_text(f"{FIRMWARE_HEADER}\n# malformed\n", encoding="utf-8")

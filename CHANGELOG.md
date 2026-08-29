@@ -2,6 +2,44 @@
 
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
 
+## 0.3.55 – 2026-08-29
+
+### Hellgraue Panelstufe experimentell aufhellen
+
+- Die vollständig gefüllten Karten aus 0.3.54 bleiben unverändert. Statt ihre
+  Pixel, Tonkurve oder Flächengestaltung erneut zu verändern, erhält der
+  UC8179-Treiber ein ausdrücklich benanntes Wellenformprofil `lighter`.
+- Das Experiment ist auf genau den nativen Hellgrau-Übergang `LUTKW` begrenzt:
+  In dessen siebter Phase wechselt ausschließlich der erste, zwei Frames lange
+  Selektor von `VDL` auf `GND` (`0xA8` zu `0x28`). Alle Zeitwerte sowie die
+  Tabellen für Weiß, Dunkelgrau, Schwarz, VCOM, Teilrefresh und Rand bleiben
+  bytegenau unverändert.
+- Da die im Panel gespeicherte OTP-Wellenform nicht veränderbar ist, verwendet
+  `lighter` auch bei `gray_lut_mode: auto` gezielt die gebündelten
+  Registertabellen. `gray_waveform_profile: standard` stellt die bisherige
+  Auswahl unverändert wieder her; die ungültige Kombination `lighter` mit
+  einem ausdrücklich erzwungenen OTP-Modus wird bei der Konfiguration
+  abgewiesen.
+- Das zuletzt erfolgreich gezeichnete Profil wird nicht sensibel gespeichert.
+  Renderrevision 36 erzwingt für den Profilwechsel genau einen Vollaufbau;
+  identische Inhalte und spätere Wetter-/Batterie-Teilupdates bleiben danach
+  weiterhin unterdrückt.
+
+### Prüfung und Installation
+
+- Die Änderung benötigt gemeinsam das GuestyTerminal-Update und die
+  Display-Firmware 0.3.55. Bestehende 4-MB-Geräte behalten ihr Flashlayout und
+  bleiben OTA-kompatibel.
+- Alle 304 automatisierten Tests bestehen gegen Home Assistant 2025.12.0 und
+  2026.2.3 mit 90,72 % Abdeckung. Ruff, Formatprüfung, Mypy,
+  Python-Kompilierung und Release-Preflight sind erfolgreich. ESPHome 2026.8.1
+  validiert und kompiliert sowohl `legacy_4mb` als auch `expanded_32mb`; das
+  4-MB-Abbild belegt 1.548.159 von 1.835.008 Bytes (84,4 %).
+- Der veränderte physische Hellgrauton ist noch nicht auf dem realen E1001
+  geprüft und bleibt bis zu diesem kontrollierten Vergleich ausdrücklich
+  `not_tested`. Für einen unmittelbaren Rückweg genügt vor einem erneuten
+  Firmwarebau `gray_waveform_profile: standard`.
+
 ## 0.3.54 – 2026-08-29
 
 ### Graukarten wieder vollständig füllen

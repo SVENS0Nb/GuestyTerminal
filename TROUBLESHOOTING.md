@@ -264,6 +264,19 @@ zeigte, dass die dabei verwendete weiße Karteninnenfläche nur eine graue Kontu
 eine vollständig gefüllte, einheitliche native Hellgraustufe. Schwarz und Weiß
 bleiben unverändert.
 
+Version 0.3.55 trennt davon den ersten kontrollierten Wellenformversuch:
+`gray_waveform_profile: lighter` lässt Layout, Framebufferwerte und
+`gray_gamma` unverändert und schwächt ausschließlich den letzten dunklen
+Ansteuerimpuls der nativen Hellgrau-Tabelle `LUTKW`. Konkret wechselt Byte 36
+von `0xA8` zu `0x28`; der zwei Frames lange Selektor verwendet damit `GND`
+statt `VDL`. Alle übrigen Selektoren, Zeitwerte und Tabellen bleiben
+unverändert. Weil OTP nicht umprogrammiert werden kann, wählt das Profil auch
+bei `gray_lut_mode: auto` den Register-LUT-Pfad. Für einen eindeutigen
+Vorher-/Nachher-Vergleich oder Rückweg `gray_waveform_profile: standard`
+setzen, neu kompilieren und den erzwungenen Vollaufbau abwarten. Bis zur
+Realgeräteprüfung darf eine Verbesserung weder der Gamma-Kurve noch dem
+Flächenrenderer zugeschrieben werden.
+
 Diese Abgrenzung ist für künftige Änderungen verbindlich: Den Rand nicht über
 den Renderer, einen Pixelrahmen, die Custom-Graustufen-LUT oder eine späte
 `R50h`-Änderung beim Ausschalten behandeln. Diese Ansätze entfernten den

@@ -69,6 +69,19 @@ static constexpr uint8_t LUT_KW_GRAY[42] = {
     0x0A, 0x01, 0x45, 0x0A, 0x11, 0x06, 0x07, 0x01, 0xA8, 0x02, 0x01, 0x02, 0x01, 0x01,
 };
 
+// Experimental light-gray profile derived from Seeed's MIT-licensed register
+// LUT above. UC8179 KW mode maps the controller's {NEW=0, OLD=1} DTM pair to
+// LUTKW, which is GuestyTerminal's native light-gray level after wire-polarity
+// conversion. Only phase 7's first two-frame selector changes from VDL (0b10)
+// to GND (0b00), matching the same phase in LUTWW. This weakens the final dark
+// drive without changing any phase duration, black/white endpoints, dark gray,
+// VCOM, border conditioning, or the monochrome partial waveform.
+static constexpr uint8_t LUT_KW_GRAY_LIGHTER[42] = {
+    0x2A, 0x00, 0x06, 0x08, 0x07, 0x01, 0x59, 0x06, 0x0A, 0x0B, 0x0A, 0x01, 0x90, 0x03,
+    0x03, 0x00, 0x00, 0x03, 0x5A, 0x05, 0x09, 0x06, 0x06, 0x01, 0xA8, 0x02, 0x02, 0x0A,
+    0x0A, 0x01, 0x45, 0x0A, 0x11, 0x06, 0x07, 0x01, 0x28, 0x02, 0x01, 0x02, 0x01, 0x01,
+};
+
 static constexpr uint8_t LUT_WK_GRAY[42] = {
     0x16, 0x00, 0x06, 0x08, 0x07, 0x01, 0xA0, 0x06, 0x0A, 0x0B, 0x0A, 0x01, 0x90, 0x03,
     0x03, 0x00, 0x00, 0x03, 0x99, 0x05, 0x09, 0x06, 0x06, 0x01, 0xA0, 0x02, 0x02, 0x0A,
@@ -126,7 +139,9 @@ const char *GuestyEPaperGray4::last_error_name() const {
 const char *GuestyEPaperGray4::active_lut_mode_name() const {
   switch (this->active_lut_diagnostic_.load()) {
     case LUT_MODE_CUSTOM:
-      return "custom";
+      return this->gray_waveform_profile_ == GRAY_WAVEFORM_PROFILE_LIGHTER
+                 ? "custom_lighter"
+                 : "custom";
     case LUT_MODE_OTP:
       return "otp";
     default:
@@ -702,7 +717,13 @@ bool GuestyEPaperGray4::select_lut_mode_() {
     return true;
   }
 
-  if (this->configured_lut_mode_ == LUT_MODE_AUTO) {
+  if (this->gray_waveform_profile_ == GRAY_WAVEFORM_PROFILE_LIGHTER) {
+    // Panel OTP is immutable. A requested experimental profile therefore uses
+    // the explicitly bundled register LUT even when normal selection is auto.
+    this->active_lut_mode_ = LUT_MODE_CUSTOM;
+    ESP_LOGI(TAG,
+             "Selected experimental lighter light-gray register waveform");
+  } else if (this->configured_lut_mode_ == LUT_MODE_AUTO) {
     const bool retained_valid =
         retained_lut_selection.magic == RETAINED_LUT_SELECTION_MAGIC &&
         (retained_lut_selection.mode == LUT_MODE_CUSTOM ||
@@ -732,8 +753,11 @@ bool GuestyEPaperGray4::select_lut_mode_() {
   this->lut_mode_selected_ = true;
   this->active_lut_diagnostic_.store(this->active_lut_mode_);
   ESP_LOGI(TAG, "Selected grayscale waveform: %s",
-           this->active_lut_mode_ == LUT_MODE_OTP ? "panel OTP"
-                                                  : "Seeed register LUTs");
+           this->active_lut_mode_ == LUT_MODE_OTP
+               ? "panel OTP"
+               : (this->gray_waveform_profile_ == GRAY_WAVEFORM_PROFILE_LIGHTER
+                      ? "experimental lighter register LUTs"
+                      : "Seeed register LUTs"));
   return true;
 }
 
@@ -834,7 +858,11 @@ bool GuestyEPaperGray4::init_custom_gray_mode_() {
 
   this->write_lut_(0x20, LUT_VCOM_GRAY, sizeof(LUT_VCOM_GRAY));
   this->write_lut_(0x21, LUT_WW_GRAY, sizeof(LUT_WW_GRAY));
-  this->write_lut_(0x22, LUT_KW_GRAY, sizeof(LUT_KW_GRAY));
+  const uint8_t *light_gray_lut =
+      this->gray_waveform_profile_ == GRAY_WAVEFORM_PROFILE_LIGHTER
+          ? LUT_KW_GRAY_LIGHTER
+          : LUT_KW_GRAY;
+  this->write_lut_(0x22, light_gray_lut, sizeof(LUT_KW_GRAY));
   this->write_lut_(0x23, LUT_WK_GRAY, sizeof(LUT_WK_GRAY));
   this->write_lut_(0x24, LUT_KK_GRAY, sizeof(LUT_KK_GRAY));
   return true;
@@ -1308,6 +1336,11 @@ void GuestyEPaperGray4::dump_config() {
   else if (this->configured_lut_mode_ == LUT_MODE_OTP)
     configured_mode = "panel OTP";
   ESP_LOGCONFIG(TAG, "  Grayscale waveform: %s", configured_mode);
+  ESP_LOGCONFIG(
+      TAG, "  Light-gray waveform profile: %s",
+      this->gray_waveform_profile_ == GRAY_WAVEFORM_PROFILE_LIGHTER
+          ? "experimental lighter"
+          : "standard");
   ESP_LOGCONFIG(TAG, "  Grayscale tone gamma: %.2f", this->gray_gamma_);
   if (this->partial_refresh_configured_) {
     ESP_LOGCONFIG(TAG, "  Partial weather window: x=%u, y=%u, %ux%u",

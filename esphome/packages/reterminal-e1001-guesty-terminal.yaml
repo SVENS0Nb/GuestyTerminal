@@ -6,6 +6,10 @@ substitutions:
   battery_sleep_duration: 30min
   awake_duration_seconds: "90"
   gray_lut_mode: auto
+  # The lighter profile is a bounded hardware experiment. It selects the
+  # register LUT path and weakens only the final light-gray drive pulse; the
+  # standard profile retains the unmodified Seeed waveform.
+  gray_waveform_profile: lighter
   # A mild display tone curve shifts the thresholds between the four physical
   # levels while keeping black/white exact. Every pixel still uses one native
   # level; no spatial halftone is applied to surfaces or font antialiasing.
@@ -306,13 +310,16 @@ api:
                   else:
                     - lambda: |-
                         const bool renderer_current =
-                            id(guesty_render_revision) == 35;
+                            id(guesty_render_revision) == 36;
                         const int configured_gray_gamma_x100 =
                             static_cast<int>(std::lround(
                                 ${gray_gamma} * 100.0f));
                         const bool tone_curve_current =
                             id(guesty_rendered_gray_gamma_x100)
                                 == configured_gray_gamma_x100;
+                        const bool waveform_profile_current =
+                            id(guesty_rendered_waveform_profile)
+                                == id(guesty_epaper).waveform_profile_id();
                         const bool confirmed_external_power =
                             id(guesty_external_power).has_state()
                             && id(guesty_external_power).state;
@@ -344,6 +351,7 @@ api:
                             || content_id != id(guesty_content_id)
                             || !renderer_current
                             || !tone_curve_current
+                            || !waveform_profile_current
                             || border_conditioning_needed
                             || battery_changed;
                         id(guesty_failed_content_suppressed) =
@@ -359,6 +367,7 @@ api:
                             && !force_redraw
                             && renderer_current
                             && tone_curve_current
+                            && waveform_profile_current
                             && !content_id.empty()
                             && !base_content_id.empty()
                             && base_content_id == id(guesty_base_content_id)
@@ -367,6 +376,7 @@ api:
                             && !force_redraw
                             && renderer_current
                             && tone_curve_current
+                            && waveform_profile_current
                             && !content_id.empty()
                             && content_id == id(guesty_content_id);
                         id(guesty_privacy_clear_pending) =
@@ -521,10 +531,12 @@ api:
                                           id(guesty_content_id) = content_id;
                                           id(guesty_base_content_id) =
                                               base_content_id;
-                                          id(guesty_render_revision) = 35;
+                                          id(guesty_render_revision) = 36;
                                           id(guesty_rendered_gray_gamma_x100) =
                                               static_cast<int>(std::lround(
                                                   ${gray_gamma} * 100.0f));
+                                          id(guesty_rendered_waveform_profile) =
+                                              id(guesty_epaper).waveform_profile_id();
                                           if (id(guesty_border_conditioning_requested)) {
                                             id(guesty_border_conditioning_revision) =
                                                 1;
@@ -721,12 +733,15 @@ api:
                     && !id(guesty_epaper).update_in_progress();
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            const bool renderer_current = id(guesty_render_revision) == 35;
+            const bool renderer_current = id(guesty_render_revision) == 36;
             const int configured_gray_gamma_x100 =
                 static_cast<int>(std::lround(${gray_gamma} * 100.0f));
             const bool tone_curve_current =
                 id(guesty_rendered_gray_gamma_x100)
                     == configured_gray_gamma_x100;
+            const bool waveform_profile_current =
+                id(guesty_rendered_waveform_profile)
+                    == id(guesty_epaper).waveform_profile_id();
             const bool confirmed_external_power =
                 id(guesty_external_power).has_state()
                 && id(guesty_external_power).state;
@@ -754,12 +769,14 @@ api:
                 || content_id != id(guesty_content_id)
                 || !renderer_current
                 || !tone_curve_current
+                || !waveform_profile_current
                 || border_conditioning_needed
                 || battery_changed;
             id(guesty_weather_only_changed) = id(guesty_content_changed)
                 && !force_redraw
                 && renderer_current
                 && tone_curve_current
+                && waveform_profile_current
                 && !content_id.empty()
                 && !base_content_id.empty()
                 && base_content_id == id(guesty_base_content_id)
@@ -768,6 +785,7 @@ api:
                 && !force_redraw
                 && renderer_current
                 && tone_curve_current
+                && waveform_profile_current
                 && !content_id.empty()
                 && content_id == id(guesty_content_id);
             id(guesty_privacy_clear_pending) =
@@ -885,10 +903,12 @@ api:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
-                        id(guesty_render_revision) = 35;
+                        id(guesty_render_revision) = 36;
                         id(guesty_rendered_gray_gamma_x100) =
                             static_cast<int>(std::lround(
                                 ${gray_gamma} * 100.0f));
+                        id(guesty_rendered_waveform_profile) =
+                            id(guesty_epaper).waveform_profile_id();
                         if (id(guesty_border_conditioning_requested)) {
                           id(guesty_border_conditioning_revision) = 1;
                         } else if (!id(guesty_epaper).last_update_was_partial()) {
@@ -1133,6 +1153,13 @@ globals:
   # non-sensitive hundredth-step value so changing gray_gamma forces one full
   # repaint even when Home Assistant sends an identical content fingerprint.
   - id: guesty_rendered_gray_gamma_x100
+    type: int
+    restore_value: true
+    initial_value: "-1"
+  # The selected non-sensitive waveform profile changes the physical panel
+  # result without changing payload pixels. Persist it separately so a local
+  # profile change forces exactly one full repaint.
+  - id: guesty_rendered_waveform_profile
     type: int
     restore_value: true
     initial_value: "-1"
@@ -2666,6 +2693,7 @@ display:
       number: GPIO9
       allow_other_uses: true
     gray_gamma: ${gray_gamma}
+    gray_waveform_profile: ${gray_waveform_profile}
     lut_mode: ${gray_lut_mode}
     cs_pin: GPIO10
     dc_pin: GPIO11

@@ -205,11 +205,19 @@ GuestyTerminal verwendet einen eigenen UC8179-Treiber für die vier nativen
 Graustufen des GDEY075T7-Panels. Schriftdateien werden direkt mit 2 Bit pro
 Pixel auf die vier Panelstufen gerastert. QR-Code
 und Türcode bleiben dabei satt schwarz und werden ohne sichtbare
-Umrandung gezeichnet. Im Standardmodus `auto` prüft der Treiber einmalig die
-von Seeed dokumentierten UC8179-OTP-Markierungen. Unterstützt die jeweilige
-Panelrevision eine interne Vier-Grau-Wellenform, wird diese verwendet;
-andernfalls greift der Treiber auf Seeeds MIT-lizenzierte Register-LUTs zurück.
-Die erkannte Auswahl bleibt über den Tiefschlaf erhalten, damit der
+Umrandung gezeichnet. Mit `gray_waveform_profile: standard` prüft der
+Treiber im Modus `gray_lut_mode: auto` einmalig die von Seeed dokumentierten
+UC8179-OTP-Markierungen. Unterstützt die jeweilige Panelrevision eine interne
+Vier-Grau-Wellenform, wird diese verwendet; andernfalls greift der Treiber auf
+Seeeds MIT-lizenzierte Register-LUTs zurück. Das in 0.3.55 zunächst aktive,
+experimentelle Profil `lighter` verwendet dagegen auch im Auto-Modus gezielt
+die Registertabellen: Nur im nativen Hellgrau-Übergang `LUTKW` wechselt ein
+zwei Frames langer Abschlussselektor von `VDL` auf `GND`. Alle anderen
+Selektoren und Zeitwerte bleiben unverändert. Ein erzwungenes
+`gray_lut_mode: otp` ist mit diesem veränderbaren Profil nicht kombinierbar;
+`gray_waveform_profile: standard` stellt den bisherigen Pfad wieder her.
+Die erkannte beziehungsweise gewählte Auswahl bleibt über den Tiefschlaf
+erhalten, damit der
 30-Minuten-Akkuzyklus nicht durch eine erneute Modusprüfung bei jedem Aufwachen
 belastet wird. Der sichtbare schmale Panelrand liegt außerhalb des
 800×480-Bildspeichers und besitzt eine eigene Elektrode. Normale OTP- und
@@ -252,10 +260,14 @@ Die Standard-Tonkurve `gray_gamma: "1.35"` verschiebt nur die Schwellen zwischen
 den vier nativen Panelstufen. Jeder Pixel bleibt eine einheitliche physische
 Stufe; insbesondere werden das vorhandene 2-Bit-Schrift-Antialiasing und große
 Flächen nicht noch einmal als sichtbares Raster gedithert. Informationskarten
-verwenden deshalb Papierweiß mit einer schmalen nativen Graukontur. Reines Weiß
-und sattes Schwarz bleiben pixelgenau erhalten. Eine lokale Gamma-Änderung
-erzwingt genau einen neuen Vollaufbau und verändert weder Wellenform noch
-Randkorrektur; danach werden identische Bilder wieder normal unterdrückt.
+verwenden ihre vollständig gefüllte, einheitliche native Hellgraustufe. Reines
+Weiß und sattes Schwarz bleiben pixelgenau erhalten. Eine lokale Gamma- oder
+Wellenformprofil-Änderung erzwingt genau einen neuen Vollaufbau, ohne
+Inhaltsfingerabdruck oder Randkorrektur zu verändern; danach werden identische
+Bilder wieder normal unterdrückt. Gamma verschiebt nur die Zuordnung zu den
+nativen Stufen. Das `lighter`-Profil verändert dagegen bewusst die physische
+Hellgrau-Wellenform und ist bis zur Sichtprüfung auf dem realen E1001
+ausdrücklich experimentell.
 Quellen, feste Revisionen und Lizenztexte sind in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) dokumentiert.
 
@@ -595,6 +607,16 @@ ESPHome Device Builder sichtbar.
 Die kompakte, fortlaufende Änderungshistorie steht in
 [`CHANGELOG.md`](CHANGELOG.md). Die folgenden Hinweise erklären zusätzlich die
 Firmwareanforderungen älterer Installationen.
+
+Version **0.3.55** lässt das in 0.3.54 korrigierte Flächenlayout unverändert
+und hellt experimentell nur die physische native Hellgraustufe auf. Das Profil
+`lighter` ändert ausschließlich einen zwei Frames langen Selektor der
+UC8179-`LUTKW` von `VDL` zu `GND`; Weiß, Dunkelgrau, Schwarz, Zeitwerte,
+Teilrefresh und Randkorrektur bleiben unverändert. Weil Panel-OTP nicht
+veränderbar ist, erzwingt dieses Profil auch bei `gray_lut_mode: auto` die
+gebündelten Register-LUTs. `gray_waveform_profile: standard` ist der direkte
+Rückweg. Renderrevision 36 zeichnet das Profil einmal vollständig neu; die
+reale Sichtprüfung steht noch aus.
 
 Version **0.3.54** füllt die grauen Informationskarten wieder vollständig mit
 der einheitlichen nativen Hellgraustufe. Version 0.3.53 hatte das störende

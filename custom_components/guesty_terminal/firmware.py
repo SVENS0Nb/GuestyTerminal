@@ -11,7 +11,7 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
-FIRMWARE_VERSION = "0.3.54"
+FIRMWARE_VERSION = "0.3.55"
 FIRMWARE_HEADER = "# Managed by the GuestyTerminal firmware assistant."
 POWER_MODES = ("auto", "battery", "mains")
 FLASH_LAYOUT_LEGACY = "legacy_4mb"
@@ -211,6 +211,7 @@ substitutions:
   battery_sleep_duration: {options.wake_interval_minutes}min
   awake_duration_seconds: "{options.awake_seconds}"
   gray_lut_mode: auto
+  gray_waveform_profile: lighter
   gray_gamma: "1.35"
   environment_temperature_offset: "0.0"
   environment_humidity_offset: "0.0"

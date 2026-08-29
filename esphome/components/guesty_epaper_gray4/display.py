@@ -20,6 +20,7 @@ DEPENDENCIES = ["spi"]
 CONF_CLOCK_PIN = "clock_pin"
 CONF_DATA_PIN = "data_pin"
 CONF_GRAY_GAMMA = "gray_gamma"
+CONF_GRAY_WAVEFORM_PROFILE = "gray_waveform_profile"
 CONF_LUT_MODE = "lut_mode"
 CONF_PARTIAL_REFRESH = "partial_refresh"
 CONF_X = "x"
@@ -68,8 +69,27 @@ LUT_MODES = {
     "custom": LutMode.LUT_MODE_CUSTOM,
     "otp": LutMode.LUT_MODE_OTP,
 }
+GrayWaveformProfile = guesty_epaper_gray4_ns.enum("GrayWaveformProfile")
+GRAY_WAVEFORM_PROFILES = {
+    "standard": GrayWaveformProfile.GRAY_WAVEFORM_PROFILE_STANDARD,
+    "lighter": GrayWaveformProfile.GRAY_WAVEFORM_PROFILE_LIGHTER,
+}
+
+
+def _validate_waveform_configuration(config):
+    """An altered register LUT cannot be combined with the immutable OTP LUT."""
+    if (
+        config.get(CONF_GRAY_WAVEFORM_PROFILE, "standard") == "lighter"
+        and config.get(CONF_LUT_MODE, "auto") == "otp"
+    ):
+        raise cv.Invalid(
+            "gray_waveform_profile 'lighter' requires lut_mode 'auto' or 'custom'"
+        )
+    return config
+
 
 CONFIG_SCHEMA = cv.All(
+    _validate_waveform_configuration,
     display.FULL_DISPLAY_SCHEMA.extend(
         {
             cv.GenerateID(): cv.declare_id(GuestyEPaperGray4),
@@ -80,6 +100,9 @@ CONFIG_SCHEMA = cv.All(
             cv.Required(CONF_DATA_PIN): pins.gpio_output_pin_schema,
             cv.Optional(CONF_GRAY_GAMMA, default=1.35): cv.float_range(
                 min=1.0, max=2.2
+            ),
+            cv.Optional(CONF_GRAY_WAVEFORM_PROFILE, default="standard"): cv.enum(
+                GRAY_WAVEFORM_PROFILES, lower=True
             ),
             cv.Optional(CONF_LUT_MODE, default="auto"): cv.enum(LUT_MODES, lower=True),
             cv.Optional(CONF_PARTIAL_REFRESH): PARTIAL_REFRESH_SCHEMA,
@@ -117,6 +140,7 @@ async def to_code(config):
     data_pin = await cg.gpio_pin_expression(config[CONF_DATA_PIN])
     cg.add(var.set_data_pin(data_pin))
     cg.add(var.set_gray_gamma(config[CONF_GRAY_GAMMA]))
+    cg.add(var.set_gray_waveform_profile(config[CONF_GRAY_WAVEFORM_PROFILE]))
     cg.add(var.set_lut_mode(config[CONF_LUT_MODE]))
 
     if partial := config.get(CONF_PARTIAL_REFRESH):
