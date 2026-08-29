@@ -34,6 +34,9 @@ def test_release_notes_disclose_hardware_and_distribution(
     assert "## Hardwareprüfung" in notes
     assert "## Distribution" in notes
     assert "proprietärer Quellcode" in notes
+    assert "Home Assistant 2025.12.0" in notes
+    assert "2026.2.3" in notes
+    assert "ESPHome 2026.8.1" in notes
     if hardware_status == "passed":
         assert "erfolgreich geprüft" in notes
     else:

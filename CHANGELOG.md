@@ -23,9 +23,10 @@ Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
 - Die Änderung benötigt gemeinsam das GuestyTerminal-Update und die
   Display-Firmware 0.3.54. Bestehende 4-MB-Geräte bleiben ohne Änderung des
   Flashlayouts OTA-kompatibel.
-- Alle 303 automatisierten Tests bestehen mit 90,72 % Abdeckung. Ruff,
-  Formatprüfung, Mypy, Python-Kompilierung und Release-Preflight sind
-  erfolgreich. ESPHome 2026.8.1 kompiliert sowohl das bestehende
+- Alle 303 automatisierten Tests bestehen gegen Home Assistant 2025.12.0 und
+  2026.2.3 mit 90,72 % Abdeckung. Ruff, Formatprüfung, Mypy,
+  Python-Kompilierung und Release-Preflight sind erfolgreich. ESPHome 2026.8.1
+  kompiliert sowohl das bestehende
   `legacy_4mb`-OTA-Profil als auch `expanded_32mb`; das 4-MB-Abbild belegt
   1.547.595 von 1.835.008 Bytes (84,3 %). Die gleichmäßig gefüllte Karte ist
   noch nicht auf dem realen E1001 geprüft und bleibt bis dahin ausdrücklich
