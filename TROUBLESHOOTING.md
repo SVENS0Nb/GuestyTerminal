@@ -264,18 +264,25 @@ zeigte, dass die dabei verwendete weiße Karteninnenfläche nur eine graue Kontu
 eine vollständig gefüllte, einheitliche native Hellgraustufe. Schwarz und Weiß
 bleiben unverändert.
 
-Version 0.3.55 trennt davon den ersten kontrollierten Wellenformversuch:
-`gray_waveform_profile: lighter` lässt Layout, Framebufferwerte und
-`gray_gamma` unverändert und schwächt ausschließlich den letzten dunklen
-Ansteuerimpuls der nativen Hellgrau-Tabelle `LUTKW`. Konkret wechselt Byte 36
-von `0xA8` zu `0x28`; der zwei Frames lange Selektor verwendet damit `GND`
-statt `VDL`. Alle übrigen Selektoren, Zeitwerte und Tabellen bleiben
-unverändert. Weil OTP nicht umprogrammiert werden kann, wählt das Profil auch
-bei `gray_lut_mode: auto` den Register-LUT-Pfad. Für einen eindeutigen
-Vorher-/Nachher-Vergleich oder Rückweg `gray_waveform_profile: standard`
-setzen, neu kompilieren und den erzwungenen Vollaufbau abwarten. Bis zur
-Realgeräteprüfung darf eine Verbesserung weder der Gamma-Kurve noch dem
-Flächenrenderer zugeschrieben werden.
+Version 0.3.55 trennte davon den ersten kontrollierten Wellenformversuch:
+`gray_waveform_profile: lighter` ließ Layout, Framebufferwerte und
+`gray_gamma` unverändert und änderte ausschließlich Byte 36 der nativen
+Hellgrau-Tabelle `LUTKW` von `0xA8` zu `0x28`. Der reale E1001 zeigte danach
+gefüllte Karten, die dunkler statt heller waren. Damit ist bestätigt, dass der
+entfernte Zwei-Frame-VDL-Selektor auf diesem Panel in Richtung des helleren
+Zustands wirkte; die frühere Beschreibung als dunkler Ansteuerimpuls war
+falsch.
+
+Version 0.3.56 verwirft deshalb `0x28`, stellt die drei ursprünglichen
+VDL-Selektoren wieder her und setzt ausschließlich den vierten Zwei-Frame-
+Selektor von GND auf VDL (`0xA8` zu `0xAA`). Alle übrigen Selektoren,
+Zeitwerte und Tabellen bleiben unverändert. Weil OTP nicht umprogrammiert
+werden kann, wählt das Profil auch bei `gray_lut_mode: auto` den
+Register-LUT-Pfad. Für einen eindeutigen Vorher-/Nachher-Vergleich oder
+Rückweg `gray_waveform_profile: standard` setzen, neu kompilieren und den
+erzwungenen Vollaufbau abwarten. Bis zur Realgeräteprüfung darf eine
+Verbesserung weder der Gamma-Kurve noch dem Flächenrenderer zugeschrieben
+werden.
 
 Diese Abgrenzung ist für künftige Änderungen verbindlich: Den Rand nicht über
 den Renderer, einen Pixelrahmen, die Custom-Graustufen-LUT oder eine späte

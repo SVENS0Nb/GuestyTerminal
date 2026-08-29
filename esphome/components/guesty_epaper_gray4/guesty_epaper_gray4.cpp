@@ -72,14 +72,16 @@ static constexpr uint8_t LUT_KW_GRAY[42] = {
 // Experimental light-gray profile derived from Seeed's MIT-licensed register
 // LUT above. UC8179 KW mode maps the controller's {NEW=0, OLD=1} DTM pair to
 // LUTKW, which is GuestyTerminal's native light-gray level after wire-polarity
-// conversion. Only phase 7's first two-frame selector changes from VDL (0b10)
-// to GND (0b00), matching the same phase in LUTWW. This weakens the final dark
-// drive without changing any phase duration, black/white endpoints, dark gray,
-// VCOM, border conditioning, or the monochrome partial waveform.
+// conversion. The real-device test of 0.3.55 proved that removing phase 7's
+// final two-frame VDL selector made this level darker. Keep Seeed's first three
+// VDL selectors and change only the fourth selector from GND (0b00) to VDL
+// (0b10), extending that same drive by two frames. No phase duration,
+// black/white endpoint, dark gray, VCOM, border-conditioning or monochrome
+// partial-refresh byte changes.
 static constexpr uint8_t LUT_KW_GRAY_LIGHTER[42] = {
     0x2A, 0x00, 0x06, 0x08, 0x07, 0x01, 0x59, 0x06, 0x0A, 0x0B, 0x0A, 0x01, 0x90, 0x03,
     0x03, 0x00, 0x00, 0x03, 0x5A, 0x05, 0x09, 0x06, 0x06, 0x01, 0xA8, 0x02, 0x02, 0x0A,
-    0x0A, 0x01, 0x45, 0x0A, 0x11, 0x06, 0x07, 0x01, 0x28, 0x02, 0x01, 0x02, 0x01, 0x01,
+    0x0A, 0x01, 0x45, 0x0A, 0x11, 0x06, 0x07, 0x01, 0xAA, 0x02, 0x01, 0x02, 0x01, 0x01,
 };
 
 static constexpr uint8_t LUT_WK_GRAY[42] = {

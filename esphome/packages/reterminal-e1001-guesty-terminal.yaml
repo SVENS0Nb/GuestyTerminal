@@ -7,8 +7,8 @@ substitutions:
   awake_duration_seconds: "90"
   gray_lut_mode: auto
   # The lighter profile is a bounded hardware experiment. It selects the
-  # register LUT path and weakens only the final light-gray drive pulse; the
-  # standard profile retains the unmodified Seeed waveform.
+  # register LUT path and extends only the final light-gray VDL drive by two
+  # frames; the standard profile retains the unmodified Seeed waveform.
   gray_waveform_profile: lighter
   # A mild display tone curve shifts the thresholds between the four physical
   # levels while keeping black/white exact. Every pixel still uses one native
@@ -310,7 +310,7 @@ api:
                   else:
                     - lambda: |-
                         const bool renderer_current =
-                            id(guesty_render_revision) == 36;
+                            id(guesty_render_revision) == 37;
                         const int configured_gray_gamma_x100 =
                             static_cast<int>(std::lround(
                                 ${gray_gamma} * 100.0f));
@@ -531,7 +531,7 @@ api:
                                           id(guesty_content_id) = content_id;
                                           id(guesty_base_content_id) =
                                               base_content_id;
-                                          id(guesty_render_revision) = 36;
+                                          id(guesty_render_revision) = 37;
                                           id(guesty_rendered_gray_gamma_x100) =
                                               static_cast<int>(std::lround(
                                                   ${gray_gamma} * 100.0f));
@@ -733,7 +733,7 @@ api:
                     && !id(guesty_epaper).update_in_progress();
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            const bool renderer_current = id(guesty_render_revision) == 36;
+            const bool renderer_current = id(guesty_render_revision) == 37;
             const int configured_gray_gamma_x100 =
                 static_cast<int>(std::lround(${gray_gamma} * 100.0f));
             const bool tone_curve_current =
@@ -903,7 +903,7 @@ api:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
-                        id(guesty_render_revision) = 36;
+                        id(guesty_render_revision) = 37;
                         id(guesty_rendered_gray_gamma_x100) =
                             static_cast<int>(std::lround(
                                 ${gray_gamma} * 100.0f));

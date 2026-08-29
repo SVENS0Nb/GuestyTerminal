@@ -16,10 +16,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_current_repository_release_metadata_is_consistent() -> None:
-    metadata = validate_release(ROOT, expected_version="0.3.55")
+    metadata = validate_release(ROOT, expected_version="0.3.56")
 
-    assert metadata.version == "0.3.55"
-    assert "Hellgraue Panelstufe experimentell aufhellen" in metadata.changelog_body
+    assert metadata.version == "0.3.56"
+    assert "Hellgraue Panelstufe anhand des Realtests korrigieren" in (
+        metadata.changelog_body
+    )
     assert "Prüfung und Installation" in metadata.changelog_body
 
 

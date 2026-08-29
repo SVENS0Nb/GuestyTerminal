@@ -124,15 +124,19 @@ Release-Notizen aus dem aktuellen Changelog. Erst danach legt er den annotierten
 Tag und das GitHub-Release an. Ein vorhandener Tag wird nur dann wiederverwendet,
 wenn er exakt auf denselben geprüften Commit zeigt.
 
-Version 0.3.55 verwendet Renderrevision 36. Das experimentelle Profil
+Version 0.3.56 verwendet Renderrevision 37. Das experimentelle Profil
 `lighter` darf ausschließlich die native Hellgrau-Tabelle `LUTKW` verändern:
-Nur ihr Phasen-7-Selektor an Byte 36 wechselt von `0xA8` zu `0x28`; sämtliche
-anderen Seeed-Tabellen und Zeitwerte müssen bytegenau unverändert bleiben. Das
-Profil muss die Register-LUTs verwenden, weil OTP unveränderbar ist, während
+Nur ihr Phasen-7-Selektor an Byte 36 wechselt von `0xA8` zu `0xAA`; damit wird
+der letzte Zwei-Frame-Selektor von GND auf VDL gesetzt. Sämtliche anderen
+Seeed-Tabellen und Zeitwerte müssen bytegenau unverändert bleiben. Der reale
+E1001 zeigte, dass der frühere 0.3.55-Versuch `0x28` die Fläche dunkler machte;
+dieser Wert darf daher nicht erneut als Aufhellung verwendet werden. Das Profil
+muss die Register-LUTs verwenden, weil OTP unveränderbar ist, während
 `standard` den bisherigen Auto-/Custom-/OTP-Pfad behält. Profilwechsel müssen
 genau einen Vollaufbau erzwingen und dürfen Inhaltsfingerabdruck,
 Randkonditionierung oder Teilrefresh-Wellenform nicht verändern. Bis der
-Hellgrauton auf dem realen E1001 bestätigt ist, bleibt der Stand `not_tested`.
+revidierte Hellgrauton auf dem realen E1001 bestätigt ist, bleibt der Stand
+`not_tested`.
 
 Version 0.3.54 verwendet Renderrevision 35. Alle Informationskarten müssen
 vollständig mit genau einer nativen Hellgraustufe gefüllt sein; eine weiße

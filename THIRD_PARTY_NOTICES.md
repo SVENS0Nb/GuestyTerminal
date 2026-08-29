@@ -45,9 +45,11 @@ between the logical `0=black, 3=white` canvas and the UC8179 DTM wire polarity.
 The `standard` profile preserves all five referenced register tables
 byte-for-byte. The experimental `lighter` table is a one-byte derivative of
 Seeed's MIT-licensed `LUTKW`: its phase-7 selector changes from `0xA8` to
-`0x28`, the value used in the same position by Seeed's `LUTWW`; every duration
-and all other table bytes remain unchanged. This introduces no additional
-source or license.
+`0xAA`, replacing only the final two-frame GND selector with VDL; every
+duration and all other table bytes remain unchanged. Version 0.3.55 briefly
+tested the same byte as `0x28`; the real E1001 made the target level darker,
+and 0.3.56 supersedes that experiment. Neither derivative introduces an
+additional source or license.
 
 ## UC8179 controller documentation
 

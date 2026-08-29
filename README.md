@@ -209,10 +209,12 @@ Umrandung gezeichnet. Mit `gray_waveform_profile: standard` prüft der
 Treiber im Modus `gray_lut_mode: auto` einmalig die von Seeed dokumentierten
 UC8179-OTP-Markierungen. Unterstützt die jeweilige Panelrevision eine interne
 Vier-Grau-Wellenform, wird diese verwendet; andernfalls greift der Treiber auf
-Seeeds MIT-lizenzierte Register-LUTs zurück. Das in 0.3.55 zunächst aktive,
-experimentelle Profil `lighter` verwendet dagegen auch im Auto-Modus gezielt
-die Registertabellen: Nur im nativen Hellgrau-Übergang `LUTKW` wechselt ein
-zwei Frames langer Abschlussselektor von `VDL` auf `GND`. Alle anderen
+Seeeds MIT-lizenzierte Register-LUTs zurück. Das experimentelle Profil
+`lighter` verwendet dagegen auch im Auto-Modus gezielt die Registertabellen.
+Der reale Test von 0.3.55 zeigte, dass das damalige Entfernen eines
+Zwei-Frame-VDL-Selektors die native Hellgraustufe dunkler machte. 0.3.56 stellt
+diesen Impuls wieder her und setzt ausschließlich den folgenden
+Zwei-Frame-Selektor von GND auf VDL (`0xA8` zu `0xAA`). Alle anderen
 Selektoren und Zeitwerte bleiben unverändert. Ein erzwungenes
 `gray_lut_mode: otp` ist mit diesem veränderbaren Profil nicht kombinierbar;
 `gray_waveform_profile: standard` stellt den bisherigen Pfad wieder her.
@@ -608,15 +610,22 @@ Die kompakte, fortlaufende Änderungshistorie steht in
 [`CHANGELOG.md`](CHANGELOG.md). Die folgenden Hinweise erklären zusätzlich die
 Firmwareanforderungen älterer Installationen.
 
-Version **0.3.55** lässt das in 0.3.54 korrigierte Flächenlayout unverändert
-und hellt experimentell nur die physische native Hellgraustufe auf. Das Profil
-`lighter` ändert ausschließlich einen zwei Frames langen Selektor der
-UC8179-`LUTKW` von `VDL` zu `GND`; Weiß, Dunkelgrau, Schwarz, Zeitwerte,
-Teilrefresh und Randkorrektur bleiben unverändert. Weil Panel-OTP nicht
-veränderbar ist, erzwingt dieses Profil auch bei `gray_lut_mode: auto` die
-gebündelten Register-LUTs. `gray_waveform_profile: standard` ist der direkte
-Rückweg. Renderrevision 36 zeichnet das Profil einmal vollständig neu; die
-reale Sichtprüfung steht noch aus.
+Version **0.3.56** korrigiert den ersten Wellenformversuch anhand des realen
+0.3.55-Gerätetests. Das Profil `lighter` stellt den fälschlich entfernten
+VDL-Selektor wieder her und verlängert denselben Impuls um den kleinsten
+vorhandenen Zwei-Frame-Schritt (`LUTKW` Byte 36: `0xA8` zu `0xAA`). Weiß,
+Dunkelgrau, Schwarz, sämtliche Zeitwerte, Teilrefresh und Randkorrektur bleiben
+unverändert. Renderrevision 37 erzwingt genau einen vollständigen Neuaufbau.
+Der revidierte physische Grauton muss noch auf dem realen Display bestätigt
+werden; `gray_waveform_profile: standard` bleibt der direkte Rückweg.
+
+Version **0.3.55** ließ das in 0.3.54 korrigierte Flächenlayout unverändert und
+änderte experimentell nur die native Hellgrau-Wellenform von `0xA8` zu
+`0x28`. Der reale E1001 zeigte anschließend dunklere statt hellere Karten.
+Dieses Ergebnis belegt, dass der entfernte VDL-Selektor in Richtung Weiß
+wirkte; 0.3.56 ersetzt den fehlgeschlagenen Versuch. Renderrevision 36 und der
+direkte Rückweg über `gray_waveform_profile: standard` bleiben zur
+Rekonstruktion dokumentiert.
 
 Version **0.3.54** füllt die grauen Informationskarten wieder vollständig mit
 der einheitlichen nativen Hellgraustufe. Version 0.3.53 hatte das störende

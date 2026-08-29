@@ -2,6 +2,40 @@
 
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
 
+## 0.3.56 – 2026-08-29
+
+### Hellgraue Panelstufe anhand des Realtests korrigieren
+
+- Der reale E1001-Test von 0.3.55 zeigt, dass das Entfernen des letzten
+  Zwei-Frame-VDL-Selektors die gefüllten Karten dunkler statt heller macht.
+  Damit war die frühere Annahme über die Wirkrichtung dieses Impulses falsch;
+  die bestätigte Beobachtung ist nun als Regressionserkenntnis dokumentiert.
+- Das Profil `lighter` verwirft den fehlgeschlagenen Wert `0x28`, stellt die
+  drei ursprünglichen VDL-Selektoren der siebten `LUTKW`-Phase wieder her und
+  setzt ausschließlich den vierten Zwei-Frame-Selektor von GND auf VDL. Byte
+  36 wechselt damit gegenüber Seeeds Standardtabelle minimal von `0xA8` zu
+  `0xAA`. Sämtliche anderen Wellenform- und Zeitbytes bleiben unverändert.
+- Renderrevision 37 erzwingt nach dem Firmwareupdate genau einen vollständigen
+  Neuaufbau, auch wenn der sichtbare Inhalt unverändert ist. Der direkte
+  Rückweg `gray_waveform_profile: standard`, die Unterdrückung identischer
+  Bilder, der Teilrefresh und die bewährte Randkonditionierung bleiben
+  unverändert.
+
+### Prüfung und Installation
+
+- Die Änderung benötigt gemeinsam das GuestyTerminal-Update und die
+  Display-Firmware 0.3.56. Bestehende 4-MB-Geräte behalten ihr Flashlayout und
+  bleiben OTA-kompatibel.
+- Alle 304 automatisierten Tests bestehen gegen Home Assistant 2025.12.0 und
+  2026.2.3 mit 90,72 % Abdeckung. Ruff, Formatprüfung, Mypy,
+  Python-Kompilierung und Release-Preflight sind erfolgreich. ESPHome 2026.8.1
+  validiert und kompiliert sowohl `legacy_4mb` als auch `expanded_32mb`; das
+  4-MB-Abbild belegt 1.548.159 von 1.835.008 Bytes (84,4 %), das
+  32-MB-Abbild 1.547.903 von 16.515.072 Bytes (9,4 %).
+- Der revidierte physische Hellgrauton ist noch nicht auf dem realen E1001
+  geprüft und bleibt bis zum kontrollierten Vorher-/Nachher-Vergleich
+  ausdrücklich `not_tested`.
+
 ## 0.3.55 – 2026-08-29
 
 ### Hellgraue Panelstufe experimentell aufhellen
@@ -39,6 +73,9 @@ Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
   geprüft und bleibt bis zu diesem kontrollierten Vergleich ausdrücklich
   `not_tested`. Für einen unmittelbaren Rückweg genügt vor einem erneuten
   Firmwarebau `gray_waveform_profile: standard`.
+- Nach der Veröffentlichung bestätigte der reale E1001, dass `0x28` die
+  gefüllten Karten dunkler statt heller macht. Version 0.3.56 korrigiert dieses
+  Ergebnis mit dem ebenso eng begrenzten Gegenversuch `0xAA`.
 
 ## 0.3.54 – 2026-08-29
 
