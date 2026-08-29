@@ -257,14 +257,17 @@ incomplete change.
   to `0x10` and `0x13`. The monochrome differential path keeps its independent
   convention of `0=black`, `1=white`.
 - Preserve exact black and white endpoints in the configurable grayscale tone
-  curve. Intermediate coverage uses a deterministic, coordinate-stable 4x4
-  ordered dither between adjacent native levels; the default gamma is 1.35 and
-  1.0 is the legacy darker mapping. Do not apply random/error-diffusion state,
-  change QR/code endpoints, or let the tone curve alter UC8179 waveform,
-  polarity, border conditioning, or the retained monochrome partial baseline.
-  Persist the non-sensitive configured gamma separately and require one full
-  refresh when it changes; an identical content fingerprint must not suppress
-  a locally reconfigured tone curve.
+  curve. Quantize every pixel directly to one of the four physical levels; the
+  renderer's 2-bit fonts already provide panel-native antialias coverage and
+  must never be spatially dithered a second time. Large cards use paper white
+  with a narrow native-light-gray outline rather than a halftoned fill. The
+  default gamma remains 1.35 and shifts only the thresholds between native
+  levels. Do not apply ordered, random or error-diffusion patterns, change
+  QR/code endpoints, or let the tone curve alter UC8179 waveform, polarity,
+  border conditioning, or the retained monochrome partial baseline. Persist
+  the non-sensitive configured gamma separately and require one full refresh
+  when it changes; an identical content fingerprint must not suppress a
+  locally reconfigured tone curve.
 - Do not refresh the physical panel when visible content is unchanged. The
   `content_id` includes every visible field and a high-entropy reservation ID;
   `base_content_id` intentionally excludes weather.
@@ -314,16 +317,21 @@ incomplete change.
   compatibility sequence, not a driver switch. The real-device test on
   2026-08-26 confirmed that this sequence removes the dark/gray outer border
   while preserving black text and four-gray content in `auto/otp` mode. Treat
-  that result as a regression requirement: the initial two physical refreshes
-  are the intentional monochrome conditioning pass and final grayscale frame,
-  while later identical payloads must remain suppressed.
-  Never copy GPL ESPHome driver code, turn the recovery into a periodic
-  refresh, or let it change content fingerprints. Persist its non-sensitive
-  success revision
-  separately from `guesty_render_revision`, so later renderer upgrades repaint
-  once without repeating a proven conditioning pass. If a device first
-  upgrades on battery, retain the pending conditioning state and complete it
-  once on confirmed external power. Do not copy panel OTP bytes into `R25h`:
+  that result as a regression requirement. Real-device photos on 2026-08-29
+  additionally proved that a later unconditioned four-gray full refresh can
+  make the border visible again. Therefore every actually required full refresh
+  on confirmed external power runs the bounded monochrome pass immediately
+  before its final grayscale frame. This is content-change-driven, never
+  periodic: partial updates and later identical payloads remain suppressed.
+  Persist a non-sensitive current/pending border proof separately from
+  `guesty_render_revision`. A successful protected full refresh sets it current;
+  any later successful unconditioned full refresh, including battery clears or
+  a partial-to-full fallback, invalidates it. The next confirmed mains payload
+  must repair a pending border even if its visible content is unchanged. The
+  panel self-test deliberately invalidates the proof for its diagnostic frame
+  and conditions the final restored page. Never copy GPL ESPHome driver code or
+  let border recovery change content fingerprints. Do not copy panel OTP bytes
+  into `R25h`:
   the previously added
   `R25/LUTBD` path left `BUSY_N` asserted after the visible frame settled on
   the real E1001 and produced repeated identical redraw attempts. The `auto`
@@ -344,7 +352,7 @@ incomplete change.
 - `guesty_render_revision` invalidates otherwise-identical images after a
   rendering or driver change. When a visible rendering change requires one
   repaint, increment the expected value and the stored-success value together,
-  and update their tests. The current source revision is 33.
+  and update their tests. The current source revision is 34.
 - Publish the displayed-booking confirmation only after a successful physical
   refresh, or when a restored matching fingerprint proves the same content was
   previously drawn.

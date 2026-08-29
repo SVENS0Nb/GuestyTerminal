@@ -6,9 +6,9 @@ substitutions:
   battery_sleep_duration: 30min
   awake_duration_seconds: "90"
   gray_lut_mode: auto
-  # A mild display tone curve keeps black/white exact while making the two
-  # intermediate grays visibly lighter through deterministic 4x4 dithering.
-  # Use 1.0 for the former, darker four-level quantization.
+  # A mild display tone curve shifts the thresholds between the four physical
+  # levels while keeping black/white exact. Every pixel still uses one native
+  # level; no spatial halftone is applied to surfaces or font antialiasing.
   gray_gamma: "1.35"
   # The onboard SHT40 is factory-calibrated. Keep per-device corrections at
   # zero until a stable comparison with a suitable room reference proves a
@@ -306,7 +306,7 @@ api:
                   else:
                     - lambda: |-
                         const bool renderer_current =
-                            id(guesty_render_revision) == 33;
+                            id(guesty_render_revision) == 34;
                         const int configured_gray_gamma_x100 =
                             static_cast<int>(std::lround(
                                 ${gray_gamma} * 100.0f));
@@ -471,10 +471,14 @@ api:
                               const bool confirmed_external_power =
                                   id(guesty_external_power).has_state()
                                   && id(guesty_external_power).state;
+                              const bool partial_change =
+                                  id(guesty_weather_only_changed)
+                                  || id(guesty_battery_only_changed);
                               const bool border_conditioning_needed =
                                   confirmed_external_power
-                                  && id(guesty_border_conditioning_revision)
-                                      != 1;
+                                  && (!partial_change
+                                      || id(guesty_border_conditioning_revision)
+                                          != 1);
                               id(guesty_border_conditioning_requested) = false;
                               if (border_conditioning_needed) {
                                 id(guesty_epaper).request_border_recovery();
@@ -503,6 +507,10 @@ api:
                                 - lambda: |-
                                     id(guesty_delivery_error) = "panel_timeout";
                                     id(guesty_failed_content_id) = content_id;
+                                    if (id(guesty_border_conditioning_requested)) {
+                                      id(guesty_border_conditioning_revision) = 0;
+                                    }
+                                    id(guesty_border_conditioning_requested) = false;
                               else:
                                 - if:
                                     condition:
@@ -513,13 +521,18 @@ api:
                                           id(guesty_content_id) = content_id;
                                           id(guesty_base_content_id) =
                                               base_content_id;
-                                          id(guesty_render_revision) = 33;
+                                          id(guesty_render_revision) = 34;
                                           id(guesty_rendered_gray_gamma_x100) =
                                               static_cast<int>(std::lround(
                                                   ${gray_gamma} * 100.0f));
                                           if (id(guesty_border_conditioning_requested)) {
                                             id(guesty_border_conditioning_revision) =
                                                 1;
+                                          } else if (!id(guesty_epaper).last_update_was_partial()) {
+                                            // A later unconditioned full refresh
+                                            // invalidates the physical border proof.
+                                            id(guesty_border_conditioning_revision) =
+                                                0;
                                           }
                                           id(guesty_border_conditioning_requested) = false;
                                           id(guesty_failed_content_id).clear();
@@ -551,6 +564,12 @@ api:
                                               "panel_error";
                                           id(guesty_failed_content_id) =
                                               content_id;
+                                          if (id(guesty_border_conditioning_requested)) {
+                                            id(guesty_border_conditioning_revision) =
+                                                0;
+                                          }
+                                          id(guesty_border_conditioning_requested) =
+                                              false;
                                       - logger.log:
                                           level: WARN
                                           format: "E-paper refresh failed; booking confirmation was not published"
@@ -702,7 +721,7 @@ api:
                     && !id(guesty_epaper).update_in_progress();
         - lambda: |-
             id(guesty_update_received_this_boot) = true;
-            const bool renderer_current = id(guesty_render_revision) == 33;
+            const bool renderer_current = id(guesty_render_revision) == 34;
             const int configured_gray_gamma_x100 =
                 static_cast<int>(std::lround(${gray_gamma} * 100.0f));
             const bool tone_curve_current =
@@ -835,9 +854,13 @@ api:
                   const bool confirmed_external_power =
                       id(guesty_external_power).has_state()
                       && id(guesty_external_power).state;
+                  const bool partial_change =
+                      id(guesty_weather_only_changed)
+                      || id(guesty_battery_only_changed);
                   const bool border_conditioning_needed =
                       confirmed_external_power
-                      && id(guesty_border_conditioning_revision) != 1;
+                      && (!partial_change
+                          || id(guesty_border_conditioning_revision) != 1);
                   id(guesty_border_conditioning_requested) = false;
                   if (border_conditioning_needed) {
                     id(guesty_epaper).request_border_recovery();
@@ -862,12 +885,14 @@ api:
                     - lambda: |-
                         id(guesty_content_id) = content_id;
                         id(guesty_base_content_id) = base_content_id;
-                        id(guesty_render_revision) = 33;
+                        id(guesty_render_revision) = 34;
                         id(guesty_rendered_gray_gamma_x100) =
                             static_cast<int>(std::lround(
                                 ${gray_gamma} * 100.0f));
                         if (id(guesty_border_conditioning_requested)) {
                           id(guesty_border_conditioning_revision) = 1;
+                        } else if (!id(guesty_epaper).last_update_was_partial()) {
+                          id(guesty_border_conditioning_revision) = 0;
                         }
                         id(guesty_border_conditioning_requested) = false;
                         id(guesty_screen_sensitive) = mode != "idle";
@@ -886,6 +911,11 @@ api:
                         state: !lambda |-
                           return booking_summary;
                   else:
+                    - lambda: |-
+                        if (id(guesty_border_conditioning_requested)) {
+                          id(guesty_border_conditioning_revision) = 0;
+                        }
+                        id(guesty_border_conditioning_requested) = false;
                     - logger.log:
                         level: WARN
                         format: "E-paper refresh failed; booking confirmation was not published"
@@ -1106,9 +1136,9 @@ globals:
     type: int
     restore_value: true
     initial_value: "-1"
-  # Keep the one-time physical border conditioning independent from ordinary
-  # renderer revisions. A later font, layout or tone change must repaint the
-  # pixels once without repeating the already proven two-pass border cycle.
+  # Record whether the latest successful physical full refresh ended with the
+  # proven border-conditioning cycle. A later unconditioned full refresh makes
+  # this proof pending again; partial updates and unchanged payloads preserve it.
   - id: guesty_border_conditioning_revision
     type: uint32_t
     restore_value: true
@@ -1434,6 +1464,9 @@ script:
                 id(guesty_content_id).clear();
                 id(guesty_base_content_id).clear();
                 id(guesty_render_revision) = 0;
+                // The diagnostic full pattern is intentionally unconditioned.
+                // Treat the border as pending until the protected restore below.
+                id(guesty_border_conditioning_revision) = 0;
             - text_sensor.template.publish:
                 id: guesty_self_test_status
                 state: "full_pattern"
@@ -1480,6 +1513,9 @@ script:
                       state: "restoring"
                   - script.execute: guesty_prepare_wifi_qr
                   - script.wait: guesty_prepare_wifi_qr
+                  - lambda: |-
+                      id(guesty_epaper).request_border_recovery();
+                      id(guesty_border_conditioning_requested) = true;
                   - component.update: guesty_epaper
                   - lambda: |-
                       id(guesty_wifi_qr).set_value("GuestyTerminal");
@@ -1500,11 +1536,18 @@ script:
                                 id(guesty_self_test_saved_base_content_id);
                             id(guesty_render_revision) =
                                 id(guesty_self_test_saved_render_revision);
+                            id(guesty_border_conditioning_revision) = 1;
+                            id(guesty_border_conditioning_requested) = false;
                       else:
                         - lambda: |-
                             id(guesty_self_test_result) = "restore_failed";
+                            id(guesty_border_conditioning_revision) = 0;
+                            id(guesty_border_conditioning_requested) = false;
                 else:
-                  - lambda: id(guesty_self_test_result) = "hardware_timeout";
+                  - lambda: |-
+                      id(guesty_self_test_result) = "hardware_timeout";
+                      id(guesty_border_conditioning_revision) = 0;
+                      id(guesty_border_conditioning_requested) = false;
             - lambda: |-
                 id(guesty_self_test_active) = false;
                 id(guesty_self_test_saved_content_id).clear();
@@ -1527,9 +1570,11 @@ script:
 
   # The former ESPHome 7.50inv2 path drew this panel without the visible border.
   # Run its independently reimplemented UC8179 monochrome OTP register mode as
-  # exactly one conditioning pass, then immediately redraw the untouched
+  # one conditioning pass, then immediately redraw the untouched
   # four-gray framebuffer with the selected pixel waveform and a high-Z border.
   # This diagnostic is external-power-only and never changes content proofs.
+  # Normal content-changing full refreshes use the same bounded sequence; an
+  # already-proven unchanged frame remains completely suppressed.
   - id: guesty_run_border_recovery
     mode: single
     then:
@@ -1566,11 +1611,13 @@ script:
             - lambda: |-
                 if (id(guesty_epaper).update_in_progress()) {
                   id(guesty_border_recovery_result) = "hardware_timeout";
+                  id(guesty_border_conditioning_revision) = 0;
                 } else if (id(guesty_epaper).last_update_successful()) {
                   id(guesty_border_recovery_result) = "success";
                   id(guesty_border_conditioning_revision) = 1;
                 } else {
                   id(guesty_border_recovery_result) = "failed";
+                  id(guesty_border_conditioning_revision) = 0;
                 }
                 id(guesty_self_test_active) = false;
             - text_sensor.template.publish:
@@ -2709,17 +2756,32 @@ display:
           const auto draw_rounded_panel = [&](int x, int y, int width,
                                                int height, int radius) {
             const Color light_gray(85, 85, 85);
-            it.filled_rectangle(x + radius, y, width - radius * 2,
-                                height, light_gray);
-            it.filled_rectangle(x, y + radius, width,
-                                height - radius * 2, light_gray);
-            it.filled_circle(x + radius, y + radius, radius, light_gray);
-            it.filled_circle(x + width - radius - 1, y + radius,
-                             radius, light_gray);
-            it.filled_circle(x + radius, y + height - radius - 1,
-                             radius, light_gray);
-            it.filled_circle(x + width - radius - 1,
-                             y + height - radius - 1, radius, light_gray);
+            const auto fill_rounded = [&](int panel_x, int panel_y,
+                                           int panel_width, int panel_height,
+                                           int panel_radius, Color color) {
+              it.filled_rectangle(panel_x + panel_radius, panel_y,
+                                  panel_width - panel_radius * 2,
+                                  panel_height, color);
+              it.filled_rectangle(panel_x, panel_y + panel_radius,
+                                  panel_width,
+                                  panel_height - panel_radius * 2, color);
+              it.filled_circle(panel_x + panel_radius,
+                               panel_y + panel_radius, panel_radius, color);
+              it.filled_circle(panel_x + panel_width - panel_radius - 1,
+                               panel_y + panel_radius, panel_radius, color);
+              it.filled_circle(panel_x + panel_radius,
+                               panel_y + panel_height - panel_radius - 1,
+                               panel_radius, color);
+              it.filled_circle(panel_x + panel_width - panel_radius - 1,
+                               panel_y + panel_height - panel_radius - 1,
+                               panel_radius, color);
+            };
+            // Use native panel levels instead of halftoning a large light
+            // surface. A slim solid-gray shell with a white interior keeps the
+            // cards visually separate while leaving text on clean paper white.
+            fill_rounded(x, y, width, height, radius, light_gray);
+            fill_rounded(x + 2, y + 2, width - 4, height - 4,
+                         std::max(1, radius - 2), COLOR_OFF);
           };
 
           const auto weather_icon = [](const std::string &condition) {
@@ -2760,7 +2822,7 @@ display:
           draw_lines(32, 142, id(guesty_welcome_text),
                      id(guesty_font_body), 28, 3);
 
-          // Design 2: two equal, borderless access panels.
+          // Two equal access panels with native-gray outlines and white fill.
           if (!id(guesty_door_code).empty()) {
             draw_rounded_panel(32, 242, 360, 136, 12);
             it.print(56, 260, id(guesty_font_label),
@@ -2862,17 +2924,29 @@ display:
           const auto draw_rounded_panel = [&](int x, int y, int width,
                                                int height, int radius) {
             const Color light_gray(85, 85, 85);
-            it.filled_rectangle(x + radius, y, width - radius * 2,
-                                height, light_gray);
-            it.filled_rectangle(x, y + radius, width,
-                                height - radius * 2, light_gray);
-            it.filled_circle(x + radius, y + radius, radius, light_gray);
-            it.filled_circle(x + width - radius - 1, y + radius,
-                             radius, light_gray);
-            it.filled_circle(x + radius, y + height - radius - 1,
-                             radius, light_gray);
-            it.filled_circle(x + width - radius - 1,
-                             y + height - radius - 1, radius, light_gray);
+            const auto fill_rounded = [&](int panel_x, int panel_y,
+                                           int panel_width, int panel_height,
+                                           int panel_radius, Color color) {
+              it.filled_rectangle(panel_x + panel_radius, panel_y,
+                                  panel_width - panel_radius * 2,
+                                  panel_height, color);
+              it.filled_rectangle(panel_x, panel_y + panel_radius,
+                                  panel_width,
+                                  panel_height - panel_radius * 2, color);
+              it.filled_circle(panel_x + panel_radius,
+                               panel_y + panel_radius, panel_radius, color);
+              it.filled_circle(panel_x + panel_width - panel_radius - 1,
+                               panel_y + panel_radius, panel_radius, color);
+              it.filled_circle(panel_x + panel_radius,
+                               panel_y + panel_height - panel_radius - 1,
+                               panel_radius, color);
+              it.filled_circle(panel_x + panel_width - panel_radius - 1,
+                               panel_y + panel_height - panel_radius - 1,
+                               panel_radius, color);
+            };
+            fill_rounded(x, y, width, height, radius, light_gray);
+            fill_rounded(x + 2, y + 2, width - 4, height - 4,
+                         std::max(1, radius - 2), COLOR_OFF);
           };
 
           const auto weather_icon = [](const std::string &condition) {
@@ -2979,17 +3053,29 @@ display:
           const auto draw_rounded_panel = [&](int x, int y, int width,
                                                int height, int radius) {
             const Color light_gray(85, 85, 85);
-            it.filled_rectangle(x + radius, y, width - radius * 2,
-                                height, light_gray);
-            it.filled_rectangle(x, y + radius, width,
-                                height - radius * 2, light_gray);
-            it.filled_circle(x + radius, y + radius, radius, light_gray);
-            it.filled_circle(x + width - radius - 1, y + radius,
-                             radius, light_gray);
-            it.filled_circle(x + radius, y + height - radius - 1,
-                             radius, light_gray);
-            it.filled_circle(x + width - radius - 1,
-                             y + height - radius - 1, radius, light_gray);
+            const auto fill_rounded = [&](int panel_x, int panel_y,
+                                           int panel_width, int panel_height,
+                                           int panel_radius, Color color) {
+              it.filled_rectangle(panel_x + panel_radius, panel_y,
+                                  panel_width - panel_radius * 2,
+                                  panel_height, color);
+              it.filled_rectangle(panel_x, panel_y + panel_radius,
+                                  panel_width,
+                                  panel_height - panel_radius * 2, color);
+              it.filled_circle(panel_x + panel_radius,
+                               panel_y + panel_radius, panel_radius, color);
+              it.filled_circle(panel_x + panel_width - panel_radius - 1,
+                               panel_y + panel_radius, panel_radius, color);
+              it.filled_circle(panel_x + panel_radius,
+                               panel_y + panel_height - panel_radius - 1,
+                               panel_radius, color);
+              it.filled_circle(panel_x + panel_width - panel_radius - 1,
+                               panel_y + panel_height - panel_radius - 1,
+                               panel_radius, color);
+            };
+            fill_rounded(x, y, width, height, radius, light_gray);
+            fill_rounded(x + 2, y + 2, width - 4, height - 4,
+                         std::max(1, radius - 2), COLOR_OFF);
           };
 
           int battery_percent = id(guesty_display_battery_percent);
@@ -3281,6 +3367,11 @@ interval:
                       id(guesty_has_weather) = false;
                       id(guesty_privacy_clear_pending) = true;
                   - display.page.show: guesty_idle_page
+                  - lambda: |-
+                      // Border conditioning is deliberately unavailable on
+                      // battery. Mark this full privacy clear as unconditioned
+                      // so the next confirmed mains cycle can repair the edge.
+                      id(guesty_border_conditioning_requested) = false;
                   - component.update: guesty_epaper
                   - wait_until:
                       condition:
@@ -3298,6 +3389,7 @@ interval:
                             id(guesty_content_id).clear();
                             id(guesty_base_content_id).clear();
                             id(guesty_privacy_clear_pending) = false;
+                            id(guesty_border_conditioning_revision) = 0;
                         - text_sensor.template.publish:
                             id: guesty_last_booking
                             state: !lambda |-
@@ -3363,6 +3455,15 @@ interval:
                 id(guesty_has_weather) = false;
                 id(guesty_privacy_clear_pending) = true;
             - display.page.show: guesty_idle_page
+            - lambda: |-
+                const bool confirmed_external_power =
+                    id(guesty_external_power).has_state()
+                    && id(guesty_external_power).state;
+                id(guesty_border_conditioning_requested) = false;
+                if (confirmed_external_power) {
+                  id(guesty_epaper).request_border_recovery();
+                  id(guesty_border_conditioning_requested) = true;
+                }
             - component.update: guesty_epaper
             - wait_until:
                 condition:
@@ -3380,11 +3481,19 @@ interval:
                       id(guesty_content_id).clear();
                       id(guesty_base_content_id).clear();
                       id(guesty_privacy_clear_pending) = false;
+                      id(guesty_border_conditioning_revision) =
+                          id(guesty_border_conditioning_requested) ? 1 : 0;
+                      id(guesty_border_conditioning_requested) = false;
                   - text_sensor.template.publish:
                       id: guesty_last_booking
                       state: !lambda |-
                         return id(guesty_no_active_booking_label);
                 else:
+                  - lambda: |-
+                      if (id(guesty_border_conditioning_requested)) {
+                        id(guesty_border_conditioning_revision) = 0;
+                      }
+                      id(guesty_border_conditioning_requested) = false;
                   - logger.log:
                       level: ERROR
                       format: "Privacy clear failed; retrying while external power is available"

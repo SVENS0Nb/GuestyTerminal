@@ -2,6 +2,51 @@
 
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
 
+## 0.3.53 – 2026-08-29
+
+### Native Graustufen und saubere Schriftkanten
+
+- Der Treiber rastert Zwischenwerte nicht länger mit einer sichtbaren
+  4×4-Bayer-Matrix. Jeder Framebuffer-Pixel wird unmittelbar einer der vier
+  physischen Panelstufen zugeordnet. Das bereits mit zwei Bit erzeugte
+  Schrift-Antialiasing bleibt dadurch erhalten, ohne an den Glyphenkanten ein
+  zweites punktförmiges Muster zu erzeugen.
+- Große Informationskarten verwenden Papierweiß mit einer schmalen, nativen
+  Hellgraukontur. Die zuvor gerasterten Vollflächen entfallen; Schwarz, Weiß,
+  Türcode und QR-Code bleiben exakte Endpunkte.
+- `gray_gamma` bleibt als nicht sensible lokale Tonkurve erhalten, verschiebt
+  aber nur noch die Schwellen zwischen den vier Stufen. Renderrevision 34
+  erzwingt für die geänderte Pixelabbildung genau einen Vollaufbau.
+
+### Wiederkehrenden Panelrand behandeln
+
+- Die Fotos vom 29. August zeigen, dass ein späterer ungeschützter Vier-Grau-
+  Vollrefresh den bereits entfernten Außenrand wieder sichtbar machen kann.
+  Der bisher dauerhaft gespeicherte Erfolg war deshalb zu weit gefasst.
+- Jede ohnehin notwendige Vollaktualisierung bei bestätigter externer
+  Versorgung erhält nun den bereits am realen Gerät bestätigten monochromen
+  Rand-Vorlauf unmittelbar vor dem endgültigen Vier-Grau-Bild. Das ist nicht
+  zeitgesteuert: unveränderte Inhalte und echte Teilrefreshs bleiben vollständig
+  unterdrückt.
+- Ein erfolgreicher Vollrefresh ohne Rand-Vorlauf markiert die Korrektur als
+  ausstehend. Das gilt auch für Akkubetrieb und einen seltenen Teil-zu-Voll-
+  Rückfall. Beim nächsten bestätigten Netzzyklus wird derselbe sichtbare Inhalt
+  einmal geschützt neu aufgebaut. Der Panel-Selbsttest konditioniert seine
+  abschließende Seitenwiederherstellung ebenfalls.
+
+### Prüfung und Installation
+
+- Die Änderung benötigt gemeinsam das GuestyTerminal-Update und die
+  Display-Firmware 0.3.53. Bestehende 4-MB-Geräte bleiben ohne Änderung des
+  Flashlayouts OTA-kompatibel.
+- Alle 303 automatisierten Tests bestehen mit 90,72 % Abdeckung. Ruff,
+  Formatprüfung, Mypy, Python-Kompilierung und Release-Preflight sind
+  erfolgreich. ESPHome 2026.8.1 validiert und kompiliert sowohl das bestehende
+  `legacy_4mb`-OTA-Profil als auch `expanded_32mb`; das 4-MB-Abbild belegt
+  1.547.767 von 1.835.008 Bytes (84,3 %).
+- Die neue Pixelabbildung und Vollrefresh-/Randstrategie sind noch nicht auf
+  dem realen E1001 geprüft und bleiben bis dahin ausdrücklich `not_tested`.
+
 ## 0.3.52 – 2026-08-28
 
 ### Stabile Temperatur- und Feuchtemessung

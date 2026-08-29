@@ -315,29 +315,23 @@ uint8_t GuestyEPaperGray4::color_coverage_(Color color) {
 }
 
 void GuestyEPaperGray4::rebuild_tone_curve_() {
-  // Store the desired ink amount in sixteenths of a physical panel level.
-  // Endpoints remain exact; intermediate values can be distributed over a
-  // deterministic 4x4 cell instead of being forced to an overly dark level.
+  // The panel has exactly four physical levels and the renderer's fonts already
+  // provide matching 2-bit antialias coverage. Quantize every input to one
+  // native level here: spatial dithering would halftone both large surfaces and
+  // individual glyph-edge pixels, producing a visible checkerboard instead of
+  // clean panel-native antialiasing.
   for (size_t coverage = 0; coverage < this->tone_curve_.size(); coverage++) {
     const float normalized = static_cast<float>(coverage) / 255.0f;
-    const long fixed_ink = std::lround(
-        std::pow(normalized, this->gray_gamma_) * 3.0f * 16.0f);
+    const long ink_level =
+        std::lround(std::pow(normalized, this->gray_gamma_) * 3.0f);
     this->tone_curve_[coverage] =
-        static_cast<uint8_t>(std::clamp(fixed_ink, 0L, 48L));
+        static_cast<uint8_t>(std::clamp(ink_level, 0L, 3L));
   }
 }
 
-uint8_t GuestyEPaperGray4::color_to_dithered_panel_gray_(Color color, int x,
-                                                          int y) const {
-  static constexpr uint8_t BAYER_4X4[16] = {
-      0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5,
-  };
-  const uint8_t fixed_ink = this->tone_curve_[this->color_coverage_(color)];
-  uint8_t ink_level = fixed_ink / 16U;
-  const uint8_t fraction = fixed_ink % 16U;
-  const uint8_t threshold = BAYER_4X4[((y & 0x03) << 2) | (x & 0x03)];
-  if (ink_level < 3U && threshold < fraction)
-    ink_level++;
+uint8_t GuestyEPaperGray4::color_to_panel_gray_(Color color) const {
+  const uint8_t ink_level =
+      this->tone_curve_[this->color_coverage_(color)];
   // Logical framebuffer polarity is 0=black through 3=white.
   return 3U - ink_level;
 }
@@ -347,13 +341,8 @@ void GuestyEPaperGray4::fill(Color color) {
     display::Display::fill(color);
     return;
   }
-  const uint8_t fixed_ink = this->tone_curve_[this->color_coverage_(color)];
-  if (fixed_ink % 16U == 0U) {
-    const uint8_t gray = 3U - fixed_ink / 16U;
-    std::memset(this->buffer_, gray * 0x55U, this->get_buffer_length_());
-    return;
-  }
-  display::Display::fill(color);
+  const uint8_t gray = this->color_to_panel_gray_(color);
+  std::memset(this->buffer_, gray * 0x55U, this->get_buffer_length_());
 }
 
 void HOT GuestyEPaperGray4::draw_absolute_pixel_internal(int x, int y,
@@ -361,7 +350,7 @@ void HOT GuestyEPaperGray4::draw_absolute_pixel_internal(int x, int y,
   if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT)
     return;
 
-  uint8_t gray = this->color_to_dithered_panel_gray_(color, x, y);
+  uint8_t gray = this->color_to_panel_gray_(color);
   if (this->partial_refresh_configured_ && x >= this->partial_x_ &&
       x < this->partial_x_ + this->partial_width_ && y >= this->partial_y_ &&
       y < this->partial_y_ + this->partial_height_) {

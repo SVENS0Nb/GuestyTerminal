@@ -244,26 +244,33 @@ bleiben im kontrastreichen `auto/otp`-Graustufenpfad schwarz. Die zwei direkt
 aufeinanderfolgenden Panelaktualisierungen beim ersten maßgeblichen Bild sind
 absichtlich der Monochrom-Vorlauf und der endgültige Vier-Grau-Aufbau, nicht
 zwei Home-Assistant-Payloads. In Firmware 0.3.46 gilt verbindlich:
-Renderrevision 31 fordert den Test einmalig an. Neuere Firmwarestände bewahren
-den erfolgreichen Rand-Vorlauf in einem eigenen, nicht sensiblen
-Konditionierungsstand auf. Dadurch können Layout, Schrift oder Tonkurve einen
-notwendigen Pixel-Neuaufbau auslösen, ohne den Rand-Vorlauf erneut zu starten.
-Spätere identische Inhalte bleiben durch den erfolgreichen Inhalts- und
-Rendernachweis ohne weitere physische Aktualisierung unterdrückt.
+Renderrevision 31 forderte den Test zunächst einmalig an. Fotos vom 29. August
+2026 zeigen jedoch, dass der Rand nach späteren ungeschützten Vier-Grau-
+Vollrefreshs wieder sichtbar werden kann. Seit Renderrevision 34 beschreibt der
+separate, nicht sensible Konditionierungsstand deshalb den letzten physischen
+Vollrefresh statt einen vermeintlich dauerhaften Panelzustand: Ein geschützter
+Netzstrom-Vollrefresh setzt ihn, ein späterer ungeschützter Vollrefresh macht
+ihn wieder ausstehend. Der nächste bestätigte Netzzyklus führt dann den
+bewährten Zwei-Pass-Ablauf erneut aus. Echte Teilrefreshs und identische Inhalte
+bleiben ohne weitere physische Aktualisierung unterdrückt.
 
 Ist das Pixelbild insgesamt zu dunkel, wird die Helligkeit nicht über
 `gray_lut_mode` oder die Randkorrektur eingestellt. Die Substitution
-`gray_gamma` steuert ausschließlich die mittleren Pixelstufen: `1.35` ist der
-hellere Standard, `1.0` entspricht der früheren dunkleren Abstufung. Schwarz
-und Weiß bleiben bei beiden Werten unverändert.
+`gray_gamma` verschiebt ausschließlich die Schwellen zwischen den vier nativen
+Pixelstufen. Seit Renderrevision 34 gibt es kein räumliches Dithermuster mehr:
+Das 2-Bit-Schrift-Antialiasing bleibt nativ und große Kartenflächen verwenden
+Papierweiß mit einer schmalen einheitlichen Graukontur. Schwarz und Weiß bleiben
+unverändert.
 
 Diese Abgrenzung ist für künftige Änderungen verbindlich: Den Rand nicht über
 den Renderer, einen Pixelrahmen, die Custom-Graustufen-LUT oder eine späte
 `R50h`-Änderung beim Ausschalten behandeln. Diese Ansätze entfernten den
 bistabilen Rand nicht oder hellten zugleich die Schrift auf. Der funktionierende
-Monochrom-Vorlauf darf nicht periodisch ausgeführt, nicht mit Gastdaten oder
-Inhaltsfingerabdrücken gekoppelt und nicht durch einen Wechsel zurück zum alten
-GPL-Treiber ersetzt werden. ESPHomes GPL-Treibercode wurde nur zur historischen
+Monochrom-Vorlauf darf nicht zeitgesteuert ausgeführt, nicht in Inhalts-
+fingerabdrücke aufgenommen und nicht durch einen Wechsel zurück zum alten
+GPL-Treiber ersetzt werden. Er ist ausschließlich an einen ohnehin notwendigen
+Vollrefresh bei bestätigter externer Versorgung gebunden. ESPHomes GPL-
+Treibercode wurde nur zur historischen
 Verhaltenszuordnung verglichen und nicht übernommen.
 
 Die zugehörigen Hardwaretest-, Randkorrektur- und Controllerdiagnosen sind in

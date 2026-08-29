@@ -214,11 +214,13 @@ Die erkannte Auswahl bleibt über den Tiefschlaf erhalten, damit der
 belastet wird. Der sichtbare schmale Panelrand liegt außerhalb des
 800×480-Bildspeichers und besitzt eine eigene Elektrode. Normale OTP- und
 Register-LUT-Vollrefreshs lassen diese Elektrode über das dokumentierte
-`R50h.BDZ=1` hochohmig, damit die für Text und Bild gewählte Pixelwellenform den
-Rand nicht erneut verfärbt. Auch Teilrefreshs behalten diesen Zustand bei. Eine
-begrenzte Randkorrektur auf bestätigter externer Versorgung bildet einmalig den
-monochromen UC8179-OTP-Ablauf des früher verwendeten ESPHome-Modells
-`7.50inv2` anhand des Controllerdatenblatts nach. Sie überträgt eine
+`R50h.BDZ=1` hochohmig. Fotos vom 29. August 2026 zeigen jedoch, dass ein
+späterer ungeschützter Vier-Grau-Vollrefresh den sichtbaren Rand trotzdem
+wieder hervorbringen kann; Teilrefreshs verändern diesen Nachweis nicht. Daher
+läuft unmittelbar vor jeder ohnehin notwendigen Vollaktualisierung bei
+bestätigter externer Versorgung eine begrenzte Randkorrektur. Sie bildet den
+monochromen UC8179-OTP-Ablauf des früher verwendeten ESPHome-Modells `7.50inv2`
+anhand des Controllerdatenblatts nach und überträgt eine
 Schwarz-Weiß-Quantisierung ausschließlich in die neue DTM2-Ebene und zeichnet
 den unveränderten Vier-Grau-Framebuffer anschließend mit der gewählten
 Pixelwellenform sowie hochohmigem Rand neu. Der aktuelle Graustufentreiber
@@ -246,14 +248,14 @@ Der logische ESPHome-Framebuffer verwendet
 `00 = Schwarz`, `01 = Dunkelgrau`, `10 = Hellgrau` und `11 = Weiß`. Vor der
 Übertragung invertiert der Treiber jeden Pegel mit `3 - gray`; erst danach
 werden nieder- und höherwertiges Bit getrennt an UC8179-DTM1 und DTM2 gesendet.
-Die Standard-Tonkurve `gray_gamma: "1.35"` verteilt Zwischenwerte mit einem
-festen 4×4-Muster auf zwei benachbarte native Stufen. Dadurch erscheinen die
-beiden mittleren Graubereiche heller, während Papierweiß und sattes Schwarz
-pixelgenau erhalten bleiben. Wer die frühere dunklere Abstufung benötigt, kann
-in den `substitutions` `gray_gamma: "1.0"` setzen. Diese Einstellung verändert
-nur die Pixel-Tonkurve, nicht die Wellenform oder die separate Randkorrektur.
-Die Firmware erkennt einen geänderten Wert und erzwingt genau einen neuen
-Vollaufbau; danach werden identische Bilder wieder normal unterdrückt.
+Die Standard-Tonkurve `gray_gamma: "1.35"` verschiebt nur die Schwellen zwischen
+den vier nativen Panelstufen. Jeder Pixel bleibt eine einheitliche physische
+Stufe; insbesondere werden das vorhandene 2-Bit-Schrift-Antialiasing und große
+Flächen nicht noch einmal als sichtbares Raster gedithert. Informationskarten
+verwenden deshalb Papierweiß mit einer schmalen nativen Graukontur. Reines Weiß
+und sattes Schwarz bleiben pixelgenau erhalten. Eine lokale Gamma-Änderung
+erzwingt genau einen neuen Vollaufbau und verändert weder Wellenform noch
+Randkorrektur; danach werden identische Bilder wieder normal unterdrückt.
 Quellen, feste Revisionen und Lizenztexte sind in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) dokumentiert.
 
@@ -593,6 +595,22 @@ ESPHome Device Builder sichtbar.
 Die kompakte, fortlaufende Änderungshistorie steht in
 [`CHANGELOG.md`](CHANGELOG.md). Die folgenden Hinweise erklären zusätzlich die
 Firmwareanforderungen älterer Installationen.
+
+Version **0.3.53** entfernt das sichtbare 4×4-Raster aus Grauflächen und
+Schriftkanten. Die vorhandenen 2-Bit-Schriften werden direkt auf die vier
+nativen Panelstufen abgebildet; Karten erhalten eine weiße Innenfläche mit
+schmaler einheitlicher Graukontur. Renderrevision 34 erzwingt den dafür nötigen
+einmaligen Neuaufbau.
+
+Die Randkorrektur wird nicht mehr dauerhaft als erledigt betrachtet. Jede
+tatsächlich erforderliche Vollaktualisierung bei bestätigter externer
+Versorgung erhält den am realen Gerät bewährten monochromen Vorlauf direkt vor
+dem endgültigen Vier-Grau-Bild. Identische Inhalte und echte Teilupdates lösen
+keinen zusätzlichen Aufbau aus. Ein ungeschützter Vollrefresh – etwa auf Akku
+oder bei einem Teil-zu-Voll-Rückfall – markiert den Rand als ausstehend, sodass
+der nächste Netzzyklus ihn automatisch korrigiert. Version 0.3.53 benötigt ein
+Display-Firmwareupdate; die neue Wiederholungsstrategie ist noch nicht in der
+vollständigen Realgerätmatrix bestätigt.
 
 Version **0.3.52** macht die bislang einmalige Bootmessung des eingebauten
 SHT40 zu einer stabilen Umgebungsmessung. Bei bestätigter externer Versorgung

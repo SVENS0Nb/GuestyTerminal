@@ -125,7 +125,7 @@ class GuestyEPaperGray4
   int get_height_internal() override { return HEIGHT; }
 
   static uint8_t color_coverage_(Color color);
-  uint8_t color_to_dithered_panel_gray_(Color color, int x, int y) const;
+  uint8_t color_to_panel_gray_(Color color) const;
   void rebuild_tone_curve_();
   static constexpr uint32_t get_buffer_length_() { return WIDTH * HEIGHT / 4U; }
 

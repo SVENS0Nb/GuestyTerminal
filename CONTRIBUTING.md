@@ -105,7 +105,7 @@ werden; das erneute Anlegen nur des SPI-Geräts genügt nicht. `POWER ON` und
 `DISPLAY REFRESH` behalten Seeeds feste 100-ms-Wartezeit und warten danach auf
 den inaktiven `BUSY_N`-Pegel. Jede sichtbare Treiberänderung erhöht erwartete
 und gespeicherte Renderrevision gemeinsam; der aktuelle Stand verwendet
-Revision 33.
+Revision 34.
 
 ## Veröffentlichungen und Distribution
 
@@ -123,6 +123,16 @@ eine wahrheitsgemäße Angabe zur realen Hardwareprüfung und erzeugt die
 Release-Notizen aus dem aktuellen Changelog. Erst danach legt er den annotierten
 Tag und das GitHub-Release an. Ein vorhandener Tag wird nur dann wiederverwendet,
 wenn er exakt auf denselben geprüften Commit zeigt.
+
+Version 0.3.53 verwendet Renderrevision 34. Der Renderer quantisiert Schrift
+und Flächen direkt auf die vier nativen Panelstufen; 2-Bit-Schriftkanten dürfen
+nicht zusätzlich gerastert werden. Karten verwenden weiße Innenflächen mit
+schmaler nativer Graukontur. Jede tatsächlich erforderliche Vollaktualisierung
+bei bestätigter externer Versorgung erhält den bewährten Rand-Vorlauf; identische
+Inhalte und echte Teilaktualisierungen bleiben unterdrückt. Ein ungeschützter
+Vollrefresh macht den gespeicherten Randnachweis wieder ausstehend. Bis
+Vollbild, Rand, Tiefschlaf und Teil-zu-Voll-Rückfall am realen E1001 geprüft
+sind, muss die Version als `not_tested` gekennzeichnet bleiben.
 
 Version 0.3.52 behält Renderrevision 33 bei und ändert ausschließlich den
 SHT40-Messzyklus und seine nachgelagerten Sensorfilter. Der Kondensationsheizer

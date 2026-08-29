@@ -115,7 +115,7 @@ def test_maintenance_guidance_covers_current_critical_contracts() -> None:
         "Ein erfolgreiches Testbild beweist in diesem Fall nur den separaten",
         "Ein dunkler Panelrand ist getrennt zu untersuchen",
         "Realgerät-Nachtest 0.3.45 und isolierter Monochrom-Testpfad",
-        "Renderrevision 31 fordert den Test einmalig an",
+        "Seit Renderrevision 34 gibt es kein räumliches Dithermuster mehr",
     ):
         assert phrase in troubleshooting
 
