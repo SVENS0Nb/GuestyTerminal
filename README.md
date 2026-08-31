@@ -590,6 +590,15 @@ Kennung korreliert. Reconnects während eines langen Vollrefreshs starten keinen
 zweiten parallelen Rendererauftrag; ausbleibende Bestätigungen werden innerhalb
 fester Grenzen erneut versucht.
 
+Der Endpoint-Sensor stellt nach jeder Bestätigung wieder seinen aufrufbaren
+ESPHome-Aktionsnamen bereit. GuestyTerminal merkt sich zusätzlich ausschließlich
+diesen geprüften, nicht sensiblen Namen. Bleibt durch eine verlorene oder
+verspätete Zustandsmeldung vorübergehend `delivery_unchanged`, `success` oder ein
+anderer bekannter Transportzustand sichtbar, können spätere Aktualisierungen
+deshalb weiterhin zugestellt werden. `unknown`, `unavailable`, beliebige
+Fremdzustände und nicht registrierte ESPHome-Aktionen werden durch diesen
+Fallback ausdrücklich nicht übergangen.
+
 Die Konfigurationsentität **Alle Display-Firmwares aktualisieren** hebt zuerst
 alle durch den Firmware-Assistenten erzeugten YAML-Dateien auf die aktuelle
 GuestyTerminal-Version. Danach übergibt sie sämtliche Konfigurationen als einen
@@ -609,6 +618,20 @@ ESPHome Device Builder sichtbar.
 Die kompakte, fortlaufende Änderungshistorie steht in
 [`CHANGELOG.md`](CHANGELOG.md). Die folgenden Hinweise erklären zusätzlich die
 Firmwareanforderungen älterer Installationen.
+
+Version **0.3.57** trennt die dauerhafte ESPHome-Aktionsidentität von den
+kurzlebigen v10-Übertragungsbestätigungen. Home Assistant behält pro erreichbarem
+Display nur einen validierten und weiterhin registrierten Aktionsnamen und kann
+ihn bei einem vollständig erkannten `received`-, `rendering`-, `success`- oder
+`unchanged`-Receipt wiederverwenden. Offline-, unbekannte, beschädigte und
+fremde Zustände werden dabei ausdrücklich nicht übergangen. Die Firmware stellt
+den normalen Aktionsnamen außerdem unmittelbar nach dem finalen Receipt wieder
+her, bevor die langsamere Stromprüfung beginnt. Für die vollständige Korrektur
+werden Integration und Display-Firmware 0.3.57 empfohlen; die neue Integration
+bleibt mit der Firmware 0.3.56 kompatibel. Da sich die sichtbare Darstellung
+nicht ändert, bleibt Renderrevision 37 erhalten. Der korrigierte Ablauf wurde
+automatisiert geprüft und für beide Flashprofile kompiliert, aber noch nicht
+vollständig auf einem realen E1001 bestätigt.
 
 Version **0.3.56** korrigiert den ersten Wellenformversuch anhand des realen
 0.3.55-Gerätetests. Das Profil `lighter` stellt den fälschlich entfernten

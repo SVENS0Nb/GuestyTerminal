@@ -428,6 +428,34 @@ kein Beweis für einen veralteten Home-Assistant-Payload.
 | `success` | Bild wurde physisch bestätigt; danach Seitenzustand, sichtbaren Inhalt und Diagnosezuordnung prüfen |
 | `unchanged` | Fingerprint-Unterdrückung; prüfen, ob Inhalt und Renderrevision wirklich identisch sind |
 
+### Zustandsblockade nach `success` oder `unchanged`
+
+Bis einschließlich 0.3.56 konnte der Endpoint-Sensor nach einer abschließenden
+v10-Bestätigung auf einem internen Receipt wie
+`__guesty_delivery_unchanged__:<token>` stehen bleiben. Die Empfangslogik
+erkannte diesen Wert korrekt als Bestätigung. Ein späterer Versand las denselben
+veränderlichen Sensor jedoch erneut als Aktionsnamen, verwarf ihn und konnte
+dadurch trotz erreichbarem Display keine weiteren Payloads übergeben. Ein
+Neustart stellte den Aktionsnamen über die Reconnect-Folge wieder her, beseitigte
+aber nicht die Ursache.
+
+Die dauerhafte Korrektur trennt Identität und Transportzustand innerhalb der
+Home-Assistant-Runtime: Nur ein syntaktisch gültiger ESPHome-Aktionsname wird
+pro Endpoint behalten. Bekannte Receipt-, Reconnect- und
+Aktualisierungszustände dürfen auf diesen Namen zurückgreifen, solange die
+Entität online und der zugehörige Dienst tatsächlich registriert ist.
+`unknown`, `unavailable`, unbekannte Zustände oder ein fehlender Dienst bleiben
+weiterhin harte Sperren. Der nicht sensible Cache wird
+bei einer Entity-Umbenennung mitgeführt und überlebt die Neuladung eines
+einzelnen GuestyTerminal-Konfigurationseintrags.
+
+Zusätzlich stellt die Firmware den normalen Aktionsnamen unmittelbar nach dem
+abschließenden Receipt und noch vor der langsameren, mehrfach abgetasteten
+Stromerkennung wieder her. Der Zustellhandler bleibt währenddessen auf `busy`,
+sodass keine zweite Paneloperation überlappen kann. Regressionstests decken den
+stehengebliebenen `unchanged`-Zustand, einen nachfolgenden Payload, die
+Integration-Neuladung sowie die Sperren für Offline- und Fremdzustände ab.
+
 Ein dunkler Panelrand ist getrennt zu untersuchen. Er gehört zur
 Randelektroden-/Wellenformansteuerung nach dem Renderbeginn und war nicht die
 Ursache dafür, dass der Willkommens-Payload vor `rendering` abbrach.

@@ -124,6 +124,19 @@ Release-Notizen aus dem aktuellen Changelog. Erst danach legt er den annotierten
 Tag und das GitHub-Release an. Ein vorhandener Tag wird nur dann wiederverwendet,
 wenn er exakt auf denselben geprüften Commit zeigt.
 
+Version 0.3.57 behält Renderrevision 37 bei und trennt die dauerhafte
+ESPHome-Aktionsidentität von den kurzlebigen v10-Transport-Receipts. Der
+Home-Assistant-Resolver darf ausschließlich einen zuvor validierten,
+registrierten Aktionsnamen für einen erreichbaren Endpoint und einen exakt
+bekannten Receipt-Zustand verwenden; `unknown`, `unavailable`, beschädigte
+Receipts und fehlende ESPHome-Dienste bleiben gesperrt. Die Firmware muss den
+Aktionsnamen unmittelbar nach ihrem finalen Receipt und vor der mehrstufigen
+Stromprüfung wiederherstellen, während der Busy-Schutz bis zum Abschluss der
+Transaktion aktiv bleibt. Regressionstests müssen einen dauerhaft stehenden
+`delivery_unchanged`-Receipt, den Folgetransport, eine Runtime-Neuladung und
+alle Sperrfälle abdecken. Bis dieser Ablauf am realen E1001 bestätigt ist,
+bleibt der Stand `not_tested`.
+
 Version 0.3.56 verwendet Renderrevision 37. Das experimentelle Profil
 `lighter` darf ausschließlich die native Hellgrau-Tabelle `LUTKW` verändern:
 Nur ihr Phasen-7-Selektor an Byte 36 wechselt von `0xA8` zu `0xAA`; damit wird

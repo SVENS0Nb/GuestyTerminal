@@ -16,10 +16,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_current_repository_release_metadata_is_consistent() -> None:
-    metadata = validate_release(ROOT, expected_version="0.3.56")
+    metadata = validate_release(ROOT, expected_version="0.3.57")
 
-    assert metadata.version == "0.3.56"
-    assert "Hellgraue Panelstufe anhand des Realtests korrigieren" in (
+    assert metadata.version == "0.3.57"
+    assert "Endpoint-Zustandsblockade nach v10-Bestätigungen behoben" in (
         metadata.changelog_body
     )
     assert "Prüfung und Installation" in metadata.changelog_body

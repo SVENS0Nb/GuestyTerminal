@@ -654,10 +654,15 @@ api:
                       id(guesty_last_delivery_state));
                   id(guesty_delivery_status).publish_state(status);
               - delay: 300ms
+              # Restore the callable action before the multi-sample power
+              # probe. The handler remains busy until that decision finishes,
+              # so an overlapping request receives the bounded busy receipt
+              # instead of replacing this transaction. Home Assistant also
+              # retains the last validated action as a transport-independent
+              # fallback if this state publication is ever lost.
+              - component.update: guesty_terminal_endpoint
               # Failed payloads stay awake for a retry. A successful battery
-              # delivery may use the established shared sleep path. Keep the
-              # endpoint unavailable until this final power decision is done;
-              # otherwise a coalesced request could overlap it on mains.
+              # delivery may use the established shared sleep path.
               - if:
                   condition:
                     lambda: return id(guesty_delivery_result);
@@ -679,10 +684,8 @@ api:
                           - script.execute: guesty_enter_battery_sleep
                         else:
                           - lambda: id(guesty_delivery_handler_busy) = false;
-                          - component.update: guesty_terminal_endpoint
                   else:
                     - lambda: id(guesty_delivery_handler_busy) = false;
-                    - component.update: guesty_terminal_endpoint
 
     # v9 remains frozen for explicit legacy callers. The endpoint advertises
     # v10 so current integrations always use the acknowledged path above.

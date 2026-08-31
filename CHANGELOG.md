@@ -2,6 +2,43 @@
 
 Alle wesentlichen Änderungen an GuestyTerminal werden hier gesammelt.
 
+## 0.3.57 – 2026-08-31
+
+### Endpoint-Zustandsblockade nach v10-Bestätigungen behoben
+
+- Home Assistant behält je Display ausschließlich den letzten validierten
+  ESPHome-Aktionsnamen und verwendet ihn weiter, wenn der erreichbare Endpoint
+  vorübergehend auf einem bekannten `received`-, `rendering`-, `success`-,
+  `unchanged`-, Reconnect- oder Aktualisierungs-Receipt steht. Offline-,
+  unbekannte und nicht registrierte Zustände bleiben gesperrt.
+- Der nicht sensible Aktionsspeicher wird über die gemeinsame Domain-Runtime
+  durch eine Konfigurationseintrags-Neuladung getragen und bei einer
+  Entity-Umbenennung mitgenommen. Auch Wetter-, Normal-, Lösch- und erzwungene
+  Aktualisierungen verwenden denselben zentralen Resolver.
+- ESPHome stellt den Aktionsnamen nach dem finalen Receipt jetzt vor der
+  mehrfachen Stromerkennung wieder her. Der aktive Busy-Schutz verhindert in
+  diesem kurzen Intervall weiterhin überlappende Panelaufträge.
+- Neue Regressionstests bilden ein dauerhaft stehengebliebenes
+  `delivery_unchanged`, den direkt folgenden Payload, eine Runtime-Neuladung
+  sowie die Offline- und Fremdzustandssperren nach.
+
+### Prüfung und Installation
+
+- Für die vollständige beidseitige Korrektur werden das GuestyTerminal-Update
+  und die Display-Firmware 0.3.57 empfohlen. Die Integration 0.3.57 bleibt mit
+  der Display-Firmware 0.3.56 kompatibel; deren eventuell stehengebliebener
+  Receipt wird bereits durch den validierten Aktionsspeicher abgefangen.
+- Alle 308 automatisierten Tests bestehen gegen Home Assistant 2025.12.0 und
+  2026.2.3 mit 90,56 % Abdeckung. Ruff, Formatprüfung, Mypy,
+  Python-Kompilierung und Release-Preflight sind erfolgreich. ESPHome 2026.8.1
+  validiert und kompiliert sowohl `legacy_4mb` als auch `expanded_32mb`; das
+  4-MB-Abbild belegt 1.548.139 von 1.835.008 Bytes (84,4 %), das
+  32-MB-Abbild 1.547.883 von 16.515.072 Bytes (9,4 %).
+- Die Protokollkorrektur verändert keine sichtbaren Pixel und behält deshalb
+  Renderrevision 37. Beide Firmwareprofile wurden kompiliert, der neue
+  Zeitpunkt der Endpoint-Wiederherstellung aber noch nicht vollständig auf
+  einem realen E1001 geprüft; die Veröffentlichung bleibt `not_tested`.
+
 ## 0.3.56 – 2026-08-29
 
 ### Hellgraue Panelstufe anhand des Realtests korrigieren

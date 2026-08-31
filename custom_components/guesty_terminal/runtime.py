@@ -25,6 +25,7 @@ from .const import (
     CONF_ENDPOINT_ID,
     CONF_LOGO_DATA,
     CONF_MAPPINGS,
+    DATA_ENDPOINT_ACTIONS,
     DISPLAY_ACTION_SUFFIX,
     DISPLAY_ACTION_V2_SUFFIX,
     DISPLAY_ACTION_V3_SUFFIX,
@@ -77,6 +78,35 @@ _DELIVERY_ERROR_CODES = {
 _NON_RETRYABLE_PANEL_STATUSES = frozenset({"panel_error", "panel_timeout"})
 
 
+def _is_display_action(state: str) -> bool:
+    """Return whether a state is a supported ESPHome display action name."""
+    return bool(
+        _ACTION_PATTERN.fullmatch(state) and state.endswith(_DISPLAY_ACTION_SUFFIXES)
+    )
+
+
+def _is_transport_state(state: str) -> bool:
+    """Return whether a mutable legacy endpoint state is a transport pulse."""
+    if state in (DISPLAY_RECONNECT_STATE, DISPLAY_REFRESH_REQUEST_STATE):
+        return True
+    for prefix in (
+        DISPLAY_DELIVERY_RECEIVED_PREFIX,
+        DISPLAY_DELIVERY_RENDERING_PREFIX,
+        DISPLAY_DELIVERY_SUCCESS_PREFIX,
+        DISPLAY_DELIVERY_UNCHANGED_PREFIX,
+        DISPLAY_DELIVERY_ERROR_PREFIX,
+    ):
+        if not state.startswith(prefix):
+            continue
+        delivery_id, separator, error_code = state[len(prefix) :].partition(":")
+        if not _DELIVERY_ID_PATTERN.fullmatch(delivery_id):
+            return False
+        if prefix == DISPLAY_DELIVERY_ERROR_PREFIX:
+            return bool(separator and error_code in _DELIVERY_ERROR_CODES)
+        return not separator
+    return False
+
+
 @dataclass(slots=True)
 class _DeliveryAcknowledgement:
     """Track one privacy-safe v10 delivery across endpoint state pulses."""
@@ -108,6 +138,7 @@ async def async_send_display_payload(
     payload: DisplayPayload,
     lock: asyncio.Lock | None = None,
     *,
+    action: str | None = None,
     force_redraw: bool = False,
     logo_data: str = "",
     delivery_id: str = "",
@@ -120,22 +151,20 @@ async def async_send_display_payload(
     ):
         return False
 
-    action = endpoint_state.state.strip()
-    if not _ACTION_PATTERN.fullmatch(action) or not action.endswith(
-        _DISPLAY_ACTION_SUFFIXES
-    ):
+    resolved_action = action or str(endpoint_state.state).strip()
+    if not _is_display_action(resolved_action):
         _LOGGER.warning("Ignoring an invalid ESPHome display endpoint state")
         return False
-    if not hass.services.has_service("esphome", action):
-        _LOGGER.debug("ESPHome action %s is not available yet", action)
+    if not hass.services.has_service("esphome", resolved_action):
+        _LOGGER.debug("ESPHome action %s is not available yet", resolved_action)
         return False
-    if action.endswith(DISPLAY_ACTION_V10_SUFFIX) and not delivery_id:
+    if resolved_action.endswith(DISPLAY_ACTION_V10_SUFFIX) and not delivery_id:
         delivery_id = secrets.token_hex(12)
 
     send_lock = lock or asyncio.Lock()
     async with send_lock:
         try:
-            include_content_id = action.endswith(
+            include_content_id = resolved_action.endswith(
                 (
                     DISPLAY_ACTION_V2_SUFFIX,
                     DISPLAY_ACTION_V3_SUFFIX,
@@ -150,7 +179,7 @@ async def async_send_display_payload(
             )
             service_data = payload.as_service_data(
                 include_content_id=include_content_id,
-                include_booking_summary=action.endswith(
+                include_booking_summary=resolved_action.endswith(
                     (
                         DISPLAY_ACTION_V4_SUFFIX,
                         DISPLAY_ACTION_V5_SUFFIX,
@@ -161,7 +190,7 @@ async def async_send_display_payload(
                         DISPLAY_ACTION_V10_SUFFIX,
                     )
                 ),
-                include_weather=action.endswith(
+                include_weather=resolved_action.endswith(
                     (
                         DISPLAY_ACTION_V5_SUFFIX,
                         DISPLAY_ACTION_V6_SUFFIX,
@@ -171,7 +200,7 @@ async def async_send_display_payload(
                         DISPLAY_ACTION_V10_SUFFIX,
                     )
                 ),
-                include_labels=action.endswith(
+                include_labels=resolved_action.endswith(
                     (
                         DISPLAY_ACTION_V7_SUFFIX,
                         DISPLAY_ACTION_V8_SUFFIX,
@@ -179,21 +208,23 @@ async def async_send_display_payload(
                         DISPLAY_ACTION_V10_SUFFIX,
                     )
                 ),
-                include_checkout_page=action.endswith(
+                include_checkout_page=resolved_action.endswith(
                     (
                         DISPLAY_ACTION_V8_SUFFIX,
                         DISPLAY_ACTION_V9_SUFFIX,
                         DISPLAY_ACTION_V10_SUFFIX,
                     )
                 ),
-                include_empty_page=action.endswith(
+                include_empty_page=resolved_action.endswith(
                     (DISPLAY_ACTION_V9_SUFFIX, DISPLAY_ACTION_V10_SUFFIX)
                 ),
                 delivery_id=(
-                    delivery_id if action.endswith(DISPLAY_ACTION_V10_SUFFIX) else ""
+                    delivery_id
+                    if resolved_action.endswith(DISPLAY_ACTION_V10_SUFFIX)
+                    else ""
                 ),
             )
-            if action.endswith(
+            if resolved_action.endswith(
                 (
                     DISPLAY_ACTION_V3_SUFFIX,
                     DISPLAY_ACTION_V4_SUFFIX,
@@ -215,7 +246,7 @@ async def async_send_display_payload(
                     service_data["content_id"] = _logo_aware_content_id(
                         service_data["content_id"], active_logo
                     )
-            if action.endswith(
+            if resolved_action.endswith(
                 (
                     DISPLAY_ACTION_V6_SUFFIX,
                     DISPLAY_ACTION_V7_SUFFIX,
@@ -232,12 +263,12 @@ async def async_send_display_payload(
                 # An empty fingerprint is the firmware's explicit one-shot
                 # recovery signal. Normal duplicate suppression remains on.
                 service_data["content_id"] = ""
-            v10_action = action.endswith(DISPLAY_ACTION_V10_SUFFIX)
+            v10_action = resolved_action.endswith(DISPLAY_ACTION_V10_SUFFIX)
             if v10_action and not _DELIVERY_ID_PATTERN.fullmatch(delivery_id):
                 return False
             await hass.services.async_call(
                 "esphome",
-                action,
+                resolved_action,
                 service_data,
                 # Wait only until Home Assistant has handed the fire-and-forget
                 # action to ESPHome. This keeps service failures inside this
@@ -268,6 +299,14 @@ async def async_clear_configured_displays(
     raw_mappings = entry.options.get(CONF_MAPPINGS, {})
     if not isinstance(raw_mappings, dict):
         return
+    domain_data = getattr(hass, "data", {}).get(DOMAIN, {})
+    action_cache = (
+        domain_data.get(DATA_ENDPOINT_ACTIONS, {})
+        if isinstance(domain_data, dict)
+        else {}
+    )
+    if not isinstance(action_cache, dict):
+        action_cache = {}
     endpoints_owned_elsewhere: set[str] = set()
     config_entries = getattr(hass, "config_entries", None)
     async_entries = getattr(config_entries, "async_entries", None)
@@ -298,6 +337,7 @@ async def async_clear_configured_displays(
                     Listing("", "Unterkunft"),
                     MappingOptions.from_dict(endpoint, raw_mapping),
                 ),
+                action=action_cache.get(endpoint),
                 logo_data=logo_data,
             )
             for endpoint, raw_mapping in raw_mappings.items()
@@ -354,9 +394,49 @@ class GuestyTerminalRuntime:
     _delivery_diagnostics: dict[str, DisplayDeliveryDiagnostic] = field(
         default_factory=dict
     )
+    _endpoint_actions: dict[str, str] = field(default_factory=dict)
     _tasks: set[asyncio.Future[Any]] = field(default_factory=set)
     _manual_refresh_requests: int = 0
     _stopped: bool = False
+
+    def _attach_shared_action_cache(self) -> None:
+        """Keep non-sensitive action identities across config-entry reloads."""
+        domain_data = self.hass.data.setdefault(DOMAIN, {})
+        shared = domain_data.setdefault(DATA_ENDPOINT_ACTIONS, {})
+        if not isinstance(shared, dict):
+            shared = {}
+            domain_data[DATA_ENDPOINT_ACTIONS] = shared
+        shared.update(self._endpoint_actions)
+        self._endpoint_actions = shared
+
+    def _remember_endpoint_action(self, endpoint: str, state: str) -> None:
+        """Remember only validated action identities, never transport pulses."""
+        if endpoint and _is_display_action(state):
+            self._endpoint_actions[endpoint] = state
+
+    def _resolve_endpoint_action(self, endpoint: str) -> str | None:
+        """Resolve a callable action without trusting a mutable receipt state."""
+        endpoint_state = self.hass.states.get(endpoint)
+        if endpoint_state is None or endpoint_state.state in (
+            STATE_UNKNOWN,
+            STATE_UNAVAILABLE,
+        ):
+            return None
+
+        state = str(endpoint_state.state).strip()
+        if _is_display_action(state):
+            self._remember_endpoint_action(endpoint, state)
+            action = state
+        elif _is_transport_state(state):
+            action = self._endpoint_actions.get(endpoint, "")
+        else:
+            return None
+        if not _is_display_action(action):
+            return None
+        if not self.hass.services.has_service("esphome", action):
+            _LOGGER.debug("ESPHome action %s is not available yet", action)
+            return None
+        return action
 
     def delivery_diagnostic(self, endpoint: str) -> DisplayDeliveryDiagnostic:
         """Return a privacy-safe snapshot of the last delivery attempt."""
@@ -448,6 +528,7 @@ class GuestyTerminalRuntime:
     async def async_start(self) -> None:
         """Start endpoint and coordinator listeners."""
         self._stopped = False
+        self._attach_shared_action_cache()
         bus = getattr(self.hass, "bus", None)
         async_listen = getattr(bus, "async_listen", None)
         if callable(async_listen):
@@ -460,6 +541,11 @@ class GuestyTerminalRuntime:
         mappings = self.coordinator.mapping_options()
         endpoints = [item.endpoint_entity for item in mappings]
         if endpoints:
+            for endpoint in endpoints:
+                endpoint_state = self.hass.states.get(endpoint)
+                self._remember_endpoint_action(
+                    endpoint, str(getattr(endpoint_state, "state", "")).strip()
+                )
             self._unsubscribers.append(
                 async_track_state_change_event(
                     self.hass, endpoints, self._handle_endpoint_state
@@ -532,6 +618,9 @@ class GuestyTerminalRuntime:
             )
         mappings[new_endpoint] = raw_mapping
         options[CONF_MAPPINGS] = mappings
+        remembered_action = self._endpoint_actions.pop(old_endpoint, "")
+        if remembered_action:
+            self._endpoint_actions[new_endpoint] = remembered_action
         self.hass.config_entries.async_update_entry(self.entry, options=options)
         self.hass.config_entries.async_schedule_reload(self.entry.entry_id)
 
@@ -579,9 +668,8 @@ class GuestyTerminalRuntime:
         state = str(new_state.state)
         if self._handle_delivery_state(endpoint, state):
             return
-        if _ACTION_PATTERN.fullmatch(state) and state.endswith(
-            _DISPLAY_ACTION_SUFFIXES
-        ):
+        if _is_display_action(state):
+            self._remember_endpoint_action(endpoint, state)
             has_waiter = False
             for (waiting_endpoint, _delivery_id), acknowledgement in tuple(
                 self._delivery_waiters.items()
@@ -717,9 +805,8 @@ class GuestyTerminalRuntime:
             if mapping.weather_entity == weather_entity
         }
         for endpoint in endpoints:
-            endpoint_state = self.hass.states.get(endpoint)
-            action = str(getattr(endpoint_state, "state", "")).strip()
-            if not action.endswith(
+            action = self._resolve_endpoint_action(endpoint)
+            if action is None or not action.endswith(
                 (
                     DISPLAY_ACTION_V6_SUFFIX,
                     DISPLAY_ACTION_V7_SUFFIX,
@@ -908,13 +995,18 @@ class GuestyTerminalRuntime:
                 # newest state will be delivered by its own waiting task.
                 return True
 
-            endpoint_state = self.hass.states.get(endpoint_entity)
-            action = str(getattr(endpoint_state, "state", "")).strip()
+            action = self._resolve_endpoint_action(endpoint_entity)
+            if action is None:
+                self._record_delivery(
+                    endpoint_entity, "unavailable", attempted=True, failed=True
+                )
+                return False
             if not action.endswith(DISPLAY_ACTION_V10_SUFFIX):
                 accepted = await async_send_display_payload(
                     self.hass,
                     endpoint_entity,
                     payload,
+                    action=action,
                     force_redraw=force_redraw,
                     logo_data=valid_logo_data(self.entry.options.get(CONF_LOGO_DATA)),
                 )
@@ -941,6 +1033,7 @@ class GuestyTerminalRuntime:
                     self.hass,
                     endpoint_entity,
                     payload,
+                    action=action,
                     force_redraw=force_redraw,
                     logo_data=valid_logo_data(self.entry.options.get(CONF_LOGO_DATA)),
                     delivery_id=delivery_id,

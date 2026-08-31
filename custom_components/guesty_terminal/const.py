@@ -5,6 +5,7 @@ from datetime import timedelta
 DOMAIN = "guesty_terminal"
 DATA_PENDING_TOKENS = "pending_tokens"
 DATA_FIRMWARE_UPDATE_LOCK = "firmware_update_lock"
+DATA_ENDPOINT_ACTIONS = "endpoint_actions"
 
 CONF_CLIENT_ID = "client_id"
 CONF_CLIENT_SECRET = "client_secret"

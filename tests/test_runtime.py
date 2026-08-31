@@ -86,6 +86,7 @@ class FakeStates:
 
 class FakeHass:
     def __init__(self, state=None, *, available=True, failure=None) -> None:
+        self.data = {}
         self.states = FakeStates(state)
         self.services = FakeServices(available=available, failure=failure)
         self.tasks = []
@@ -495,6 +496,94 @@ def test_v10_reconnect_replay_does_not_start_a_duplicate_delivery() -> None:
     assert asyncio.run(exercise())
     assert len(hass.services.calls) == 1
     assert runtime.delivery_diagnostic(ENDPOINT).status == "unchanged"
+
+
+def test_v10_stuck_unchanged_receipt_uses_remembered_action_for_next_update(
+    monkeypatch,
+) -> None:
+    """A lost action restore must not strand every later display payload."""
+    runtime_module = sys.modules[GuestyTerminalRuntime.__module__]
+    monkeypatch.setattr(runtime_module, "_DELIVERY_READY_TIMEOUT", 0.001)
+    runtime, hass, _coordinator = _runtime(state=ACTION_V10)
+
+    async def acknowledge_without_action_restore(call_index: int) -> None:
+        while len(hass.services.calls) <= call_index:
+            await asyncio.sleep(0)
+        delivery_id = hass.services.calls[call_index][2]["delivery_id"]
+        received = f"__guesty_delivery_received__:{delivery_id}"
+        unchanged = f"__guesty_delivery_unchanged__:{delivery_id}"
+        hass.states.state = SimpleNamespace(state=received)
+        runtime._handle_endpoint_state(_endpoint_event(received))
+        hass.states.state = SimpleNamespace(state=unchanged)
+        runtime._handle_endpoint_state(_endpoint_event(unchanged))
+
+    async def exercise() -> tuple[bool, bool]:
+        first = asyncio.create_task(runtime.async_push_endpoint(ENDPOINT))
+        await acknowledge_without_action_restore(0)
+        first_result = await first
+
+        second = asyncio.create_task(runtime.async_push_endpoint(ENDPOINT))
+        await acknowledge_without_action_restore(1)
+        return first_result, await second
+
+    assert asyncio.run(exercise()) == (True, True)
+    assert [call[1] for call in hass.services.calls] == [ACTION_V10, ACTION_V10]
+    assert runtime._endpoint_actions[ENDPOINT] == ACTION_V10
+
+
+def test_remembered_action_survives_config_entry_runtime_reload() -> None:
+    """The neutral action cache remains valid while one entry reloads."""
+    runtime, hass, coordinator = _runtime(state=ACTION_V10)
+    runtime._attach_shared_action_cache()
+    assert runtime._resolve_endpoint_action(ENDPOINT) == ACTION_V10
+
+    hass.states.state = SimpleNamespace(
+        state="__guesty_delivery_unchanged__:0123456789abcdef01234567"
+    )
+    reloaded = GuestyTerminalRuntime(hass, runtime.entry, runtime.client, coordinator)
+    reloaded._attach_shared_action_cache()
+
+    assert reloaded._resolve_endpoint_action(ENDPOINT) == ACTION_V10
+    assert reloaded._endpoint_actions is runtime._endpoint_actions
+
+
+def test_remembered_action_accepts_only_complete_known_transport_states() -> None:
+    runtime, hass, _coordinator = _runtime(state=ACTION_V10)
+    assert runtime._resolve_endpoint_action(ENDPOINT) == ACTION_V10
+    token = "0123456789abcdef01234567"
+
+    for state in (
+        DISPLAY_RECONNECT_STATE,
+        DISPLAY_REFRESH_REQUEST_STATE,
+        f"__guesty_delivery_received__:{token}",
+        f"__guesty_delivery_rendering__:{token}",
+        f"__guesty_delivery_success__:{token}",
+        f"__guesty_delivery_unchanged__:{token}",
+        f"__guesty_delivery_error__:{token}:busy",
+    ):
+        hass.states.state = SimpleNamespace(state=state)
+        assert runtime._resolve_endpoint_action(ENDPOINT) == ACTION_V10
+
+
+def test_remembered_action_never_masks_unavailable_or_unknown_endpoint_state() -> None:
+    runtime, hass, _coordinator = _runtime(state=ACTION_V10)
+    assert runtime._resolve_endpoint_action(ENDPOINT) == ACTION_V10
+
+    for state in (
+        "unavailable",
+        "unknown",
+        "unexpected_state",
+        "__guesty_delivery_unchanged__:malformed",
+        "__guesty_delivery_error__:0123456789abcdef01234567:unexpected",
+    ):
+        hass.states.state = SimpleNamespace(state=state)
+        assert runtime._resolve_endpoint_action(ENDPOINT) is None
+
+    hass.states.state = SimpleNamespace(
+        state="__guesty_delivery_success__:0123456789abcdef01234567"
+    )
+    hass.services.available = False
+    assert runtime._resolve_endpoint_action(ENDPOINT) is None
 
 
 def test_v10_receipt_timeout_is_bounded_and_cleans_waiter(monkeypatch) -> None:
@@ -923,6 +1012,7 @@ def test_endpoint_entity_rename_migrates_mapping_and_schedules_reload() -> None:
 
     hass.config_entries = ConfigEntries()
     renamed = "sensor.renamed_guesty_terminal_endpoint"
+    runtime._remember_endpoint_action(ENDPOINT, ACTION_V10)
 
     runtime._handle_entity_registry_update(
         SimpleNamespace(
@@ -938,6 +1028,8 @@ def test_endpoint_entity_rename_migrates_mapping_and_schedules_reload() -> None:
     migrated = runtime.entry.options[CONF_MAPPINGS][renamed]
     assert migrated["listing_id"] == "listing-1"
     assert migrated["endpoint_id"]
+    assert ENDPOINT not in runtime._endpoint_actions
+    assert runtime._endpoint_actions[renamed] == ACTION_V10
     assert updates
     assert reloads == ["entry-1"]
 

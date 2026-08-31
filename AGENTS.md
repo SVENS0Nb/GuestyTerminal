@@ -530,8 +530,10 @@ incomplete change.
   Entry removal must not clear an endpoint that remains mapped by another
   Guesty entry.
 - The endpoint entity is discovered by original name `GuestyTerminal Endpoint`
-  or the `_guesty_terminal_endpoint` suffix. Its state is the exact ESPHome
-  action name, not a status value.
+  or the `_guesty_terminal_endpoint` suffix. Its normal state is the exact
+  ESPHome action name. The acknowledged v10 compatibility channel temporarily
+  multiplexes only the documented receipt, reconnect, and refresh-request
+  pulses onto that entity.
 - The runtime accepts legacy action suffixes through v9 and sends fields only
   when that version supports them. Preserve old action handling unless a
   deliberate compatibility break is documented and released.
@@ -553,6 +555,17 @@ incomplete change.
   schedule initial delivery without awaiting physical completion. After a
   confirmed battery result, endpoint unavailability is a valid terminal-ready
   signal because deep sleep cannot restore the action name.
+- Keep the last validated action name per endpoint in the shared, non-sensitive
+  Home Assistant domain runtime. Receipt, reconnect, and refresh pulses must
+  never overwrite it. A later send may use that remembered action only while
+  the endpoint is online, its current state is one of those explicitly known
+  transport pulses, and the matching ESPHome service is registered. Never let
+  the cache mask `unknown`, `unavailable`, an arbitrary state, or a missing
+  service. Move the cache key with an endpoint entity rename and retain the
+  shared mapping across a config-entry reload. ESPHome must restore the
+  callable endpoint immediately after a final v10 receipt and before the
+  multi-sample external-power decision; the still-set busy guard owns that
+  interval and rejects overlap safely.
 - Treat the last v10 acknowledgement as a strict fault boundary: no
   `received` means discovery or transport; `received` without `rendering`
   means the synchronous ESPHome action path before the renderer; `rendering`
